@@ -1,9 +1,12 @@
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import "./Leads.css";
 import Sidebar from "./Sidebar";
+
+const DEALS_STORAGE_KEY = "crmDeals";
+const CUSTOMERS_STORAGE_KEY = "crmCustomers";
 
 function Leads() {
   const [leads, setLeads] = useState([]);
@@ -24,11 +27,10 @@ function Leads() {
   const role = localStorage.getItem("role")?.toUpperCase();
   const isAdmin = role === "ADMIN";
   const isManager = role === "MANAGER";
-  const isEmployee = role === "EMPLOYEE";
 
   const [employees, setEmployees] = useState([]);
 
-  const fetchEmployees = async () => {
+  const fetchEmployees = useCallback(async () => {
     try {
       const token = localStorage.getItem("token");
       const res = await axios.get("http://localhost:5000/api/employees", {
@@ -38,7 +40,7 @@ function Leads() {
     } catch (err) {
       console.error(err);
     }
-  };
+  }, []);
 
   const navigate = useNavigate();
 
@@ -53,7 +55,7 @@ function Leads() {
 
   const sources = ["Website", "Referral", "Social Media", "Email Campaign", "Cold Call", "Trade Show", "Other"];
 
-  const fetchStats = async () => {
+  const fetchStats = useCallback(async () => {
     try {
       const token = localStorage.getItem("token");
       const res = await axios.get("http://localhost:5000/api/stats", {
@@ -63,9 +65,9 @@ function Leads() {
     } catch (err) {
       console.error(err);
     }
-  };
+  }, []);
 
-  const fetchLeads = async () => {
+  const fetchLeads = useCallback(async () => {
     try {
       const token = localStorage.getItem("token");
       const role = localStorage.getItem("role")?.toUpperCase();
@@ -87,7 +89,7 @@ function Leads() {
     } catch (err) {
       console.error(err);
     }
-  };
+  }, [search]);
 
   useEffect(() => {
     const role = localStorage.getItem("role")?.toUpperCase();
@@ -97,15 +99,15 @@ function Leads() {
     if (isAdmin || isManager) {
       fetchEmployees();
     }
-  }, [navigate]);
+  }, [navigate, isAdmin, isManager, fetchEmployees]);
 
   useEffect(() => {
     fetchStats();
-  }, []);
+  }, [fetchStats]);
 
   useEffect(() => {
     fetchLeads();
-  }, [search]);
+  }, [fetchLeads]);
 
   const handleAddLead = () => {
     setNewLead({
@@ -153,11 +155,49 @@ function Leads() {
   const handleUpdateStatus = async (leadId, newStatus) => {
     try {
       const token = localStorage.getItem("token");
+      const leadToConvert = leads.find((lead) => lead._id === leadId);
       await axios.put(
         `http://localhost:5000/api/leads/${leadId}`,
         { status: newStatus },
         { headers: { Authorization: `Bearer ${token}` } }
       );
+
+      // When a lead is converted, create an entry in Deals (Qualification stage)
+      // and Customers table storage if it does not already exist.
+      if (newStatus === "converted" && leadToConvert) {
+        const storedDeals = JSON.parse(localStorage.getItem(DEALS_STORAGE_KEY) || "[]");
+        const hasDeal = storedDeals.some((deal) => deal.sourceLeadId === leadId);
+        if (!hasDeal) {
+          const newDeal = {
+            _id: `deal-${Date.now()}`,
+            sourceLeadId: leadId,
+            name: leadToConvert.name || "Converted Lead Deal",
+            company: leadToConvert.company || "",
+            amount: 0,
+            contact: leadToConvert.name || "",
+            email: leadToConvert.email || "",
+            stage: "qualification",
+          };
+          localStorage.setItem(DEALS_STORAGE_KEY, JSON.stringify([newDeal, ...storedDeals]));
+        }
+
+        const storedCustomers = JSON.parse(localStorage.getItem(CUSTOMERS_STORAGE_KEY) || "[]");
+        const hasCustomer = storedCustomers.some((customer) => customer.sourceLeadId === leadId);
+        if (!hasCustomer) {
+          const newCustomer = {
+            _id: `cust-${Date.now()}`,
+            sourceLeadId: leadId,
+            name: leadToConvert.name || "",
+            company: leadToConvert.company || "",
+            email: leadToConvert.email || "",
+            phone: leadToConvert.phone || "",
+            source: leadToConvert.source || "",
+            convertedAt: new Date().toISOString(),
+          };
+          localStorage.setItem(CUSTOMERS_STORAGE_KEY, JSON.stringify([newCustomer, ...storedCustomers]));
+        }
+      }
+
       fetchLeads();
       fetchStats();
       setSelectedLead(null);
@@ -224,179 +264,183 @@ function Leads() {
     <div className="dashboard-layout">
       <Sidebar />
       <div className="main-content leads-page">
-        {/* Header */}
-        <div className="leads-header-section">
-          <div className="leads-header-left">
-            <h1>Leads</h1>
-            <p>Manage and track your potential customers</p>
+        <div className="leads-fixed-top">
+          {/* Header */}
+          <div className="leads-header-section">
+            <div className="leads-header-left">
+              <h1>Leads</h1>
+              <p>Manage and track your potential customers</p>
+            </div>
+            <div className="leads-header-right">
+              <button className="btn-primary" onClick={handleAddLead}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <line x1="12" y1="5" x2="12" y2="19"></line>
+                  <line x1="5" y1="12" x2="19" y2="12"></line>
+                </svg>
+                New Lead
+              </button>
+            </div>
           </div>
-          <div className="leads-header-right">
-            <button className="btn-primary" onClick={handleAddLead}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <line x1="12" y1="5" x2="12" y2="19"></line>
-                <line x1="5" y1="12" x2="19" y2="12"></line>
-              </svg>
-              New Lead
-            </button>
-          </div>
-        </div>
 
-        {/* Stats Cards */}
-        {stats && stats.leadCounts && (
-          <div className="leads-stats-row">
-            <div className="stat-card-zoho">
-              <div className="stat-icon stat-icon-blue">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
-                  <circle cx="9" cy="7" r="4"></circle>
-                  <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
-                  <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
-                </svg>
-              </div>
-              <div className="stat-content">
-                <span className="stat-value">{stats.leadCounts.new || 0}</span>
-                <span className="stat-label">New Leads</span>
-              </div>
-            </div>
-            <div className="stat-card-zoho">
-              <div className="stat-icon stat-icon-orange">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M22 12h-4l-3 9L9 3l-3 9H2"></path>
-                </svg>
-              </div>
-              <div className="stat-content">
-                <span className="stat-value">{stats.leadCounts.contacted || 0}</span>
-                <span className="stat-label">Contacted</span>
-              </div>
-            </div>
-            <div className="stat-card-zoho">
-              <div className="stat-icon stat-icon-purple">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <polyline points="9 11 12 14 22 4"></polyline>
-                  <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
-                </svg>
-              </div>
-              <div className="stat-content">
-                <span className="stat-value">{stats.leadCounts.qualified || 0}</span>
-                <span className="stat-label">Qualified</span>
-              </div>
-            </div>
-            <div className="stat-card-zoho">
-              <div className="stat-icon stat-icon-green">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <line x1="12" y1="20" x2="12" y2="10"></line>
-                  <line x1="18" y1="20" x2="18" y2="4"></line>
-                  <line x1="6" y1="20" x2="6" y2="16"></line>
-                </svg>
-              </div>
-              <div className="stat-content">
-                <span className="stat-value">{stats.leadCounts.converted || 0}</span>
-                <span className="stat-label">Converted</span>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Search and Filter Bar */}
-        <div className="leads-toolbar-zoho">
-          <div className="search-box-zoho">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <circle cx="11" cy="11" r="8"></circle>
-              <path d="m21 21-4.35-4.35"></path>
-            </svg>
-            <input
-              type="text"
-              placeholder="Search leads by name, email, company..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-          </div>
-          <div className="toolbar-actions">
-            <button className="btn-filter">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
-              </svg>
-              Filter
-            </button>
-            <button className="btn-filter">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                <polyline points="7 10 12 15 17 10"></polyline>
-                <line x1="12" y1="15" x2="12" y2="3"></line>
-              </svg>
-              Export
-            </button>
-          </div>
-        </div>
-
-        {/* Kanban Board */}
-        <div className="kanban-board-zoho">
-          {stages.map((stage) => (
-            <div key={stage.id} className="kanban-column-zoho">
-              <div className="column-header-zoho" style={{ borderTopColor: stage.color }}>
-                <div className="column-title-zoho">
-                  <span className="column-dot" style={{ backgroundColor: stage.color }}></span>
-                  <h3>{stage.name}</h3>
-                </div>
-                <span className="lead-count-zoho">{getLeadsByStage(stage.id).length}</span>
-              </div>
-              <div className="column-content-zoho">
-                {getLeadsByStage(stage.id).map((lead) => (
-                  <div
-                    key={lead._id}
-                    className="kanban-card-zoho"
-                    onClick={() => handleViewLead(lead)}
-                  >
-                    <div className="card-top-row">
-                      <h4>{lead.name}</h4>
-                      <span className={`status-badge-zoho ${lead.status}`}>{lead.status}</span>
-                    </div>
-                    {lead.company && (
-                      <div className="card-company-zoho">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                          <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
-                          <polyline points="9 22 9 12 15 12 15 22"></polyline>
-                        </svg>
-                        {lead.company}
-                      </div>
-                    )}
-                    <div className="card-details-zoho">
-                      {lead.email && (
-                        <div className="card-detail">
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path>
-                            <polyline points="22,6 12,13 2,6"></polyline>
-                          </svg>
-                          {lead.email}
-                        </div>
-                      )}
-                      {lead.phone && (
-                        <div className="card-detail">
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path>
-                          </svg>
-                          {lead.phone}
-                        </div>
-                      )}
-                    </div>
-                    {lead.source && (
-                      <div className="card-source">
-                        <span className="source-icon">{getSourceIcon(lead.source)}</span>
-                        <span className="source-text">{lead.source}</span>
-                      </div>
-                    )}
-                  </div>
-                ))}
-                <button className="add-card-btn" onClick={handleAddLead}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <line x1="12" y1="5" x2="12" y2="19"></line>
-                    <line x1="5" y1="12" x2="19" y2="12"></line>
+          {/* Stats Cards */}
+          {stats && stats.leadCounts && (
+            <div className="leads-stats-row">
+              <div className="stat-card-zoho">
+                <div className="stat-icon stat-icon-blue">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                    <circle cx="9" cy="7" r="4"></circle>
+                    <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                    <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
                   </svg>
-                  Add Lead
-                </button>
+                </div>
+                <div className="stat-content">
+                  <span className="stat-value">{stats.leadCounts.new || 0}</span>
+                  <span className="stat-label">New Leads</span>
+                </div>
+              </div>
+              <div className="stat-card-zoho">
+                <div className="stat-icon stat-icon-orange">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M22 12h-4l-3 9L9 3l-3 9H2"></path>
+                  </svg>
+                </div>
+                <div className="stat-content">
+                  <span className="stat-value">{stats.leadCounts.contacted || 0}</span>
+                  <span className="stat-label">Contacted</span>
+                </div>
+              </div>
+              <div className="stat-card-zoho">
+                <div className="stat-icon stat-icon-purple">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <polyline points="9 11 12 14 22 4"></polyline>
+                    <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
+                  </svg>
+                </div>
+                <div className="stat-content">
+                  <span className="stat-value">{stats.leadCounts.qualified || 0}</span>
+                  <span className="stat-label">Qualified</span>
+                </div>
+              </div>
+              <div className="stat-card-zoho">
+                <div className="stat-icon stat-icon-green">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <line x1="12" y1="20" x2="12" y2="10"></line>
+                    <line x1="18" y1="20" x2="18" y2="4"></line>
+                    <line x1="6" y1="20" x2="6" y2="16"></line>
+                  </svg>
+                </div>
+                <div className="stat-content">
+                  <span className="stat-value">{stats.leadCounts.converted || 0}</span>
+                  <span className="stat-label">Converted</span>
+                </div>
               </div>
             </div>
-          ))}
+          )}
+
+          {/* Search and Filter Bar */}
+          <div className="leads-toolbar-zoho">
+            <div className="search-box-zoho">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="11" cy="11" r="8"></circle>
+                <path d="m21 21-4.35-4.35"></path>
+              </svg>
+              <input
+                type="text"
+                placeholder="Search leads by name, email, company..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+            </div>
+            <div className="toolbar-actions">
+              <button className="btn-filter">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
+                </svg>
+                Filter
+              </button>
+              <button className="btn-filter">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                  <polyline points="7 10 12 15 17 10"></polyline>
+                  <line x1="12" y1="15" x2="12" y2="3"></line>
+                </svg>
+                Export
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div className="leads-scroll-content">
+          {/* Kanban Board */}
+          <div className="kanban-board-zoho">
+            {stages.map((stage) => (
+              <div key={stage.id} className="kanban-column-zoho">
+                <div className="column-header-zoho" style={{ borderTopColor: stage.color }}>
+                  <div className="column-title-zoho">
+                    <span className="column-dot" style={{ backgroundColor: stage.color }}></span>
+                    <h3>{stage.name}</h3>
+                  </div>
+                  <span className="lead-count-zoho">{getLeadsByStage(stage.id).length}</span>
+                </div>
+                <div className="column-content-zoho">
+                  {getLeadsByStage(stage.id).map((lead) => (
+                    <div
+                      key={lead._id}
+                      className="kanban-card-zoho"
+                      onClick={() => handleViewLead(lead)}
+                    >
+                      <div className="card-top-row">
+                        <h4>{lead.name}</h4>
+                        <span className={`status-badge-zoho ${lead.status}`}>{lead.status}</span>
+                      </div>
+                      {lead.company && (
+                        <div className="card-company-zoho">
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+                            <polyline points="9 22 9 12 15 12 15 22"></polyline>
+                          </svg>
+                          {lead.company}
+                        </div>
+                      )}
+                      <div className="card-details-zoho">
+                        {lead.email && (
+                          <div className="card-detail">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path>
+                              <polyline points="22,6 12,13 2,6"></polyline>
+                            </svg>
+                            {lead.email}
+                          </div>
+                        )}
+                        {lead.phone && (
+                          <div className="card-detail">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path>
+                            </svg>
+                            {lead.phone}
+                          </div>
+                        )}
+                      </div>
+                      {lead.source && (
+                        <div className="card-source">
+                          <span className="source-icon">{getSourceIcon(lead.source)}</span>
+                          <span className="source-text">{lead.source}</span>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                  <button className="add-card-btn" onClick={handleAddLead}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <line x1="12" y1="5" x2="12" y2="19"></line>
+                      <line x1="5" y1="12" x2="19" y2="12"></line>
+                    </svg>
+                    Add Lead
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
 
         {/* Add Lead Modal */}

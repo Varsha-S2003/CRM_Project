@@ -1,13 +1,61 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import Sidebar from "./Sidebar";
 
+const CUSTOMERS_STORAGE_KEY = "crmCustomers";
+
 export default function Customers() {
+  const [customers, setCustomers] = useState([]);
+
+  useEffect(() => {
+    const storedCustomers = JSON.parse(localStorage.getItem(CUSTOMERS_STORAGE_KEY) || "[]");
+    setCustomers(storedCustomers);
+  }, []);
+
   return (
     <div className="dashboard-layout">
       <Sidebar />
       <div className="main-content">
-        <h1>Customers</h1>
-        <p>This section is under construction. Only ADMIN and MANAGER can access.</p>
+        <div className="dashboard-wrapper">
+          <div className="dashboard-header">
+            <div>
+              <h1 className="dashboard-title">Customers</h1>
+              <p className="dashboard-subtitle">Converted leads are listed here.</p>
+            </div>
+          </div>
+
+          {customers.length === 0 ? (
+            <p className="dashboard-subtitle">No customers yet. Convert a lead to populate this table.</p>
+          ) : (
+            <div className="chart-card">
+              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <thead>
+                  <tr>
+                    <th style={{ textAlign: "left", padding: "10px", borderBottom: "1px solid #e5e7eb" }}>Name</th>
+                    <th style={{ textAlign: "left", padding: "10px", borderBottom: "1px solid #e5e7eb" }}>Company</th>
+                    <th style={{ textAlign: "left", padding: "10px", borderBottom: "1px solid #e5e7eb" }}>Email</th>
+                    <th style={{ textAlign: "left", padding: "10px", borderBottom: "1px solid #e5e7eb" }}>Phone</th>
+                    <th style={{ textAlign: "left", padding: "10px", borderBottom: "1px solid #e5e7eb" }}>Source</th>
+                    <th style={{ textAlign: "left", padding: "10px", borderBottom: "1px solid #e5e7eb" }}>Converted At</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {customers.map((customer) => (
+                    <tr key={customer._id}>
+                      <td style={{ padding: "10px", borderBottom: "1px solid #f1f5f9" }}>{customer.name || "-"}</td>
+                      <td style={{ padding: "10px", borderBottom: "1px solid #f1f5f9" }}>{customer.company || "-"}</td>
+                      <td style={{ padding: "10px", borderBottom: "1px solid #f1f5f9" }}>{customer.email || "-"}</td>
+                      <td style={{ padding: "10px", borderBottom: "1px solid #f1f5f9" }}>{customer.phone || "-"}</td>
+                      <td style={{ padding: "10px", borderBottom: "1px solid #f1f5f9" }}>{customer.source || "-"}</td>
+                      <td style={{ padding: "10px", borderBottom: "1px solid #f1f5f9" }}>
+                        {customer.convertedAt ? new Date(customer.convertedAt).toLocaleString() : "-"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

@@ -42,7 +42,7 @@ function Dashboard() {
         .then((data) => setStats(data))
         .catch((err) => console.error(err));
     }
-  }, [role]);
+  }, [isAdmin]);
 
   // prepare data arrays for charts once stats are available
   const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun"];
@@ -78,9 +78,6 @@ function Dashboard() {
   const managerData = stats
     ? Object.entries(stats.managerPerformance).map(([name, score]) => ({ name, score }))
     : defaultManagerData;
-  const employeeData =
-    stats?.employeeTrend?.map((val, idx) => ({ month: months[idx], value: val })) || [];
-
   const COLORS = ["#8884d8", "#82ca9d", "#ffc658", "#ff8042"];
 
   // state to track bar hover

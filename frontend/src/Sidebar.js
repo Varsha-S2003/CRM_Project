@@ -59,7 +59,7 @@ function Sidebar() {
         <div className="nav-section">
           <span className="nav-section-title">Main</span>
           {canSee(["ADMIN","MANAGER","EMPLOYEE"]) && (
-            <a href="#" onClick={(e) => handleNav("/dashboard", e)} className="nav-item active">
+            <a href="/" onClick={(e) => handleNav("/dashboard", e)} className="nav-item active">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <rect x="3" y="3" width="7" height="7"></rect>
                 <rect x="14" y="3" width="7" height="7"></rect>
@@ -70,7 +70,7 @@ function Sidebar() {
             </a>
           )}
           {canSee(["ADMIN","MANAGER","EMPLOYEE"]) && (
-            <a href="#" onClick={(e) => handleNav("/leads", e)} className="nav-item">
+            <a href="/" onClick={(e) => handleNav("/leads", e)} className="nav-item">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
                 <circle cx="9" cy="7" r="4"></circle>
@@ -80,8 +80,18 @@ function Sidebar() {
               <span>Leads</span>
             </a>
           )}
+          {canSee(["ADMIN","MANAGER","EMPLOYEE"]) && (
+            <a href="/" onClick={(e) => handleNav("/deals", e)} className="nav-item">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <rect x="3" y="7" width="18" height="13" rx="2"></rect>
+                <path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"></path>
+                <line x1="3" y1="13" x2="21" y2="13"></line>
+              </svg>
+              <span>Deals</span>
+            </a>
+          )}
           {canSee(["ADMIN","MANAGER"]) && (
-            <a href="#" onClick={(e) => handleNav("/customers", e)} className="nav-item">
+            <a href="/" onClick={(e) => handleNav("/customers", e)} className="nav-item">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <circle cx="12" cy="7" r="4"></circle>
                 <path d="M5.5 21h13a2 2 0 0 0 2-2v-2a7 7 0 0 0-14 0v2a2 2 0 0 0 2 2z"></path>
@@ -93,7 +103,7 @@ function Sidebar() {
 
         <div className="nav-section">
           <span className="nav-section-title">Admin</span>
-          <a href="#" onClick={(e) => handleNav("/add-employee", e)} className="nav-item">
+          <a href="/" onClick={(e) => handleNav("/add-employee", e)} className="nav-item">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
               <circle cx="8.5" cy="7" r="4"></circle>
@@ -102,7 +112,7 @@ function Sidebar() {
             </svg>
             <span>Users</span>
           </a>
-          <a href="#" className="nav-item">
+          <a href="/" className="nav-item">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <line x1="18" y1="20" x2="18" y2="10"></line>
               <line x1="12" y1="20" x2="12" y2="4"></line>
@@ -111,7 +121,7 @@ function Sidebar() {
             <span>Reports</span>
           </a>
           {canSee(["ADMIN"]) && (
-            <a href="#" onClick={(e) => handleNav("/settings", e)} className="nav-item">
+            <a href="/" onClick={(e) => handleNav("/settings", e)} className="nav-item">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <circle cx="12" cy="12" r="3"></circle>
                 <path d="M19.4 15a1.94 1.94 0 0 0 .33 2l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.94 1.94 0 0 0-2-.33 1.94 1.94 0 0 0-1 1.66V21a2 2 0 0 1-4 0v-.09a1.94 1.94 0 0 0-1-1.66 1.94 1.94 0 0 0-2 .33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.94 1.94 0 0 0 .33-2 1.94 1.94 0 0 0-1.66-1H3a2 2 0 0 1 0-4h.09a1.94 1.94 0 0 0 1.66-1 1.94 1.94 0 0 0-.33-2l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.94 1.94 0 0 0 2 .33h.06a1.94 1.94 0 0 0 1-1.66V3a2 2 0 0 1 4 0v.09a1.94 1.94 0 0 0 1 1.66h.06a1.94 1.94 0 0 0 2-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.94 1.94 0 0 0-.33 2 1.94 1.94 0 0 0 1.66 1H21a2 2 0 0 1 0 4h-.09a1.94 1.94 0 0 0-1.66 1z"></path>
