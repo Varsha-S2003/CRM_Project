@@ -4,6 +4,7 @@ const { verifyToken } = require("../middleware/authMiddleware");
 const isAdmin = require("../middleware/isAdmin");
 const User = require("../models/user");
 const Lead = require("../models/lead");
+const Deal = require("../models/deal");
 
 // GET /api/stats - return some dashboard statistics (admin only)
 router.get("/", verifyToken, isAdmin, async (req, res) => {
@@ -47,12 +48,14 @@ router.get("/", verifyToken, isAdmin, async (req, res) => {
     const totalLeads = Object.values(leadCounts).reduce((a, b) => a + b, 0);
     const conversionRate = totalLeads ? Math.round((leadCounts.converted / totalLeads) * 100) : 0;
 
+    const totalDeals = await Deal.countDocuments();
+
     const stats = {
       totalUsers,
       managers,
       employees,
       totalRevenue: 1650,
-      totalDeals: 2,
+      totalDeals,
       totalLeads,
       conversionRate,
       // additional fields for charts
