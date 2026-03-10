@@ -10,6 +10,8 @@ import Customers from "./Customers";
 import Employees from "./Employees";
 import Reports from "./Reports";
 import Settings from "./Settings";
+import Products from "./Products";
+import Inventory from "./Inventory";
 
 // debugging: log imported components to catch undefined values
 // if you see 'undefined' for any of these it means the corresponding
@@ -417,6 +419,8 @@ function App() {
         <Route path="/employees" element={<Employees />} />
         <Route path="/reports" element={<Reports />} />
         <Route path="/settings" element={<Settings />} />
+        <Route path="/products" element={<Products />} />
+        <Route path="/inventory" element={<Inventory />} />
       </Routes>
     </BrowserRouter>
   );

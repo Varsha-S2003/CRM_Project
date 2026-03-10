@@ -28,6 +28,14 @@ app.use("/api/leads", leadRoutes);
 const statsRoutes = require("./routes/statsRoutes");
 app.use("/api/stats", statsRoutes);
 
+// products endpoint for managing products
+const productRoutes = require("./routes/productRoutes");
+app.use("/api/products", productRoutes);
+
+// inventory endpoint for managing inventory
+const inventoryRoutes = require("./routes/inventoryRoutes");
+app.use("/api/inventory", inventoryRoutes);
+
 // MongoDB Atlas connection
 mongoose.connect(process.env.MONGO_URI)
 .then(() => console.log("MongoDB Atlas Connected"))

@@ -121,6 +121,23 @@ function Dashboard() {
           {/* Top Stat Cards */}
           <div className="stats-grid">
             <div className="stat-card">
+              <h4>Total Products</h4>
+              <h2>{stats?.totalProducts || "0"}</h2>
+            </div>
+
+            <div className="stat-card">
+              <h4>Total Stock</h4>
+              <h2>{stats?.totalStock || "0"}</h2>
+            </div>
+
+            <div className="stat-card">
+              <h4>Low Stock Items</h4>
+              <h2 style={{ color: (stats?.lowStockItems || 0) > 0 ? '#d97706' : '#059669' }}>
+                {stats?.lowStockItems || "0"}
+              </h2>
+            </div>
+
+            <div className="stat-card">
               <h4>Total Revenue</h4>
               <h2>${stats?.totalRevenue || "125,000"}</h2>
             </div>
