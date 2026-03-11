@@ -10,7 +10,12 @@ import Customers from "./Customers";
 import Employees from "./Employees";
 import Reports from "./Reports";
 import Settings from "./Settings";
+
 import ActivityModule from "./ActivityModule";
+
+import Products from "./Products";
+import Inventory from "./Inventory";
+ //bf512acb77558d0d630c7a57df7507f896003d97
 
 // debugging: log imported components to catch undefined values
 // if you see 'undefined' for any of these it means the corresponding
@@ -419,7 +424,12 @@ function App() {
         <Route path="/employees" element={<Employees />} />
         <Route path="/reports" element={<Reports />} />
         <Route path="/settings" element={<Settings />} />
+<<<<<<< HEAD
         <Route path="/activities" element={<ActivityModule />} />
+=======
+        <Route path="/products" element={<Products />} />
+        <Route path="/inventory" element={<Inventory />} />
+>>>>>>> bf512acb77558d0d630c7a57df7507f896003d97
       </Routes>
     </BrowserRouter>
   );

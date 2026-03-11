@@ -38,6 +38,7 @@
 
 .leads-header-right {
   margin-right: 0;
+  position: relative;
 }
 
 .leads-scroll-content {
@@ -77,6 +78,42 @@
 .btn-primary:hover {
   transform: translateY(-1px);
   box-shadow: 0 4px 12px rgba(79, 70, 229, 0.35);
+}
+
+.create-lead-menu {
+  position: relative;
+}
+
+.create-lead-dropdown {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  min-width: 180px;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.14);
+  padding: 8px;
+  z-index: 20;
+}
+
+.create-lead-dropdown-item {
+  width: 100%;
+  display: block;
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: #1f2937;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.create-lead-dropdown-item:hover {
+  background: #f5f3ff;
+  color: #4f46e5;
 }
 
 /* Stats Row - Zoho Style */
@@ -578,6 +615,141 @@
   box-shadow: 0 4px 12px rgba(79, 70, 229, 0.35);
 }
 
+.import-modal-box {
+  max-width: 720px;
+}
+
+.export-modal-box {
+  max-width: 740px;
+}
+
+.export-modal-form {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.export-form-row {
+  display: grid;
+  grid-template-columns: 150px 1fr;
+  align-items: center;
+  gap: 18px;
+}
+
+.export-form-row label {
+  font-size: 14px;
+  font-weight: 500;
+  color: #64748b;
+}
+
+.export-form-row select {
+  width: 100%;
+  padding: 11px 14px;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  background: #ffffff;
+  font-size: 14px;
+  color: #334155;
+}
+
+.export-form-row select:disabled {
+  background: #f8fafc;
+  color: #94a3b8;
+  cursor: not-allowed;
+}
+
+.export-type-row {
+  align-items: flex-start;
+}
+
+.export-type-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  padding-top: 4px;
+}
+
+.export-radio-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: #334155;
+  cursor: pointer;
+}
+
+.export-radio-option input {
+  accent-color: #4f46e5;
+}
+
+.export-note-box {
+  padding: 14px 16px;
+  border: 1px solid #e7dfab;
+  border-radius: 10px;
+  background: #fefce8;
+  color: #8a6d3b;
+  font-size: 14px;
+}
+
+.import-helper-text {
+  margin: 0 0 12px;
+  color: #6b7280;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.csv-file-input {
+  width: 100%;
+  padding: 12px;
+  border: 2px dashed #cbd5e1;
+  border-radius: 10px;
+  background: #f8fafc;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.import-file-summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: #eef2ff;
+  color: #3730a3;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.import-preview-table-wrapper {
+  overflow-x: auto;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+}
+
+.import-preview-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.import-preview-table th,
+.import-preview-table td {
+  padding: 12px 14px;
+  border-bottom: 1px solid #e5e7eb;
+  text-align: left;
+}
+
+.import-preview-table th {
+  background: #f8fafc;
+  color: #374151;
+  font-weight: 600;
+}
+
+.import-preview-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
 /* Lead Details View */
 .lead-details-view {
   padding: 20px 24px;
@@ -712,6 +884,11 @@
   
   .form-row-zoho {
     grid-template-columns: 1fr;
+  }
+
+  .export-form-row {
+    grid-template-columns: 1fr;
+    gap: 8px;
   }
   
   .status-grid {

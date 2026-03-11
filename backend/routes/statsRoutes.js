@@ -4,6 +4,7 @@ const { verifyToken } = require("../middleware/authMiddleware");
 const isAdmin = require("../middleware/isAdmin");
 const User = require("../models/user");
 const Lead = require("../models/lead");
+const Product = require("../models/product");
 const Deal = require("../models/deal");
 
 // GET /api/stats - return some dashboard statistics (admin only)
@@ -13,6 +14,12 @@ router.get("/", verifyToken, isAdmin, async (req, res) => {
     const totalUsers = await User.countDocuments();
     const managers = await User.countDocuments({ role: "manager" });
     const employees = await User.countDocuments({ role: "employee" });
+
+    // Product statistics
+    const totalProducts = await Product.countDocuments();
+    const allProducts = await Product.find({}, 'stock');
+    const totalStock = allProducts.reduce((sum, p) => sum + (p.stock || 0), 0);
+    const lowStockItems = allProducts.filter(p => p.stock < 5).length;
 
     // prepare employee creation trend for last six months
     const now = new Date();
@@ -58,6 +65,10 @@ router.get("/", verifyToken, isAdmin, async (req, res) => {
       totalDeals,
       totalLeads,
       conversionRate,
+      // Product stats
+      totalProducts,
+      totalStock,
+      lowStockItems,
       // additional fields for charts
       revenueTrend: [45000, 52000, 48000, 61000, 55000, 68000],
       dealsByStage: { proposal: 1, negotiation: 1, closedWon: 0, closedLost: 0 },
@@ -75,3 +86,4 @@ router.get("/", verifyToken, isAdmin, async (req, res) => {
 });
 
 module.exports = router;
+

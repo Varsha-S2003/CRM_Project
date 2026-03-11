@@ -1,0 +1,250 @@
+/* Inventory Page Styles */
+.inventory-page {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.inventory-fixed-top {
+  flex-shrink: 0;
+  background: #f5f7fa;
+  border-bottom: 1px solid #e5e7eb;
+  padding: 0 24px;
+}
+
+.inventory-header-section {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 24px;
+  margin-bottom: 20px;
+  padding-top: 12px;
+}
+
+.inventory-header-left {
+  display: flex;
+  flex-direction: column;
+}
+
+.inventory-header-left h1 {
+  font-size: 26px;
+  font-weight: 700;
+  color: #1a1a2e;
+  margin-bottom: 4px;
+}
+
+.inventory-header-left p {
+  color: #6b7280;
+  font-size: 14px;
+}
+
+/* Inventory Stats Cards - Horizontal Layout */
+.inventory-stats {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+  margin: 0 auto;
+}
+
+.inventory-stats .stat-card {
+  background: white;
+  padding: 16px 24px;
+  border-radius: 10px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  text-align: center;
+  min-width: 140px;
+}
+
+.inventory-stats .stat-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 6px;
+}
+
+.inventory-stats .stat-value {
+  display: block;
+  font-size: 24px;
+  font-weight: 700;
+  color: #1a1a2e;
+}
+
+.inventory-header-right {
+  display: flex;
+  align-items: center;
+}
+
+.inventory-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  gap: 16px;
+}
+
+.inventory-scroll-content {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 0 24px 24px;
+}
+
+/* Inventory Table */
+.inventory-table-container {
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  overflow: hidden;
+}
+
+.inventory-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.inventory-table thead {
+  background: #f8fafc;
+}
+
+.inventory-table th {
+  padding: 14px 16px;
+  text-align: left;
+  font-size: 12px;
+  font-weight: 600;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.inventory-table td {
+  padding: 14px 16px;
+  font-size: 14px;
+  color: #1a1a2e;
+  border-bottom: 1px solid #f3f4f6;
+}
+
+.inventory-table tbody tr:hover {
+  background: #f8fafc;
+}
+
+.inventory-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.inventory-table .product-name {
+  font-weight: 600;
+}
+
+.inventory-table .sku-badge {
+  display: inline-block;
+  padding: 4px 8px;
+  background: #f1f5f9;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #475569;
+  font-family: monospace;
+}
+
+/* Stock Type Badge */
+.stock-type-badge {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.stock-type-badge.stock-in {
+  background: #d1fae5;
+  color: #059669;
+}
+
+.stock-type-badge.stock-out {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+/* Quantity */
+.quantity-in {
+  color: #059669;
+  font-weight: 600;
+}
+
+.quantity-out {
+  color: #dc2626;
+  font-weight: 600;
+}
+
+/* Action Buttons */
+.action-buttons {
+  display: flex;
+  gap: 8px;
+}
+
+.action-btn {
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.delete-btn {
+  background: #fef2f2;
+  color: #dc2626;
+}
+
+.delete-btn:hover {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.no-data {
+  text-align: center;
+  color: #6b7280;
+  padding: 40px !important;
+}
+
+/* Responsive */
+@media (max-width: 1200px) {
+  .inventory-table-container {
+    overflow-x: auto;
+  }
+  
+  .inventory-table {
+    min-width: 700px;
+  }
+}
+
+@media (max-width: 768px) {
+  .inventory-header-section {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 16px;
+  }
+  
+  .inventory-stats {
+    grid-template-columns: 1fr;
+    width: 100%;
+  }
+  
+  .inventory-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  
+  .search-box-zoho {
+    max-width: 100%;
+  }
+}
+
