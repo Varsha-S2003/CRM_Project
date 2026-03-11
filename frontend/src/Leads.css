@@ -169,6 +169,7 @@
   top: 50%;
   transform: translateY(-50%);
   color: #9ca3af;
+  pointer-events: none;
 }
 
 .search-box-zoho input {
@@ -520,6 +521,8 @@
   border-radius: 8px;
   font-size: 14px;
   transition: all 0.2s;
+  position: relative;
+  z-index: 1;
 }
 
 .form-group input:focus,

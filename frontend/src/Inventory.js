@@ -44,7 +44,6 @@ function Inventory() {
         headers: { Authorization: `Bearer ${token}` },
       });
       
-      // Client-side filtering with date support
       let filteredInventory = res.data;
       if (search) {
         filteredInventory = res.data.filter(record =>
@@ -55,7 +54,6 @@ function Inventory() {
       }
       setInventory(filteredInventory);
       
-      // Calculate stats
       const today = new Date().toISOString().split('T')[0];
       const todayStock = res.data
         .filter(record => new Date(record.createdAt).toISOString().split('T')[0] === today)
@@ -376,6 +374,7 @@ function Inventory() {
                             {product.name} ({product.sku}) - Stock: {product.stock}
                           </option>
                         ))}
+                      </select>
                     </div>
                   </div>
                   <div className="form-row-zoho">

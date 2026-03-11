@@ -5,9 +5,6 @@ import axios from "axios";
 import "./Leads.css";
 import Sidebar from "./Sidebar";
 
-const DEALS_STORAGE_KEY = "crmDeals";
-const CUSTOMERS_STORAGE_KEY = "crmCustomers";
-
 function Leads() {
   const [leads, setLeads] = useState([]);
   const [stats, setStats] = useState(null);
@@ -162,40 +159,35 @@ function Leads() {
         { headers: { Authorization: `Bearer ${token}` } }
       );
 
-      // When a lead is converted, create an entry in Deals (Qualification stage)
-      // and Customers table storage if it does not already exist.
+      // When a lead is converted, create matching records in Mongo deals and contacts collections.
       if (newStatus === "converted" && leadToConvert) {
-        const storedDeals = JSON.parse(localStorage.getItem(DEALS_STORAGE_KEY) || "[]");
-        const hasDeal = storedDeals.some((deal) => deal.sourceLeadId === leadId);
-        if (!hasDeal) {
-          const newDeal = {
-            _id: `deal-${Date.now()}`,
-            sourceLeadId: leadId,
-            name: leadToConvert.name || "Converted Lead Deal",
-            company: leadToConvert.company || "",
-            amount: 0,
-            contact: leadToConvert.name || "",
-            email: leadToConvert.email || "",
-            stage: "qualification",
-          };
-          localStorage.setItem(DEALS_STORAGE_KEY, JSON.stringify([newDeal, ...storedDeals]));
-        }
+        const newDeal = {
+          sourceLeadId: leadId,
+          name: leadToConvert.name || "Converted Lead Deal",
+          company: leadToConvert.company || "",
+          amount: 0,
+          contact: leadToConvert.name || "",
+          email: leadToConvert.email || "",
+          stage: "qualification",
+        };
+        const newCustomer = {
+          sourceLeadId: leadId,
+          name: leadToConvert.name || "",
+          company: leadToConvert.company || "",
+          email: leadToConvert.email || "",
+          phone: leadToConvert.phone || "",
+          source: leadToConvert.source || "",
+          convertedAt: new Date().toISOString(),
+        };
 
-        const storedCustomers = JSON.parse(localStorage.getItem(CUSTOMERS_STORAGE_KEY) || "[]");
-        const hasCustomer = storedCustomers.some((customer) => customer.sourceLeadId === leadId);
-        if (!hasCustomer) {
-          const newCustomer = {
-            _id: `cust-${Date.now()}`,
-            sourceLeadId: leadId,
-            name: leadToConvert.name || "",
-            company: leadToConvert.company || "",
-            email: leadToConvert.email || "",
-            phone: leadToConvert.phone || "",
-            source: leadToConvert.source || "",
-            convertedAt: new Date().toISOString(),
-          };
-          localStorage.setItem(CUSTOMERS_STORAGE_KEY, JSON.stringify([newCustomer, ...storedCustomers]));
-        }
+        await Promise.all([
+          axios.post("http://localhost:5000/api/deals", newDeal, {
+            headers: { Authorization: `Bearer ${token}` },
+          }),
+          axios.post("http://localhost:5000/api/contacts", newCustomer, {
+            headers: { Authorization: `Bearer ${token}` },
+          }),
+        ]);
       }
 
       fetchLeads();
@@ -247,6 +239,12 @@ function Leads() {
     return leads.filter((lead) => lead.status === stageId);
   };
 
+  // Get stages that have leads matching the search
+  const getStagesWithLeads = () => {
+    if (!search.trim()) return stages;
+    return stages.filter((stage) => getLeadsByStage(stage.id).length > 0);
+  };
+
   const getSourceIcon = (source) => {
     const icons = {
       "Website": "🌐",
@@ -258,6 +256,13 @@ function Leads() {
       "Other": "📋"
     };
     return icons[source] || "📋";
+  };
+
+  const formatAddedDate = (value) => {
+    if (!value) return "-";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "-";
+    return date.toLocaleString();
   };
 
   return (
@@ -353,13 +358,7 @@ function Leads() {
               />
             </div>
             <div className="toolbar-actions">
-              <button className="btn-filter">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
-                </svg>
-                Filter
-              </button>
-              <button className="btn-filter">
+              <button className="btn-filter" type="button">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
                   <polyline points="7 10 12 15 17 10"></polyline>
@@ -374,7 +373,7 @@ function Leads() {
         <div className="leads-scroll-content">
           {/* Kanban Board */}
           <div className="kanban-board-zoho">
-            {stages.map((stage) => (
+            {getStagesWithLeads().map((stage) => (
               <div key={stage.id} className="kanban-column-zoho">
                 <div className="column-header-zoho" style={{ borderTopColor: stage.color }}>
                   <div className="column-title-zoho">
@@ -577,6 +576,10 @@ function Leads() {
                 <div className="detail-row">
                   <span className="detail-label">Status</span>
                   <span className={`status-badge-zoho ${selectedLead.status}`}>{selectedLead.status}</span>
+                </div>
+                <div className="detail-row">
+                  <span className="detail-label">Added On</span>
+                  <span className="detail-value">{formatAddedDate(selectedLead.createdAt)}</span>
                 </div>
               </div>
               { (isAdmin || isManager) && (

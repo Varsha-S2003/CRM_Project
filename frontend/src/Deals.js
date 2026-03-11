@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
+import axios from "axios";
 import Sidebar from "./Sidebar";
 import "./Leads.css";
-
-const DEALS_STORAGE_KEY = "crmDeals";
 
 const stages = [
   { id: "qualification", name: "Qualification", color: "#3b82f6" },
@@ -15,62 +14,45 @@ const stages = [
   { id: "lost", name: "Lost", color: "#ef4444" },
 ];
 
-const initialDeals = [
-  {
-    _id: "d1",
-    name: "Atlas ERP Rollout",
-    company: "Atlas Manufacturing",
-    amount: 15000,
-    contact: "Rahul Sharma",
-    email: "rahul@atlas.example",
-    stage: "qualification",
-  },
-  {
-    _id: "d2",
-    name: "Q2 CRM Upgrade",
-    company: "Northwind Retail",
-    amount: 28000,
-    contact: "Anita Jain",
-    email: "anita@northwind.example",
-    stage: "proposal_price_quote",
-  },
-  {
-    _id: "d3",
-    name: "Support Contract Renewal",
-    company: "Bluepeak Logistics",
-    amount: 9000,
-    contact: "Pooja Verma",
-    email: "pooja@bluepeak.example",
-    stage: "negotiate",
-  },
-];
-
 function Deals() {
-  const [deals, setDeals] = useState(() => {
-    const storedDeals = JSON.parse(localStorage.getItem(DEALS_STORAGE_KEY) || "null");
-    if (Array.isArray(storedDeals) && storedDeals.length) {
-      return storedDeals;
-    }
-    return initialDeals;
-  });
-  const [searchInput, setSearchInput] = useState("");
+  const [deals, setDeals] = useState([]);
   const [search, setSearch] = useState("");
   const [showModal, setShowModal] = useState(false);
   const [selectedDeal, setSelectedDeal] = useState(null);
+  const [loading, setLoading] = useState(true);
   const [newDeal, setNewDeal] = useState({
     name: "",
     company: "",
     amount: "",
     contact: "",
     email: "",
+    phone: "",
     stage: "qualification",
   });
+
+  useEffect(() => {
+    const fetchDeals = async () => {
+      try {
+        const token = localStorage.getItem("token");
+        const res = await axios.get("http://localhost:5000/api/deals", {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        setDeals(res.data);
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchDeals();
+  }, []);
 
   const filteredDeals = useMemo(() => {
     const term = search.trim().toLowerCase();
     if (!term) return deals;
     return deals.filter((deal) =>
-      [deal.name, deal.company, deal.contact, deal.email]
+      [deal.name, deal.company, deal.contact, deal.email, deal.phone]
         .filter(Boolean)
         .some((value) => value.toLowerCase().includes(term))
     );
@@ -95,6 +77,12 @@ function Deals() {
 
   const getDealsByStage = (stageId) => filteredDeals.filter((deal) => deal.stage === stageId);
 
+  // Get stages that have deals matching the search
+  const getStagesWithDeals = () => {
+    if (!search.trim()) return stages;
+    return stages.filter((stage) => getDealsByStage(stage.id).length > 0);
+  };
+
   const openCreateModal = () => {
     setNewDeal({
       name: "",
@@ -102,37 +90,65 @@ function Deals() {
       amount: "",
       contact: "",
       email: "",
+      phone: "",
       stage: "qualification",
     });
     setShowModal(true);
   };
 
-  const submitNewDeal = (e) => {
+  const submitNewDeal = async (e) => {
     e.preventDefault();
-    const payload = {
-      ...newDeal,
-      _id: `d-${Date.now()}`,
-      amount: Number(newDeal.amount) || 0,
-    };
-    setDeals((prev) => [payload, ...prev]);
-    setShowModal(false);
+    try {
+      const token = localStorage.getItem("token");
+      const res = await axios.post(
+        "http://localhost:5000/api/deals",
+        { ...newDeal, amount: Number(newDeal.amount) || 0 },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setDeals((prev) => [res.data, ...prev]);
+      setShowModal(false);
+    } catch (err) {
+      console.error(err);
+      const errorMessage =
+        err.response?.data?.message ||
+        (typeof err.response?.data === "string" ? err.response.data : "") ||
+        err.message ||
+        "Failed to create deal";
+      alert(errorMessage);
+    }
   };
 
-  const updateStage = (dealId, stageId) => {
-    setDeals((prev) =>
-      prev.map((deal) => (deal._id === dealId ? { ...deal, stage: stageId } : deal))
-    );
-    setSelectedDeal((prev) => (prev && prev._id === dealId ? { ...prev, stage: stageId } : prev));
+  const updateStage = async (dealId, stageId) => {
+    try {
+      const token = localStorage.getItem("token");
+      const res = await axios.put(
+        `http://localhost:5000/api/deals/${dealId}`,
+        { stage: stageId },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setDeals((prev) =>
+        prev.map((deal) => (deal._id === dealId ? res.data : deal))
+      );
+      setSelectedDeal((prev) => (prev && prev._id === dealId ? res.data : prev));
+    } catch (err) {
+      console.error(err);
+      alert(err.response?.data?.message || err.message || "Failed to update deal stage");
+    }
   };
 
-  const deleteDeal = (dealId) => {
-    setDeals((prev) => prev.filter((deal) => deal._id !== dealId));
-    setSelectedDeal(null);
+  const deleteDeal = async (dealId) => {
+    try {
+      const token = localStorage.getItem("token");
+      await axios.delete(`http://localhost:5000/api/deals/${dealId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setDeals((prev) => prev.filter((deal) => deal._id !== dealId));
+      setSelectedDeal(null);
+    } catch (err) {
+      console.error(err);
+      alert(err.response?.data?.message || err.message || "Failed to delete deal");
+    }
   };
-
-  useEffect(() => {
-    localStorage.setItem(DEALS_STORAGE_KEY, JSON.stringify(deals));
-  }, [deals]);
 
   return (
     <div className="dashboard-layout">
@@ -190,30 +206,35 @@ function Deals() {
               </svg>
               <input
                 type="text"
-                placeholder="Search deals by name, company, contact..."
-                value={searchInput}
-                onChange={(e) => {
-                  setSearchInput(e.target.value);
-                  setSearch(e.target.value);
+                placeholder="Search deals by name, company, contact, phone..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    setSearch(e.currentTarget.value);
+                  }
                 }}
               />
             </div>
             <div className="toolbar-actions">
               <button
                 className="btn-filter"
-                onClick={() => setSearch(searchInput.trim())}
+                onClick={() => setSearch(search.trim())}
                 type="button"
               >
                 Search
               </button>
-              <button className="btn-filter">Export</button>
+              <button className="btn-filter" type="button">Export</button>
             </div>
           </div>
         </div>
 
         <div className="leads-scroll-content">
+          {loading ? (
+            <p className="dashboard-subtitle">Loading deals...</p>
+          ) : (
           <div className="kanban-board-zoho">
-            {stages.map((stage) => (
+            {getStagesWithDeals().map((stage) => (
               <div key={stage.id} className="kanban-column-zoho">
                 <div className="column-header-zoho" style={{ borderTopColor: stage.color }}>
                   <div className="column-title-zoho">
@@ -236,6 +257,7 @@ function Deals() {
                       <div className="card-company-zoho">{deal.company || "-"}</div>
                       <div className="card-detail">{deal.contact || "-"}</div>
                       <div className="card-detail">{deal.email || "-"}</div>
+                      <div className="card-detail">{deal.phone || "-"}</div>
                       <div className="card-source">
                         <span className="source-text">${Number(deal.amount || 0).toLocaleString()}</span>
                       </div>
@@ -245,6 +267,7 @@ function Deals() {
               </div>
             ))}
           </div>
+          )}
         </div>
 
         {showModal && (
@@ -260,8 +283,10 @@ function Deals() {
                     <label>Deal Name *</label>
                     <input
                       type="text"
+                      name="name"
                       value={newDeal.name}
                       onChange={(e) => setNewDeal((prev) => ({ ...prev, name: e.target.value }))}
+                      autoComplete="off"
                       required
                     />
                   </div>
@@ -269,8 +294,10 @@ function Deals() {
                     <label>Company</label>
                     <input
                       type="text"
+                      name="company"
                       value={newDeal.company}
                       onChange={(e) => setNewDeal((prev) => ({ ...prev, company: e.target.value }))}
+                      autoComplete="off"
                     />
                   </div>
                 </div>
@@ -279,16 +306,20 @@ function Deals() {
                     <label>Contact Person</label>
                     <input
                       type="text"
+                      name="contact"
                       value={newDeal.contact}
                       onChange={(e) => setNewDeal((prev) => ({ ...prev, contact: e.target.value }))}
+                      autoComplete="off"
                     />
                   </div>
                   <div className="form-group">
                     <label>Email</label>
                     <input
                       type="email"
+                      name="email"
                       value={newDeal.email}
                       onChange={(e) => setNewDeal((prev) => ({ ...prev, email: e.target.value }))}
+                      autoComplete="off"
                     />
                   </div>
                 </div>
@@ -297,11 +328,25 @@ function Deals() {
                     <label>Deal Value</label>
                     <input
                       type="number"
+                      name="amount"
                       min="0"
                       value={newDeal.amount}
                       onChange={(e) => setNewDeal((prev) => ({ ...prev, amount: e.target.value }))}
+                      autoComplete="off"
                     />
                   </div>
+                  <div className="form-group">
+                    <label>Phone</label>
+                    <input
+                      type="tel"
+                      name="phone"
+                      value={newDeal.phone}
+                      onChange={(e) => setNewDeal((prev) => ({ ...prev, phone: e.target.value }))}
+                      autoComplete="off"
+                    />
+                  </div>
+                </div>
+                <div className="form-row-zoho">
                   <div className="form-group">
                     <label>Stage</label>
                     <select
@@ -346,6 +391,10 @@ function Deals() {
                 <div className="detail-row">
                   <span className="detail-label">Email</span>
                   <span className="detail-value">{selectedDeal.email || "-"}</span>
+                </div>
+                <div className="detail-row">
+                  <span className="detail-label">Phone</span>
+                  <span className="detail-value">{selectedDeal.phone || "-"}</span>
                 </div>
                 <div className="detail-row">
                   <span className="detail-label">Deal Value</span>

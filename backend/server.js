@@ -24,6 +24,12 @@ app.use("/api/employees", employeeRoutes);
 const leadRoutes = require("./routes/leadRoutes");
 app.use("/api/leads", leadRoutes);
 
+const dealRoutes = require("./routes/dealRoutes");
+app.use("/api/deals", dealRoutes);
+
+const contactRoutes = require("./routes/contactRoutes");
+app.use("/api/contacts", contactRoutes);
+
 // stats used by admin dashboard
 const statsRoutes = require("./routes/statsRoutes");
 app.use("/api/stats", statsRoutes);

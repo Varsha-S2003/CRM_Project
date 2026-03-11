@@ -8,7 +8,7 @@ const Lead = require("../models/lead");
 // optional filters via query string
 router.get("/all", verifyToken, permit("ADMIN", "MANAGER"), async (req, res) => {
   try {
-    const { status, search } = req.query;
+    const { status, search, dateFrom, dateTo } = req.query;
     const filter = {};
     if (status) filter.status = status;
     if (search) {
@@ -17,6 +17,18 @@ router.get("/all", verifyToken, permit("ADMIN", "MANAGER"), async (req, res) => 
         { company: { $regex: search, $options: "i" } },
         { email: { $regex: search, $options: "i" } },
       ];
+    }
+    // Date filtering
+    if (dateFrom || dateTo) {
+      filter.createdAt = {};
+      if (dateFrom) {
+        filter.createdAt.$gte = new Date(dateFrom);
+      }
+      if (dateTo) {
+        const toDate = new Date(dateTo);
+        toDate.setHours(23, 59, 59, 999);
+        filter.createdAt.$lte = toDate;
+      }
     }
     const leads = await Lead.find(filter).sort({ createdAt: -1 });
     res.json(leads);
@@ -28,7 +40,31 @@ router.get("/all", verifyToken, permit("ADMIN", "MANAGER"), async (req, res) => 
 // GET /api/leads/my -- leads assigned to the requesting employee
 router.get("/my", verifyToken, permit("EMPLOYEE"), async (req, res) => {
   try {
-    const leads = await Lead.find({ assignedTo: req.user._id }).sort({ createdAt: -1 });
+    const { search, dateFrom, dateTo } = req.query;
+    const filter = { assignedTo: req.user._id };
+    
+    if (search) {
+      filter.$or = [
+        { name: { $regex: search, $options: "i" } },
+        { company: { $regex: search, $options: "i" } },
+        { email: { $regex: search, $options: "i" } },
+      ];
+    }
+    
+    // Date filtering
+    if (dateFrom || dateTo) {
+      filter.createdAt = {};
+      if (dateFrom) {
+        filter.createdAt.$gte = new Date(dateFrom);
+      }
+      if (dateTo) {
+        const toDate = new Date(dateTo);
+        toDate.setHours(23, 59, 59, 999);
+        filter.createdAt.$lte = toDate;
+      }
+    }
+    
+    const leads = await Lead.find(filter).sort({ createdAt: -1 });
     res.json(leads);
   } catch (err) {
     res.status(500).json({ message: err.message });

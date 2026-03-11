@@ -1,14 +1,27 @@
 import React, { useEffect, useState } from "react";
+import axios from "axios";
 import Sidebar from "./Sidebar";
-
-const CUSTOMERS_STORAGE_KEY = "crmCustomers";
 
 export default function Customers() {
   const [customers, setCustomers] = useState([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const storedCustomers = JSON.parse(localStorage.getItem(CUSTOMERS_STORAGE_KEY) || "[]");
-    setCustomers(storedCustomers);
+    const fetchCustomers = async () => {
+      try {
+        const token = localStorage.getItem("token");
+        const res = await axios.get("http://localhost:5000/api/contacts", {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        setCustomers(res.data);
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchCustomers();
   }, []);
 
   return (
@@ -23,7 +36,9 @@ export default function Customers() {
             </div>
           </div>
 
-          {customers.length === 0 ? (
+          {loading ? (
+            <p className="dashboard-subtitle">Loading customers...</p>
+          ) : customers.length === 0 ? (
             <p className="dashboard-subtitle">No customers yet. Convert a lead to populate this table.</p>
           ) : (
             <div className="chart-card">
