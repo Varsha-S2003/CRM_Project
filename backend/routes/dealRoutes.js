@@ -73,6 +73,42 @@ router.post("/", verifyToken, async (req, res) => {
   }
 });
 
+router.post("/bulk", verifyToken, async (req, res) => {
+  try {
+    const { deals } = req.body;
+    if (!Array.isArray(deals) || deals.length === 0) {
+      return res.status(400).json({ message: "Deals array required" });
+    }
+
+    const normalizedDeals = deals
+      .map((deal) => ({
+        name: String(deal.name || "").trim(),
+        company: String(deal.company || "").trim(),
+        amount: Number(deal.amount) || 0,
+        contact: String(deal.contact || "").trim(),
+        email: String(deal.email || "").trim(),
+        phone: String(deal.phone || "").trim(),
+        stage: deal.stage || "qualification",
+      }))
+      .filter((deal) => deal.name);
+
+    if (normalizedDeals.length === 0) {
+      return res.status(400).json({ message: "No valid deals found in import" });
+    }
+
+    const createdDeals = await Deal.insertMany(normalizedDeals);
+    await Promise.all(createdDeals.map((deal) => syncDealContact(deal)));
+
+    res.status(201).json({
+      message: `${createdDeals.length} deals imported successfully`,
+      count: createdDeals.length,
+      deals: createdDeals,
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
 router.put("/:id", verifyToken, async (req, res) => {
   try {
     const updates = { ...req.body };
