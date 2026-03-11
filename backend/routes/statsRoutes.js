@@ -4,12 +4,8 @@ const { verifyToken } = require("../middleware/authMiddleware");
 const isAdmin = require("../middleware/isAdmin");
 const User = require("../models/user");
 const Lead = require("../models/lead");
-<<<<<<< HEAD
 const Product = require("../models/product");
-
-=======
 const Deal = require("../models/deal");
->>>>>>> 4a685bfb5d7d5bf2f7aa3b5d56b6ad413ee0ff19
 
 // GET /api/stats - return some dashboard statistics (admin only)
 router.get("/", verifyToken, isAdmin, async (req, res) => {
@@ -90,3 +86,4 @@ router.get("/", verifyToken, isAdmin, async (req, res) => {
 });
 
 module.exports = router;
+
