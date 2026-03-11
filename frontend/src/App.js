@@ -424,13 +424,10 @@ function App() {
         <Route path="/employees" element={<Employees />} />
         <Route path="/reports" element={<Reports />} />
         <Route path="/settings" element={<Settings />} />
-<<<<<<< HEAD
         <Route path="/activities" element={<ActivityModule />} />
-=======
         <Route path="/products" element={<Products />} />
         <Route path="/inventory" element={<Inventory />} />
->>>>>>> bf512acb77558d0d630c7a57df7507f896003d97
-      </Routes>
+        </Routes>
     </BrowserRouter>
   );
 }
