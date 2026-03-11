@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import Sidebar from "./Sidebar";
 import "./Leads.css";
+import RecordActivityPanel from "./RecordActivityPanel";
 
 const stages = [
   { id: "qualification", name: "Qualification", color: "#3b82f6" },
@@ -416,6 +417,11 @@ function Deals() {
                   ))}
                 </div>
               </div>
+              <RecordActivityPanel
+                recordType="Deal"
+                recordId={selectedDeal._id}
+                recordName={selectedDeal.name}
+              />
               <button className="delete-btn-zoho" onClick={() => deleteDeal(selectedDeal._id)}>
                 Delete Deal
               </button>

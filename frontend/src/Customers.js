@@ -1,10 +1,13 @@
 import React, { useEffect, useState } from "react";
 import axios from "axios";
 import Sidebar from "./Sidebar";
+import RecordActivityPanel from "./RecordActivityPanel";
+import "./Leads.css";
 
 export default function Customers() {
   const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [selectedCustomer, setSelectedCustomer] = useState(null);
 
   useEffect(() => {
     const fetchCustomers = async () => {
@@ -55,7 +58,11 @@ export default function Customers() {
                 </thead>
                 <tbody>
                   {customers.map((customer) => (
-                    <tr key={customer._id}>
+                    <tr
+                      key={customer._id}
+                      style={{ cursor: "pointer" }}
+                      onClick={() => setSelectedCustomer(customer)}
+                    >
                       <td style={{ padding: "10px", borderBottom: "1px solid #f1f5f9" }}>{customer.name || "-"}</td>
                       <td style={{ padding: "10px", borderBottom: "1px solid #f1f5f9" }}>{customer.company || "-"}</td>
                       <td style={{ padding: "10px", borderBottom: "1px solid #f1f5f9" }}>{customer.email || "-"}</td>
@@ -70,6 +77,42 @@ export default function Customers() {
               </table>
             </div>
           )}
+
+          {selectedCustomer ? (
+            <div className="modal-overlay-zoho" onClick={() => setSelectedCustomer(null)}>
+              <div className="modal-box-zoho modal-view" onClick={(event) => event.stopPropagation()}>
+                <div className="modal-header-zoho">
+                  <h2>{selectedCustomer.name}</h2>
+                  <button className="modal-close" onClick={() => setSelectedCustomer(null)}>x</button>
+                </div>
+                <div className="lead-details-view">
+                  <div className="detail-row">
+                    <span className="detail-label">Company</span>
+                    <span className="detail-value">{selectedCustomer.company || "-"}</span>
+                  </div>
+                  <div className="detail-row">
+                    <span className="detail-label">Email</span>
+                    <span className="detail-value">{selectedCustomer.email || "-"}</span>
+                  </div>
+                  <div className="detail-row">
+                    <span className="detail-label">Phone</span>
+                    <span className="detail-value">{selectedCustomer.phone || "-"}</span>
+                  </div>
+                  <div className="detail-row">
+                    <span className="detail-label">Converted At</span>
+                    <span className="detail-value">
+                      {selectedCustomer.convertedAt ? new Date(selectedCustomer.convertedAt).toLocaleString() : "-"}
+                    </span>
+                  </div>
+                </div>
+                <RecordActivityPanel
+                  recordType="Contact"
+                  recordId={selectedCustomer._id}
+                  recordName={selectedCustomer.name}
+                />
+              </div>
+            </div>
+          ) : null}
         </div>
       </div>
     </div>

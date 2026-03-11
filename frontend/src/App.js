@@ -10,6 +10,7 @@ import Customers from "./Customers";
 import Employees from "./Employees";
 import Reports from "./Reports";
 import Settings from "./Settings";
+import ActivityModule from "./ActivityModule";
 
 // debugging: log imported components to catch undefined values
 // if you see 'undefined' for any of these it means the corresponding
@@ -30,6 +31,7 @@ console.log({
   Employees,
   Reports,
   Settings,
+  ActivityModule,
 });
 
 function Home() {
@@ -417,6 +419,7 @@ function App() {
         <Route path="/employees" element={<Employees />} />
         <Route path="/reports" element={<Reports />} />
         <Route path="/settings" element={<Settings />} />
+        <Route path="/activities" element={<ActivityModule />} />
       </Routes>
     </BrowserRouter>
   );

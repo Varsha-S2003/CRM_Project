@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import "./Leads.css";
 import Sidebar from "./Sidebar";
+import RecordActivityPanel from "./RecordActivityPanel";
 
 function Leads() {
   const [leads, setLeads] = useState([]);
@@ -613,6 +614,11 @@ function Leads() {
                   ))}
                 </div>
               </div>
+              <RecordActivityPanel
+                recordType="Lead"
+                recordId={selectedLead._id}
+                recordName={selectedLead.name}
+              />
               {isAdmin && (
                 <button className="delete-btn-zoho" onClick={() => handleDeleteLead(selectedLead._id)}>
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
