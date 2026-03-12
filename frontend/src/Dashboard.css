@@ -2,11 +2,15 @@
 .dashboard-layout {
   display: flex;
   min-height: 100vh;
+  width: 100%;
+  overflow: hidden;
 }
 
 .main-content {
   flex: 1;
+  min-width: 0;
   padding: 30px 40px;
+  overflow: hidden;
 }
 
 /* sidebar styles */
@@ -175,11 +179,15 @@
 /* Zoho Style Sidebar */
 .sidebar-zoho {
   width: 260px;
-  min-height: 100vh;
+  height: 100vh;
   background: linear-gradient(180deg, #1e293b 0%, #0f172a 100%);
   display: flex;
   flex-direction: column;
   padding: 16px;
+  position: sticky;
+  top: 0;
+  flex-shrink: 0;
+  overflow-y: auto;
 }
 
 .sidebar-brand {
@@ -259,6 +267,13 @@
 .sidebar-nav {
   flex: 1;
   overflow-y: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.sidebar-nav::-webkit-scrollbar {
+  width: 0;
+  height: 0;
 }
 
 .nav-section {
@@ -289,6 +304,14 @@
   transition: all 0.2s;
 }
 
+button.nav-item {
+  width: 100%;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+}
+
 .nav-item:hover {
   background: rgba(255, 255, 255, 0.05);
   color: white;
@@ -302,6 +325,81 @@
 
 .nav-item svg {
   flex-shrink: 0;
+}
+
+.nav-group {
+  margin-bottom: 2px;
+}
+
+.nav-item-parent {
+  justify-content: space-between;
+}
+
+.nav-item-parent > span:first-of-type {
+  flex: 1;
+}
+
+.nav-item-parent-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.nav-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  padding: 0;
+}
+
+.nav-icon-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.nav-chevron {
+  transition: transform 0.2s ease;
+}
+
+.nav-chevron.open {
+  transform: rotate(180deg);
+}
+
+.nav-submenu {
+  margin-top: 6px;
+  margin-left: 14px;
+  padding-left: 16px;
+  border-left: 1px solid rgba(148, 163, 184, 0.22);
+}
+
+.nav-subitem {
+  display: flex;
+  align-items: center;
+  min-height: 38px;
+  padding: 9px 12px;
+  margin-bottom: 4px;
+  border-radius: 8px;
+  color: #94a3b8;
+  text-decoration: none;
+  font-size: 14px;
+  transition: all 0.2s ease;
+}
+
+.nav-subitem:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: #ffffff;
+}
+
+.nav-subitem.active {
+  background: rgba(79, 70, 229, 0.28);
+  color: #ffffff;
 }
 
 .sidebar-footer {

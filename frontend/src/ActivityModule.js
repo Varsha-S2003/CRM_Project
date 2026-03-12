@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import axios from "axios";
+import { useSearchParams } from "react-router-dom";
 import {
   ResponsiveContainer,
   BarChart,
@@ -35,6 +36,39 @@ const TYPE_OPTIONS = [
 const PRIORITY_OPTIONS = ["Low", "Medium", "High"];
 const VIEW_OPTIONS = ["month", "week", "day"];
 const CHART_COLORS = ["#3b82f6", "#f97316", "#10b981", "#8b5cf6"];
+const TASK_BOARD_COLUMNS = ["Not Started", "Deferred", "In Progress", "Completed"];
+const MEETING_BOARD_COLUMNS = ["Scheduled", "Today", "Completed", "Cancelled"];
+const CALL_BOARD_COLUMNS = ["Scheduled", "Today", "Completed", "Missed"];
+const MODULE_CONFIG = {
+  all: {
+    title: "Activity Module",
+    description: "Tasks, meetings, calls, reminders, calendar scheduling, and linked CRM timelines.",
+    addLabel: "Add Activity",
+    sectionLabel: "Activities",
+    timelineLabel: "customer interactions",
+  },
+  task: {
+    title: "Tasks",
+    description: "Track pending work, follow-ups, reminders, and overdue task execution.",
+    addLabel: "Add Task",
+    sectionLabel: "Tasks",
+    timelineLabel: "task updates",
+  },
+  meeting: {
+    title: "Meetings",
+    description: "Manage scheduled meetings, participants, timing, and follow-up planning.",
+    addLabel: "Add Meeting",
+    sectionLabel: "Meetings",
+    timelineLabel: "meeting activity",
+  },
+  call: {
+    title: "Calls",
+    description: "Track call schedules, outcomes, reminders, and customer call history.",
+    addLabel: "Add Call",
+    sectionLabel: "Calls",
+    timelineLabel: "call activity",
+  },
+};
 
 const createDefaultForm = (ownerId, relatedOptions) => ({
   activityType: "task",
@@ -87,6 +121,40 @@ const endOfDay = (value) => {
   return date;
 };
 
+const getTaskBoardStatus = (status) => {
+  const normalized = (status || "").toLowerCase();
+  if (normalized === "completed") return "Completed";
+  if (normalized === "deferred") return "Deferred";
+  if (normalized === "in progress" || normalized === "inprogress") return "In Progress";
+  return "Not Started";
+};
+
+const getMeetingBoardStatus = (meeting) => {
+  const normalized = (meeting.status || "").toLowerCase();
+  if (normalized === "completed") return "Completed";
+  if (normalized === "cancelled") return "Cancelled";
+
+  const sourceDate = new Date(meeting.startDateTime || meeting.createdAt);
+  if (!Number.isNaN(sourceDate.getTime()) && sourceDate.toDateString() === new Date().toDateString()) {
+    return "Today";
+  }
+
+  return "Scheduled";
+};
+
+const getCallBoardStatus = (call) => {
+  const normalized = (call.status || "").toLowerCase();
+  if (normalized === "completed") return "Completed";
+  if (normalized === "missed" || normalized === "cancelled") return "Missed";
+
+  const sourceDate = new Date(call.startDateTime || call.createdAt);
+  if (!Number.isNaN(sourceDate.getTime()) && sourceDate.toDateString() === new Date().toDateString()) {
+    return "Today";
+  }
+
+  return "Scheduled";
+};
+
 const getMonthGrid = (baseDate) => {
   const firstDay = new Date(baseDate.getFullYear(), baseDate.getMonth(), 1);
   const startOffset = (firstDay.getDay() + 6) % 7;
@@ -101,13 +169,17 @@ const getMonthGrid = (baseDate) => {
 };
 
 function ActivityModule() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const initialType = searchParams.get("type");
   const [activities, setActivities] = useState([]);
   const [dashboard, setDashboard] = useState(null);
   const [reports, setReports] = useState(null);
   const [notifications, setNotifications] = useState([]);
   const [users, setUsers] = useState([]);
   const [relatedOptions, setRelatedOptions] = useState([]);
-  const [activeSidebar, setActiveSidebar] = useState("all");
+  const [activeSidebar, setActiveSidebar] = useState(
+    ["task", "meeting", "call"].includes(initialType) ? initialType : "all"
+  );
   const [filter, setFilter] = useState("all");
   const [activityType, setActivityType] = useState("all");
   const [ownerFilter, setOwnerFilter] = useState("all");
@@ -209,14 +281,28 @@ function ActivityModule() {
   }, [refreshAll]);
 
   useEffect(() => {
+    const nextType = searchParams.get("type");
+    if (["task", "meeting", "call"].includes(nextType)) {
+      setActiveSidebar(nextType);
+      return;
+    }
+    setActiveSidebar("all");
+  }, [searchParams]);
+
+  useEffect(() => {
     if (!toast) return undefined;
     const timer = setTimeout(() => setToast(null), 5000);
     return () => clearTimeout(timer);
   }, [toast]);
 
   const openCreateModal = () => {
+    const nextDefaultType = ["task", "meeting", "call"].includes(activeSidebar) ? activeSidebar : "task";
     setEditingActivity(null);
-    setForm(createDefaultForm(currentUserId, relatedOptions));
+    setForm({
+      ...createDefaultForm(currentUserId, relatedOptions),
+      activityType: nextDefaultType,
+      status: nextDefaultType === "task" ? "Pending" : "Scheduled",
+    });
     setShowModal(true);
   };
 
@@ -246,14 +332,70 @@ function ActivityModule() {
   }, [calendarActivities]);
 
   const today = startOfDay(new Date()).toISOString().slice(0, 10);
-  const statsCards = dashboard?.summary
-    ? [
-        { label: "Today's Activities", value: dashboard.summary.today, tone: "blue" },
-        { label: "Upcoming", value: dashboard.summary.upcoming, tone: "orange" },
-        { label: "Overdue", value: dashboard.summary.overdue, tone: "red" },
-        { label: "Completed", value: dashboard.summary.completed, tone: "green" },
-      ]
-    : [];
+  const currentModule = MODULE_CONFIG[activeSidebar] || MODULE_CONFIG.all;
+  const taskBoardColumns = useMemo(() => {
+    const columns = TASK_BOARD_COLUMNS.reduce((acc, label) => ({ ...acc, [label]: [] }), {});
+    activities.forEach((activity) => {
+      columns[getTaskBoardStatus(activity.status)].push(activity);
+    });
+    return columns;
+  }, [activities]);
+  const meetingBoardColumns = useMemo(() => {
+    const columns = MEETING_BOARD_COLUMNS.reduce((acc, label) => ({ ...acc, [label]: [] }), {});
+    activities.forEach((activity) => {
+      columns[getMeetingBoardStatus(activity)].push(activity);
+    });
+    return columns;
+  }, [activities]);
+  const callBoardColumns = useMemo(() => {
+    const columns = CALL_BOARD_COLUMNS.reduce((acc, label) => ({ ...acc, [label]: [] }), {});
+    activities.forEach((activity) => {
+      columns[getCallBoardStatus(activity)].push(activity);
+    });
+    return columns;
+  }, [activities]);
+  const filteredDashboardToday = useMemo(
+    () => (dashboard?.today || []).filter((item) => activeSidebar === "all" || item.activityType === activeSidebar),
+    [activeSidebar, dashboard]
+  );
+  const filteredDashboardUpcoming = useMemo(
+    () => (dashboard?.upcoming || []).filter((item) => activeSidebar === "all" || item.activityType === activeSidebar),
+    [activeSidebar, dashboard]
+  );
+  const filteredDashboardOverdue = useMemo(
+    () => (dashboard?.overdue || []).filter((item) => activeSidebar === "all" || item.activityType === activeSidebar),
+    [activeSidebar, dashboard]
+  );
+  const statsCards = useMemo(() => {
+    if (activeSidebar === "all") {
+      return dashboard?.summary
+        ? [
+            { label: "Today's Activities", value: dashboard.summary.today, tone: "blue" },
+            { label: "Upcoming", value: dashboard.summary.upcoming, tone: "orange" },
+            { label: "Overdue", value: dashboard.summary.overdue, tone: "red" },
+            { label: "Completed", value: dashboard.summary.completed, tone: "green" },
+          ]
+        : [];
+    }
+
+    const selectedActivities = activities.filter((item) => item.activityType === activeSidebar);
+    const upcomingCount = selectedActivities.filter((item) => {
+      const sourceDate = new Date(item.startDateTime || item.dueDate || item.createdAt);
+      return sourceDate >= startOfDay(new Date()) && item.status !== "Completed";
+    }).length;
+    const overdueCount = selectedActivities.filter((item) => {
+      const sourceDate = new Date(item.startDateTime || item.dueDate || item.createdAt);
+      return sourceDate < startOfDay(new Date()) && item.status !== "Completed";
+    }).length;
+    const completedCount = selectedActivities.filter((item) => item.status === "Completed").length;
+
+    return [
+      { label: `Today's ${currentModule.sectionLabel}`, value: filteredDashboardToday.length, tone: "blue" },
+      { label: `Upcoming ${currentModule.sectionLabel}`, value: upcomingCount, tone: "orange" },
+      { label: `Overdue ${currentModule.sectionLabel}`, value: overdueCount, tone: "red" },
+      { label: `Completed ${currentModule.sectionLabel}`, value: completedCount, tone: "green" },
+    ];
+  }, [activeSidebar, activities, currentModule.sectionLabel, dashboard, filteredDashboardToday.length]);
 
   const openEditModal = (activity) => {
     setEditingActivity(activity);
@@ -332,14 +474,271 @@ function ActivityModule() {
     await refreshAll();
   };
 
+  const renderTaskBoard = () => (
+    <div className="task-page">
+      <div className="task-page__header">
+        <div>
+          <h1>Tasks</h1>
+        </div>
+        <div className="task-page__top-actions">
+          <div className="task-page__search">
+            <input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search records"
+            />
+          </div>
+          <button className="task-page__create-btn" onClick={openCreateModal}>Create Task</button>
+        </div>
+      </div>
+
+      <div className="task-page__viewbar">
+        <button className="task-page__view-pill active">All Tasks</button>
+      </div>
+
+      <div className="task-page__toolbar">
+        <div className="task-page__toolbar-right">
+          <select value={filter} onChange={(event) => setFilter(event.target.value)} className="task-page__select">
+            <option value="all">Tasks by Status</option>
+            {FILTER_OPTIONS.map((item) => (
+              <option key={item.value} value={item.value}>{item.label}</option>
+            ))}
+          </select>
+          <select value={ownerFilter} onChange={(event) => setOwnerFilter(event.target.value)} className="task-page__select">
+            <option value="all">All Owners</option>
+            {users.map((user) => (
+              <option key={user._id} value={user._id}>{user.name || user.username}</option>
+            ))}
+          </select>
+          <select value={priorityFilter} onChange={(event) => setPriorityFilter(event.target.value)} className="task-page__select">
+            <option value="all">All Priorities</option>
+            {PRIORITY_OPTIONS.map((priority) => (
+              <option key={priority} value={priority}>{priority}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      <div className="task-board-layout">
+        <div className="task-board-scroll">
+          <section className="task-board">
+            {TASK_BOARD_COLUMNS.map((column) => (
+              <div key={column} className="task-column">
+                <div className="task-column__header">
+                  <div className="task-column__title">
+                    <span>{column}</span>
+                    <strong>{taskBoardColumns[column]?.length || 0}</strong>
+                  </div>
+                </div>
+                <div className="task-column__body">
+                  {(taskBoardColumns[column] || []).length === 0 ? (
+                    <div className="task-column__empty">No Tasks found.</div>
+                  ) : (
+                    (taskBoardColumns[column] || []).map((task) => (
+                      <article key={task._id} className="task-card">
+                        <button className="task-card__edit" onClick={() => openEditModal(task)} aria-label="Edit task">
+                          +
+                        </button>
+                        <h3>{task.title}</h3>
+                        <p>{formatDate(task.startDateTime || task.dueDate)}</p>
+                        <p>{task.priority}</p>
+                        <p>{task.owner?.name || task.owner?.username || "-"}</p>
+                        <p>{task.relatedTo?.recordName || "-"}</p>
+                        <div className="task-card__actions">
+                          {task.status !== "Completed" ? (
+                            <button onClick={() => handleComplete(task._id)}>Complete</button>
+                          ) : null}
+                          <button onClick={() => handleReschedule(task)}>Reschedule</button>
+                          <button onClick={() => handleDelete(task._id)}>Delete</button>
+                        </div>
+                      </article>
+                    ))
+                  )}
+                </div>
+              </div>
+            ))}
+          </section>
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderMeetingBoard = () => (
+    <div className="task-page meeting-page">
+      <div className="task-page__header">
+        <div>
+          <h1>Meetings</h1>
+        </div>
+        <div className="task-page__top-actions">
+          <div className="task-page__search">
+            <input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search meetings"
+            />
+          </div>
+          <button className="task-page__create-btn" onClick={openCreateModal}>Create Meeting</button>
+        </div>
+      </div>
+
+      <div className="task-page__viewbar">
+        <button className="task-page__view-pill active">All Meetings</button>
+      </div>
+
+      <div className="task-page__toolbar">
+        <div className="task-page__toolbar-right">
+          <select value={ownerFilter} onChange={(event) => setOwnerFilter(event.target.value)} className="task-page__select">
+            <option value="all">All Owners</option>
+            {users.map((user) => (
+              <option key={user._id} value={user._id}>{user.name || user.username}</option>
+            ))}
+          </select>
+          <select value={priorityFilter} onChange={(event) => setPriorityFilter(event.target.value)} className="task-page__select">
+            <option value="all">All Priorities</option>
+            {PRIORITY_OPTIONS.map((priority) => (
+              <option key={priority} value={priority}>{priority}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      <div className="task-board-layout">
+        <div className="task-board-scroll">
+          <section className="task-board">
+            {MEETING_BOARD_COLUMNS.map((column) => (
+              <div key={column} className="task-column">
+                <div className="task-column__header meeting-column__header">
+                  <div className="task-column__title">
+                    <span>{column}</span>
+                    <strong>{meetingBoardColumns[column]?.length || 0}</strong>
+                  </div>
+                </div>
+                <div className="task-column__body">
+                  {(meetingBoardColumns[column] || []).length === 0 ? (
+                    <div className="task-column__empty">No Meetings found.</div>
+                  ) : (
+                    (meetingBoardColumns[column] || []).map((meeting) => (
+                      <article key={meeting._id} className="task-card meeting-card">
+                        <button className="task-card__edit" onClick={() => openEditModal(meeting)} aria-label="Edit meeting">
+                          +
+                        </button>
+                        <h3>{meeting.title}</h3>
+                        <p>{formatDateTime(meeting.startDateTime || meeting.dueDate)}</p>
+                        <p>{meeting.location || "No location"}</p>
+                        <p>{meeting.owner?.name || meeting.owner?.username || "-"}</p>
+                        <p>{meeting.relatedTo?.recordName || "-"}</p>
+                        <div className="task-card__actions">
+                          {meeting.status !== "Completed" ? (
+                            <button onClick={() => handleComplete(meeting._id)}>Complete</button>
+                          ) : null}
+                          <button onClick={() => handleReschedule(meeting)}>Reschedule</button>
+                          <button onClick={() => handleDelete(meeting._id)}>Delete</button>
+                        </div>
+                      </article>
+                    ))
+                  )}
+                </div>
+              </div>
+            ))}
+          </section>
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderCallBoard = () => (
+    <div className="task-page call-page">
+      <div className="task-page__header">
+        <div>
+          <h1>Calls</h1>
+        </div>
+        <div className="task-page__top-actions">
+          <div className="task-page__search">
+            <input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search calls"
+            />
+          </div>
+          <button className="task-page__create-btn" onClick={openCreateModal}>Create Call</button>
+        </div>
+      </div>
+
+      <div className="task-page__viewbar">
+        <button className="task-page__view-pill active">All Calls</button>
+      </div>
+
+      <div className="task-page__toolbar">
+        <div className="task-page__toolbar-right">
+          <select value={ownerFilter} onChange={(event) => setOwnerFilter(event.target.value)} className="task-page__select">
+            <option value="all">All Owners</option>
+            {users.map((user) => (
+              <option key={user._id} value={user._id}>{user.name || user.username}</option>
+            ))}
+          </select>
+          <select value={priorityFilter} onChange={(event) => setPriorityFilter(event.target.value)} className="task-page__select">
+            <option value="all">All Priorities</option>
+            {PRIORITY_OPTIONS.map((priority) => (
+              <option key={priority} value={priority}>{priority}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      <div className="task-board-layout">
+        <div className="task-board-scroll">
+          <section className="task-board">
+            {CALL_BOARD_COLUMNS.map((column) => (
+              <div key={column} className="task-column">
+                <div className="task-column__header call-column__header">
+                  <div className="task-column__title">
+                    <span>{column}</span>
+                    <strong>{callBoardColumns[column]?.length || 0}</strong>
+                  </div>
+                </div>
+                <div className="task-column__body">
+                  {(callBoardColumns[column] || []).length === 0 ? (
+                    <div className="task-column__empty">No Calls found.</div>
+                  ) : (
+                    (callBoardColumns[column] || []).map((call) => (
+                      <article key={call._id} className="task-card call-card">
+                        <button className="task-card__edit" onClick={() => openEditModal(call)} aria-label="Edit call">
+                          +
+                        </button>
+                        <h3>{call.title}</h3>
+                        <p>{formatDateTime(call.startDateTime || call.dueDate)}</p>
+                        <p>{call.call?.callType || "Outbound"}</p>
+                        <p>{call.owner?.name || call.owner?.username || "-"}</p>
+                        <p>{call.relatedTo?.recordName || "-"}</p>
+                        <div className="task-card__actions">
+                          {call.status !== "Completed" ? (
+                            <button onClick={() => handleComplete(call._id)}>Complete</button>
+                          ) : null}
+                          <button onClick={() => handleReschedule(call)}>Reschedule</button>
+                          <button onClick={() => handleDelete(call._id)}>Delete</button>
+                        </div>
+                      </article>
+                    ))
+                  )}
+                </div>
+              </div>
+            ))}
+          </section>
+        </div>
+      </div>
+    </div>
+  );
+
   return (
     <div className="dashboard-layout">
       <Sidebar />
       <div className="main-content activity-module">
+        {activeSidebar === "task" ? renderTaskBoard() : activeSidebar === "meeting" ? renderMeetingBoard() : activeSidebar === "call" ? renderCallBoard() : (
+        <>
         <div className="activity-topbar">
           <div>
-            <h1>Activity Module</h1>
-            <p>Tasks, meetings, calls, reminders, calendar scheduling, and linked CRM timelines.</p>
+            <h1>{currentModule.title}</h1>
+            <p>{currentModule.description}</p>
           </div>
           <div className="activity-topbar__actions">
             <div className="notification-badge">
@@ -347,7 +746,7 @@ function ActivityModule() {
               <span>{notifications.length}</span>
             </div>
             <button className="activity-primary-btn" onClick={openCreateModal}>
-              Add Activity
+              {currentModule.addLabel}
             </button>
           </div>
         </div>
@@ -360,7 +759,14 @@ function ActivityModule() {
               <button
                 key={item.value}
                 className={activeSidebar === item.value ? "active" : ""}
-                onClick={() => setActiveSidebar(item.value)}
+                onClick={() => {
+                  setActiveSidebar(item.value);
+                  if (["task", "meeting", "call"].includes(item.value)) {
+                    setSearchParams({ type: item.value });
+                  } else {
+                    setSearchParams({});
+                  }
+                }}
               >
                 {item.label}
               </button>
@@ -381,11 +787,13 @@ function ActivityModule() {
                   <option key={item.value} value={item.value}>{item.label}</option>
                 ))}
               </select>
-              <select value={activityType} onChange={(event) => setActivityType(event.target.value)}>
-                {TYPE_OPTIONS.map((item) => (
-                  <option key={item.value} value={item.value}>{item.label}</option>
-                ))}
-              </select>
+              {activeSidebar === "all" ? (
+                <select value={activityType} onChange={(event) => setActivityType(event.target.value)}>
+                  {TYPE_OPTIONS.map((item) => (
+                    <option key={item.value} value={item.value}>{item.label}</option>
+                  ))}
+                </select>
+              ) : null}
               <select value={ownerFilter} onChange={(event) => setOwnerFilter(event.target.value)}>
                 <option value="all">All Owners</option>
                 {users.map((user) => (
@@ -411,9 +819,9 @@ function ActivityModule() {
 
             <div className="activity-dashboard-sections">
               <div className="activity-dashboard-card">
-                <h3>Today's Activities</h3>
+                <h3>Today's {currentModule.sectionLabel}</h3>
                 <div className="activity-section-list">
-                  {(dashboard?.today || []).slice(0, 4).map((item) => (
+                  {filteredDashboardToday.slice(0, 4).map((item) => (
                     <div key={item._id} className="activity-section-item">
                       <span className={`activity-pill ${item.activityType}`}>{item.activityType}</span>
                       <div>
@@ -425,9 +833,9 @@ function ActivityModule() {
                 </div>
               </div>
               <div className="activity-dashboard-card">
-                <h3>Upcoming Activities</h3>
+                <h3>Upcoming {currentModule.sectionLabel}</h3>
                 <div className="activity-section-list">
-                  {(dashboard?.upcoming || []).slice(0, 4).map((item) => (
+                  {filteredDashboardUpcoming.slice(0, 4).map((item) => (
                     <div key={item._id} className="activity-section-item">
                       <span className={`activity-pill ${item.activityType}`}>{item.activityType}</span>
                       <div>
@@ -439,9 +847,9 @@ function ActivityModule() {
                 </div>
               </div>
               <div className="activity-dashboard-card">
-                <h3>Overdue Activities</h3>
+                <h3>Overdue {currentModule.sectionLabel}</h3>
                 <div className="activity-section-list">
-                  {(dashboard?.overdue || []).slice(0, 4).map((item) => (
+                  {filteredDashboardOverdue.slice(0, 4).map((item) => (
                     <div key={item._id} className="activity-section-item">
                       <span className={`activity-pill ${item.activityType}`}>{item.activityType}</span>
                       <div>
@@ -456,8 +864,12 @@ function ActivityModule() {
 
             <div className="activity-table-card">
               <div className="activity-card-header">
-                <h2>Activity Dashboard</h2>
-                <p>Unified list of tasks, meetings, and calls with quick actions.</p>
+                <h2>{currentModule.title} Dashboard</h2>
+                <p>
+                  {activeSidebar === "all"
+                    ? "Unified list of tasks, meetings, and calls with quick actions."
+                    : `${currentModule.sectionLabel} only view with quick actions.`}
+                </p>
               </div>
               {loading ? (
                 <p>Loading activities...</p>
@@ -508,7 +920,7 @@ function ActivityModule() {
               <div className="activity-calendar-card">
                 <div className="activity-card-header">
                   <div>
-                    <h2>Calendar View</h2>
+                    <h2>{currentModule.title} Calendar</h2>
                     <p>Day, week, and month planning with drag-and-drop rescheduling.</p>
                   </div>
                   <div className="calendar-controls">
@@ -604,8 +1016,12 @@ function ActivityModule() {
 
               <div className="activity-reports-card">
                 <div className="activity-card-header">
-                  <h2>Activity Reports</h2>
-                  <p>Tasks completed, overdue tasks, meetings scheduled, and call logs.</p>
+                  <h2>{currentModule.title} Reports</h2>
+                  <p>
+                    {activeSidebar === "all"
+                      ? "Tasks completed, overdue tasks, meetings scheduled, and call logs."
+                      : `${currentModule.sectionLabel} metrics and ownership breakdown.`}
+                  </p>
                 </div>
 
                 <div className="activity-report-metrics">
@@ -645,8 +1061,8 @@ function ActivityModule() {
 
             <div className="activity-timeline-card">
               <div className="activity-card-header">
-                <h2>Activity Timeline</h2>
-                <p>Chronological view of all customer interactions for quick follow-up.</p>
+                <h2>{currentModule.title} Timeline</h2>
+                <p>Chronological view of {currentModule.timelineLabel} for quick follow-up.</p>
               </div>
               <div className="timeline-list">
                 {activities.slice(0, 8).map((activity) => (
@@ -664,6 +1080,8 @@ function ActivityModule() {
             </div>
           </div>
         </div>
+        </>
+        )}
         {showModal ? (
           <div className="activity-modal-overlay" onClick={() => setShowModal(false)}>
             <div className="activity-modal" onClick={(event) => event.stopPropagation()}>
