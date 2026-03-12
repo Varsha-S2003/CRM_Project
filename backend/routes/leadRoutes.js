@@ -111,6 +111,41 @@ router.post("/", verifyToken, async (req, res) => {
   }
 });
 
+// POST /api/leads/bulk -- create multiple leads from CSV import
+router.post("/bulk", verifyToken, async (req, res) => {
+  try {
+    const { leads } = req.body;
+    if (!Array.isArray(leads) || leads.length === 0) {
+      return res.status(400).json({ message: "Leads array required" });
+    }
+
+    const normalizedLeads = leads
+      .map((lead) => ({
+        name: String(lead.name || "").trim(),
+        company: String(lead.company || "").trim(),
+        email: String(lead.email || "").trim(),
+        phone: String(lead.phone || "").trim(),
+        source: String(lead.source || "").trim(),
+        status: lead.status || "new",
+        notes: String(lead.notes || "").trim(),
+      }))
+      .filter((lead) => lead.name);
+
+    if (normalizedLeads.length === 0) {
+      return res.status(400).json({ message: "No valid leads found in import" });
+    }
+
+    const createdLeads = await Lead.insertMany(normalizedLeads);
+    res.status(201).json({
+      message: `${createdLeads.length} leads imported successfully`,
+      count: createdLeads.length,
+      leads: createdLeads,
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
 // PUT /api/leads/:id -- update lead status or details
 // employees may only update leads assigned to them; managers/admin can update any
 router.put("/:id", verifyToken, async (req, res) => {
