@@ -1,7 +1,7 @@
 import { useState } from "react";
 import axios from "axios";
 import { FiEye, FiEyeOff } from "react-icons/fi";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import "./Login.css";
 
 export default function Login() {
@@ -34,6 +34,7 @@ export default function Login() {
       const { token, user } = resp.data;
       localStorage.setItem("token", token);
       localStorage.setItem("userId", user.id || user._id || "");
+      localStorage.setItem("name", user.name || "");
       localStorage.setItem("username", user.username);
       localStorage.setItem("role", user.role);
       localStorage.setItem("employee_id", user.employee_id || "");
@@ -79,15 +80,11 @@ export default function Login() {
           <div className="form-group-zoho">
             <label htmlFor="identifier">Email or Username</label>
             <div className="input-wrapper">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M4 4h16v16H4z" />
-              </svg>
               <input
                 id="identifier"
                 type="text"
                 value={identifier}
                 onChange={(e) => setIdentifier(e.target.value)}
-                placeholder="email@domain.com or username"
               />
             </div>
           </div>
@@ -107,7 +104,6 @@ export default function Login() {
                 type={showPassword ? "text" : "password"}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="********"
               />
               <button
                 type="button"
@@ -125,9 +121,9 @@ export default function Login() {
               <span className="checkmark"></span>
               Remember me
             </label>
-            <a href="/" className="forgot-link">
+            <Link to="/forgot-password" className="forgot-link">
               Forgot password?
-            </a>
+            </Link>
           </div>
 
           <button className="login-btn-zoho" type="submit" disabled={loading}>

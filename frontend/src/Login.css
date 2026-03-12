@@ -5,7 +5,12 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #1e293b 0%, #334155 50%, #1e293b 100%);
+  background:
+    radial-gradient(circle at top left, rgba(255, 182, 193, 0.45), transparent 26%),
+    radial-gradient(circle at top right, rgba(125, 211, 252, 0.38), transparent 28%),
+    radial-gradient(circle at bottom left, rgba(196, 181, 253, 0.42), transparent 30%),
+    radial-gradient(circle at bottom right, rgba(134, 239, 172, 0.3), transparent 24%),
+    linear-gradient(145deg, #fdfbff 0%, #f3f8ff 45%, #eefbf6 100%);
   padding: 20px;
   position: relative;
   overflow: hidden;
@@ -18,15 +23,36 @@
   left: 0;
   right: 0;
   bottom: 0;
-  background: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.03'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.35) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.35) 1px, transparent 1px);
+  background-size: 42px 42px;
+  mask-image: radial-gradient(circle at center, black 45%, transparent 90%);
+  opacity: 0.55;
+}
+
+.login-wrapper-zoho::after {
+  content: '';
+  position: absolute;
+  inset: 8% 10% auto auto;
+  width: 280px;
+  height: 280px;
+  border-radius: 38% 62% 59% 41% / 43% 37% 63% 57%;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.85), rgba(255, 255, 255, 0.25));
+  border: 1px solid rgba(255, 255, 255, 0.65);
+  box-shadow: 0 20px 50px rgba(148, 163, 184, 0.22);
+  filter: blur(2px);
+  transform: rotate(-12deg);
 }
 
 .login-container-zoho {
   width: 100%;
   max-width: 420px;
-  background: white;
-  border-radius: 16px;
-  box-shadow: 0 25px 80px rgba(0, 0, 0, 0.3);
+  background: rgba(255, 255, 255, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.88);
+  border-radius: 20px;
+  box-shadow: 0 28px 80px rgba(148, 163, 184, 0.28);
+  backdrop-filter: blur(18px);
   padding: 40px;
   position: relative;
   z-index: 1;
@@ -80,6 +106,19 @@
   margin-bottom: 20px;
 }
 
+.login-success {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #ecfdf5;
+  border: 1px solid #a7f3d0;
+  color: #047857;
+  padding: 12px 16px;
+  border-radius: 10px;
+  font-size: 14px;
+  margin-bottom: 20px;
+}
+
 /* Form */
 .login-form-zoho {
   display: flex;
@@ -114,7 +153,7 @@
 
 .input-wrapper input {
   width: 100%;
-  padding: 14px 14px 14px 44px;
+  padding: 14px;
   border-radius: 10px;
   border: 2px solid #e2e8f0;
   font-size: 14px;
@@ -260,6 +299,37 @@
 }
 
 .forgot-link:hover {
+  text-decoration: underline;
+}
+
+.auth-link-row {
+  margin-top: 18px;
+  text-align: center;
+}
+
+.dev-reset-box {
+  margin-bottom: 20px;
+  padding: 14px 16px;
+  border-radius: 10px;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+}
+
+.dev-reset-label {
+  margin: 0 0 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #1e3a8a;
+}
+
+.dev-reset-link {
+  color: #2563eb;
+  font-size: 13px;
+  word-break: break-all;
+  text-decoration: none;
+}
+
+.dev-reset-link:hover {
   text-decoration: underline;
 }
 

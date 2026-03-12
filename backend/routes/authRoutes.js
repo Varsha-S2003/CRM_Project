@@ -4,20 +4,23 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const User = require("../models/user");
 const crypto = require("crypto");
-require("dotenv").config();
+const { sendPasswordResetEmail } = require("../utils/mailer");
+const AppSettings = require("../models/appSettings");
+
+function isProductionEnv() {
+  return process.env.NODE_ENV === "production";
+}
 
 // POST /api/auth/login - Login with email or username
 router.post("/login", async (req, res) => {
   try {
     const { email, username, password } = req.body;
     
-    // Support login with email OR username
     const loginField = email || username;
     if (!loginField || !password) {
       return res.status(400).json({ message: "Please provide email/username and password" });
     }
 
-    // Find user by email or username
     const user = await User.findOne({
       $or: [{ email: loginField }, { username: loginField }]
     });
@@ -53,7 +56,7 @@ router.post("/login", async (req, res) => {
 // POST /api/auth/forgot-password - Request password reset
 router.post("/forgot-password", async (req, res) => {
   try {
-    const { email } = req.body;
+    const email = req.body.email?.trim().toLowerCase();
     
     if (!email) {
       return res.status(400).json({ message: "Please provide your email address" });
@@ -61,25 +64,57 @@ router.post("/forgot-password", async (req, res) => {
 
     const user = await User.findOne({ email });
     
-    // For security, don't reveal if email exists or not
-    // But for development, we'll return a message
     if (!user) {
-      return res.status(404).json({ message: "Email not found in our records" });
+      // Don't reveal if email exists - show success anyway
+      return res.json({
+        message: "If an account exists with this email, a reset link has been sent."
+      });
     }
 
-    // Generate reset token (valid for 1 hour)
     const resetToken = crypto.randomBytes(32).toString("hex");
-    const resetTokenExpiry = Date.now() + 3600000; // 1 hour
+    const hashedResetToken = crypto
+      .createHash("sha256")
+      .update(resetToken)
+      .digest("hex");
 
-    // In production, you would save this to the database
-    // For now, we'll generate a simple reset token that would be sent via email
-    console.log(`Password reset token for ${email}: ${resetToken}`);
-    
-    res.json({ 
-      message: "Password reset link has been sent to your email",
-      // For testing purposes, include the token (remove in production)
-      testToken: resetToken 
-    });
+    user.resetPasswordToken = hashedResetToken;
+    user.resetPasswordExpires = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+    await user.save();
+
+    // fetch frontend base url from settings (allows changing without editing .env)
+    const settings = await AppSettings.findOne();
+    const frontendBaseUrl =
+      settings?.frontendUrl || process.env.FRONTEND_URL || "http://localhost:3000";
+    const resetUrl = `${frontendBaseUrl.replace(/\/$/, "")}/reset-password?token=${resetToken}`;
+
+    // Send password reset email
+    try {
+      const { preview } = await sendPasswordResetEmail({
+        to: user.email,
+        resetUrl,
+        name: user.name || user.username
+      });
+      
+      const response = { message: "Password reset link has been sent to your email address." };
+      // in development show preview URL so tester can click directly
+      if (preview && !isProductionEnv()) {
+        response.previewUrl = preview;
+      }
+      res.json(response);
+    } catch (emailError) {
+      console.error("Email error:", emailError.message);
+      
+      // Clear the reset token if email fails
+      user.resetPasswordToken = null;
+      user.resetPasswordExpires = null;
+      await user.save();
+      
+      // include the internal message in development for easier debugging
+      const generic = "Failed to send reset email. Please check email configuration.";
+      res.status(500).json({ 
+        message: !isProductionEnv() ? `${generic} (${emailError.message})` : generic 
+      });
+    }
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -98,11 +133,26 @@ router.post("/reset-password", async (req, res) => {
       return res.status(400).json({ message: "Password must be at least 6 characters" });
     }
 
-    // In production, you would verify the token from database
-    // For now, we'll just update the password (simplified for demo)
-    // In real implementation, you'd check the token expiry and find the user
+    const hashedToken = crypto
+      .createHash("sha256")
+      .update(token)
+      .digest("hex");
+
+    const user = await User.findOne({
+      resetPasswordToken: hashedToken,
+      resetPasswordExpires: { $gt: new Date() }
+    });
+
+    if (!user) {
+      return res.status(400).json({ message: "This reset link is invalid or has expired" });
+    }
+
+    user.password = await bcrypt.hash(newPassword, 10);
+    user.resetPasswordToken = null;
+    user.resetPasswordExpires = null;
+    await user.save();
     
-    res.json({ message: "Password has been reset successfully" });
+    res.json({ message: "Password changed successfully. Please login with your new password." });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
