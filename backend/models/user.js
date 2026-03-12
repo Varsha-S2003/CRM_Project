@@ -1,5 +1,36 @@
 const mongoose = require("mongoose");
 
+const userSettingsSchema = new mongoose.Schema(
+  {
+    preferences: {
+      theme: { type: String, default: "light" },
+      density: { type: String, default: "comfortable" },
+      language: { type: String, default: "English" },
+      timezone: { type: String, default: "Asia/Kolkata" },
+      emailNotifications: { type: Boolean, default: true },
+      desktopNotifications: { type: Boolean, default: false }
+    },
+    managerSettings: {
+      leadVisibility: { type: String, default: "team" },
+      dealApprovalLimit: { type: Number, default: 50000 },
+      weeklyDigest: { type: Boolean, default: true },
+      performanceNotifications: { type: Boolean, default: true }
+    },
+    employeeSettings: {
+      dashboardLayout: { type: String, default: "focus" },
+      leadReminders: { type: Boolean, default: true },
+      taskNotifications: { type: Boolean, default: true },
+      dailySummary: { type: Boolean, default: false }
+    },
+    adminSettings: {
+      onboardingEmails: { type: Boolean, default: true },
+      auditAlerts: { type: Boolean, default: true },
+      approvalMode: { type: String, default: "balanced" }
+    }
+  },
+  { _id: false }
+);
+
 const userSchema = new mongoose.Schema({
   name: {
     type: String,
@@ -40,6 +71,18 @@ const userSchema = new mongoose.Schema({
     type: String,
     unique: true,
     sparse: true // Allows null values but ensures uniqueness when present
+  },
+  resetPasswordToken: {
+    type: String,
+    default: null
+  },
+  resetPasswordExpires: {
+    type: Date,
+    default: null
+  },
+  settings: {
+    type: userSettingsSchema,
+    default: () => ({})
   }
 }, { timestamps: true });
 

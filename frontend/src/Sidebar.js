@@ -1,10 +1,21 @@
-
 import React, { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import "./Dashboard.css";
 
 function Sidebar() {
   const role = localStorage.getItem("role");
+  const storedName = localStorage.getItem("name");
+  const storedUsername = localStorage.getItem("username");
+  const normalizedRole = (role || "").toUpperCase();
+  const displayName =
+    storedName && storedName !== "undefined" && storedName !== "null"
+      ? storedName
+      : storedUsername && storedUsername !== "undefined" && storedUsername !== "null"
+        ? storedUsername
+        : normalizedRole === "EMPLOYEE"
+          ? "Employee User"
+          : "Admin User";
+  const profilePath = normalizedRole === "ADMIN" ? "/employees" : "/dashboard";
   const navigate = useNavigate();
   const location = useLocation();
   const [activitiesOpen, setActivitiesOpen] = useState(location.pathname.startsWith("/activities"));
@@ -39,7 +50,7 @@ function Sidebar() {
   };
 
   // compute role-based visibility once
-  const roles = (role || "").toUpperCase().split(/\s*,\s*/);
+  const roles = normalizedRole.split(/\s*,\s*/);
 
   const canSee = (allowed) => {
     if (!allowed || allowed.length === 0) return true;
@@ -63,7 +74,11 @@ function Sidebar() {
         </div>
       </div>
       
-      <div className="sidebar-user">
+      <button
+        type="button"
+        className="sidebar-user sidebar-user-button"
+        onClick={() => navigate(profilePath)}
+      >
         <div className="user-avatar">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
@@ -71,16 +86,20 @@ function Sidebar() {
           </svg>
         </div>
         <div className="user-details">
-          <span className="user-name">Admin User</span>
-          <span className="user-role">{role || 'Admin'}</span>
+          <span className="user-name">{displayName}</span>
+          <span className="user-role">{normalizedRole || "ADMIN"}</span>
         </div>
-      </div>
+      </button>
 
       <nav className="sidebar-nav">
         <div className="nav-section">
           <span className="nav-section-title">Main</span>
           {canSee(["ADMIN","MANAGER","EMPLOYEE"]) && (
-            <a href="/" onClick={(e) => handleNav("/dashboard", e)} className={`nav-item ${isActive("/dashboard") ? "active" : ""}`}>
+            <a
+              href="/"
+              onClick={(e) => handleNav("/dashboard", e)}
+              className={`nav-item ${isActive("/dashboard") ? "active" : ""}`}
+            >
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <rect x="3" y="3" width="7" height="7"></rect>
                 <rect x="14" y="3" width="7" height="7"></rect>
@@ -91,7 +110,11 @@ function Sidebar() {
             </a>
           )}
           {canSee(["ADMIN","MANAGER","EMPLOYEE"]) && (
-            <a href="/" onClick={(e) => handleNav("/leads", e)} className={`nav-item ${isActive("/leads") ? "active" : ""}`}>
+            <a
+              href="/"
+              onClick={(e) => handleNav("/leads", e)}
+              className={`nav-item ${isActive("/leads") ? "active" : ""}`}
+            >
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
                 <circle cx="9" cy="7" r="4"></circle>
@@ -102,7 +125,11 @@ function Sidebar() {
             </a>
           )}
           {canSee(["ADMIN","MANAGER","EMPLOYEE"]) && (
-            <a href="/" onClick={(e) => handleNav("/deals", e)} className={`nav-item ${isActive("/deals") ? "active" : ""}`}>
+            <a
+              href="/"
+              onClick={(e) => handleNav("/deals", e)}
+              className={`nav-item ${isActive("/deals") ? "active" : ""}`}
+            >
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <rect x="3" y="7" width="18" height="13" rx="2"></rect>
                 <path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"></path>
@@ -112,7 +139,11 @@ function Sidebar() {
             </a>
           )}
           {canSee(["ADMIN","MANAGER","EMPLOYEE"]) && (
-            <a href="/" onClick={(e) => handleNav("/products", e)} className={`nav-item ${isActive("/products") ? "active" : ""}`}>
+            <a
+              href="/"
+              onClick={(e) => handleNav("/products", e)}
+              className={`nav-item ${isActive("/products") ? "active" : ""}`}
+            >
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
                 <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
@@ -122,7 +153,11 @@ function Sidebar() {
             </a>
           )}
           {canSee(["ADMIN","MANAGER"]) && (
-            <a href="/" onClick={(e) => handleNav("/inventory", e)} className={`nav-item ${isActive("/inventory") ? "active" : ""}`}>
+            <a
+              href="/"
+              onClick={(e) => handleNav("/inventory", e)}
+              className={`nav-item ${isActive("/inventory") ? "active" : ""}`}
+            >
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"></path>
                 <line x1="3" y1="6" x2="21" y2="6"></line>
@@ -132,7 +167,11 @@ function Sidebar() {
             </a>
           )}
           {canSee(["ADMIN","MANAGER"]) && (
-            <a href="/" onClick={(e) => handleNav("/customers", e)} className={`nav-item ${isActive("/customers") ? "active" : ""}`}>
+            <a
+              href="/"
+              onClick={(e) => handleNav("/customers", e)}
+              className={`nav-item ${isActive("/customers") ? "active" : ""}`}
+            >
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <circle cx="12" cy="7" r="4"></circle>
                 <path d="M5.5 21h13a2 2 0 0 0 2-2v-2a7 7 0 0 0-14 0v2a2 2 0 0 0 2 2z"></path>
@@ -184,7 +223,7 @@ function Sidebar() {
                   </svg>
                 </span>
               </button>
-              {activitiesOpen ? (
+              {activitiesOpen && (
                 <div className="nav-submenu">
                   <a
                     href="/"
@@ -208,35 +247,64 @@ function Sidebar() {
                     <span>Calls</span>
                   </a>
                 </div>
-              ) : null}
+              )}
             </div>
           )}
         </div>
 
         <div className="nav-section">
           <span className="nav-section-title">Admin</span>
-          <a href="/" onClick={(e) => handleNav("/add-employee", e)} className={`nav-item ${isActive("/add-employee") ? "active" : ""}`}>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
-              <circle cx="8.5" cy="7" r="4"></circle>
-              <line x1="20" y1="8" x2="20" y2="14"></line>
-              <line x1="23" y1="11" x2="17" y2="11"></line>
-            </svg>
-            <span>Users</span>
-          </a>
-          <a href="/" className={`nav-item ${isActive("/reports") ? "active" : ""}`}>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <line x1="18" y1="20" x2="18" y2="10"></line>
-              <line x1="12" y1="20" x2="12" y2="4"></line>
-              <line x1="6" y1="20" x2="6" y2="14"></line>
-            </svg>
-            <span>Reports</span>
-          </a>
           {canSee(["ADMIN"]) && (
-            <a href="/" onClick={(e) => handleNav("/settings", e)} className={`nav-item ${isActive("/settings") ? "active" : ""}`}>
+            <a
+              href="/"
+              onClick={(e) => handleNav("/employees", e)}
+              className={`nav-item ${isActive("/employees") ? "active" : ""}`}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                <circle cx="8.5" cy="7" r="4"></circle>
+                <line x1="20" y1="8" x2="20" y2="14"></line>
+                <line x1="23" y1="11" x2="17" y2="11"></line>
+              </svg>
+              <span>Users</span>
+            </a>
+          )}
+          {canSee(["ADMIN"]) && (
+            <a
+              href="/"
+              onClick={(e) => handleNav("/add-employee", e)}
+              className={`nav-item ${isActive("/add-employee") ? "active" : ""}`}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M12 5v14"></path>
+                <path d="M5 12h14"></path>
+              </svg>
+              <span>Add Employee</span>
+            </a>
+          )}
+          {canSee(["ADMIN","MANAGER"]) && (
+            <a
+              href="/"
+              onClick={(e) => handleNav("/reports", e)}
+              className={`nav-item ${isActive("/reports") ? "active" : ""}`}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <line x1="18" y1="20" x2="18" y2="10"></line>
+                <line x1="12" y1="20" x2="12" y2="4"></line>
+                <line x1="6" y1="20" x2="6" y2="14"></line>
+              </svg>
+              <span>Reports</span>
+            </a>
+          )}
+          {canSee(["ADMIN","MANAGER","EMPLOYEE"]) && (
+            <a
+              href="/"
+              onClick={(e) => handleNav("/settings", e)}
+              className={`nav-item ${isActive("/settings") ? "active" : ""}`}
+            >
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <circle cx="12" cy="12" r="3"></circle>
-                <path d="M19.4 15a1.94 1.94 0 0 0 .33 2l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.94 1.94 0 0 0-2-.33 1.94 1.94 0 0 0-1 1.66V21a2 2 0 0 1-4 0v-.09a1.94 1.94 0 0 0-1-1.66 1.94 1.94 0 0 0-2 .33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.94 1.94 0 0 0 .33-2 1.94 1.94 0 0 0-1.66-1H3a2 2 0 0 1 0-4h.09a1.94 1.94 0 0 0 1.66-1 1.94 1.94 0 0 0-.33-2l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.94 1.94 0 0 0 2 .33h.06a1.94 1.94 0 0 0 1-1.66V3a2 2 0 0 1 4 0v.09a1.94 1.94 0 0 0 1 1.66h.06a1.94 1.94 0 0 0 2-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.94 1.94 0 0 0-.33 2 1.94 1.94 0 0 0 1.66 1H21a2 2 0 0 1 0 4h-.09a1.94 1.94 0 0 0-1.66 1z"></path>
+                <path d="M19.4 15a1.94 1.94 0 0 0 .33 2l.06 .06a2 2 0 0 1-2.83 2.83l-.06-.06a1.94 1.94 0 0 0-2-.33 1.94 1.94 0 0 0-1 1.66V21a2 2 0 0 1-4 0v-.09a1.94 1.94 0 0 0-1-1.66 1.94 1.94 0 0 0-2 .33l-.06 .06a2 2 0 0 1-2.83-2.83l .06-.06a1.94 1.94 0 0 0 .33-2 1.94 1.94 0 0 0-1.66-1H3a2 2 0 0 1 0-4h .09a1.94 1.94 0 0 0 1.66-1 1.94 1.94 0 0 0-.33-2l-.06-.06a2 2 0 0 1 2.83-2.83l .06 .06a1.94 1.94 0 0 0 2 .33h .06a1.94 1.94 0 0 0 1-1.66V3a2 2 0 0 1 4 0v .09a1.94 1.94 0 0 0 1 1.66h .06a1.94 1.94 0 0 0 2-.33l .06-.06a2 2 0 0 1 2.83 2.83l-.06 .06a1.94 1.94 0 0 0-.33 2 1.94 1.94 0 0 0 1.66 1H21a2 2 0 0 1 0 4h-.09a1.94 1.94 0 0 0-1.66 1z"></path>
               </svg>
               <span>Settings</span>
             </a>
@@ -259,5 +327,4 @@ function Sidebar() {
 }
 
 export default Sidebar;
-
 

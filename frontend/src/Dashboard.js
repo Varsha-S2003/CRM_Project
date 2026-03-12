@@ -18,15 +18,17 @@ import Sidebar from "./Sidebar";
 
 function Dashboard() {
   const role = localStorage.getItem("role");
-  const username = localStorage.getItem("username") || "User";
+  const storedName = localStorage.getItem("name");
+  const storedUsername = localStorage.getItem("username");
+  const username =
+    storedName && storedName !== "undefined" && storedName !== "null"
+      ? storedName
+      : storedUsername && storedUsername !== "undefined" && storedUsername !== "null"
+        ? storedUsername
+        : "User";
   const employee_id = localStorage.getItem("employee_id") || "";
   const navigate = useNavigate();
   const [stats, setStats] = useState(null);
-
-  const handleLogout = () => {
-    localStorage.clear();
-    navigate("/");
-  };
 
   // Make role check case-insensitive
   const userRole = role ? role.toUpperCase() : "";
@@ -217,11 +219,6 @@ function Dashboard() {
               </Bar>
             </BarChart>
           </div>
-
-          <button className="logout-btn" onClick={handleLogout}>
-            Logout
-          </button>
-
         </div>
       </div>
     </div>

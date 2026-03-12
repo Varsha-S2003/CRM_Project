@@ -45,9 +45,25 @@ app.use("/api/products", productRoutes);
 const inventoryRoutes = require("./routes/inventoryRoutes");
 app.use("/api/inventory", inventoryRoutes);
 
+const settingsRoutes = require("./routes/settingsRoutes");
+app.use("/api/settings", settingsRoutes);
+
 // MongoDB Atlas connection
 mongoose.connect(process.env.MONGO_URI)
-.then(() => console.log("MongoDB Atlas Connected"))
+.then(async () => {
+  console.log("MongoDB Atlas Connected");
+  // make sure we have a settings document; admins may not have visited the settings page yet
+  try {
+    const AppSettings = require("./models/appSettings");
+    let s = await AppSettings.findOne();
+    if (!s) {
+      await AppSettings.create({});
+      console.log("Created default AppSettings document");
+    }
+  } catch (e) {
+    console.error("Failed to initialize app settings:", e.message);
+  }
+})
 .catch(err => console.log(err));
 
 // test route

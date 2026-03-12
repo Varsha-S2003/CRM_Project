@@ -215,15 +215,19 @@
 }
 
 .brand-name {
-  font-size: 16px;
+  font-size: 22px;
   font-weight: 700;
   color: white;
+  letter-spacing: -0.02em;
+  text-transform: none;
 }
 
 .brand-tag {
-  font-size: 11px;
-  color: #94a3b8;
-  font-weight: 500;
+  font-size: 13px;
+  color: #cbd5e1;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
 }
 
 .sidebar-user {
@@ -234,6 +238,19 @@
   background: rgba(255, 255, 255, 0.05);
   border-radius: 10px;
   margin-bottom: 24px;
+}
+
+.sidebar-user-button {
+  width: 100%;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.2s ease, transform 0.2s ease;
+}
+
+.sidebar-user-button:hover {
+  background: rgba(255, 255, 255, 0.09);
+  transform: translateY(-1px);
 }
 
 .user-avatar {
@@ -274,21 +291,6 @@
 .sidebar-nav::-webkit-scrollbar {
   width: 0;
   height: 0;
-}
-
-.nav-section {
-  margin-bottom: 20px;
-}
-
-.nav-section-title {
-  display: block;
-  font-size: 11px;
-  font-weight: 600;
-  color: #64748b;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  padding: 0 12px;
-  margin-bottom: 8px;
 }
 
 .nav-item {
