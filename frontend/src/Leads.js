@@ -1,10 +1,12 @@
-
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import "./Leads.css";
 import Sidebar from "./Sidebar";
 import RecordActivityPanel from "./RecordActivityPanel";
+import ViewManager from "./components/ViewManager";
+import FilterBuilder from "./components/FilterBuilder";
+import { DEFAULT_COLUMNS, AVAILABLE_COLUMNS } from "./utils/viewsUtils";
 
 function Leads() {
   const [leads, setLeads] = useState([]);
@@ -20,6 +22,16 @@ function Leads() {
   const [convertData, setConvertData] = useState({ createDeal: true, dealName: '', dealAmount: 0, handleDupe: 'create' });
   const [importFileName, setImportFileName] = useState("");
   const [importRows, setImportRows] = useState([]);  
+
+  // 👇 SAVED VIEWS STATE 👇
+  const [views, setViews] = useState([]);
+  const [currentViewId, setCurrentViewId] = useState(null);
+  const [filters, setFilters] = useState({});
+
+  const [sortConfig, setSortConfig] = useState({ createdAt: -1 });
+  const [showFilterModal, setShowFilterModal] = useState(false);
+
+  // 👆 SAVED VIEWS STATE 👆
 
   const [selectedLead, setSelectedLead] = useState(null);
   const [exportView, setExportView] = useState("all");
@@ -54,10 +66,86 @@ function Leads() {
   });
   // compute role flags for UI
   const role = localStorage.getItem("role")?.toUpperCase();
+  const userId = localStorage.getItem("userId");
   const isAdmin = role === "ADMIN";
   const isManager = role === "MANAGER";
 
   const [employees, setEmployees] = useState([]);
+
+  // 🆕 VIEWS FUNCTIONS 🆕
+  const fetchViews = useCallback(async () => {
+    try {
+      const token = localStorage.getItem("token");
+      const res = await axios.get("http://localhost:5000/api/leads/views", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setViews(res.data);
+      
+      // Auto-select "All Leads" or first view
+      if (res.data.length > 0) {
+        const allLeadsView = res.data.find(v => v.name === "All Leads") || res.data[0];
+        setCurrentViewId(allLeadsView._id);
+        setFilters(allLeadsView.filters || {});
+
+        setSortConfig(allLeadsView.sort || { createdAt: -1 });
+      }
+    } catch (err) {
+      console.error("Failed to fetch views:", err);
+    }
+  }, []);
+
+  const fetchFilteredLeads = useCallback(async () => {
+    try {
+      const token = localStorage.getItem("token");
+      const endpoint = role === "EMPLOYEE" ? "/api/leads/my/filter" : "/api/leads/all/filter";
+      
+      const payload = {
+        filters,
+        sort: sortConfig,
+
+        limit: 100,
+        skip: 0
+      };
+
+      const res = await axios.post(`http://localhost:5000${endpoint}`, payload, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setLeads(res.data);
+    } catch (err) {
+      console.error("Failed to fetch filtered leads:", err);
+    }
+  }, [filters, sortConfig, role]);
+
+  // Load view and refresh leads
+  const loadView = useCallback((viewId) => {
+    const view = views.find(v => v._id === viewId);
+    if (view) {
+      setCurrentViewId(viewId);
+      setFilters(view.filters || {});
+
+      setSortConfig(view.sort || { createdAt: -1 });
+      fetchFilteredLeads();
+    }
+  }, [views, fetchFilteredLeads]);
+
+  // Update current filters/columns/sort
+  const updateFilters = (newFilters) => {
+    setFilters(newFilters);
+    fetchFilteredLeads();
+  };
+
+
+
+  const updateSort = (sort) => {
+    setSortConfig(sort);
+    fetchFilteredLeads();
+  };
+
+  useEffect(() => {
+    if (role) {
+      fetchViews();
+    }
+  }, [role, fetchViews]);
 
   const fetchEmployees = useCallback(async () => {
     try {
@@ -81,6 +169,16 @@ function Leads() {
     { id: "converted", name: "Converted", color: "#10b981" },
     { id: "lost", name: "Lost", color: "#ef4444" },
   ];
+
+  // Lead stage movement validation (matches backend)
+  const allowedTransitions = {
+    new: ["contacted"],
+    contacted: ["qualified", "new", "lost"],
+    qualified: ["proposal", "contacted", "lost"],
+    proposal: ["converted", "qualified", "lost"],
+    converted: [],
+    lost: []
+  };
 
   const salutations = ["Mr.", "Mrs.", "Ms.", "Dr.", "Prof."];
   const sources = ["Website", "Referral", "Social Media", "Email Campaign", "Cold Call", "Trade Show", "Other"];
@@ -423,6 +521,16 @@ function Leads() {
   };
 
   const handleUpdateStatus = async (leadId, newStatus) => {
+    // Client-side validation (matches backend)
+    if (selectedLead) {
+      const currentStatus = selectedLead.status;
+      if (currentStatus !== newStatus &&
+          (!allowedTransitions[currentStatus] || !allowedTransitions[currentStatus].includes(newStatus))) {
+        alert(`Invalid stage transition: from "${stages.find(s => s.id === currentStatus)?.name || currentStatus}" to "${stages.find(s => s.id === newStatus)?.name || newStatus}" not allowed`);
+        return;
+      }
+    }
+
     try {
       const token = localStorage.getItem("token");
       await axios.put(
@@ -437,7 +545,7 @@ function Leads() {
     } catch (err) {
       console.error(err);
       console.error('Full error:', err.response?.data);
-      alert(`Failed to update lead status: ${err.response?.data?.message || err.message}`);
+      alert(err.response?.data?.message || err.message || "Failed to update lead status");
     }
   };
 
@@ -483,7 +591,7 @@ function Leads() {
       await axios.post(
         `http://localhost:5000/api/leads/${selectedLead._id}/convert`,
         convertData,
-        { headers: { Authorization: `Bearer ${token}` } }
+        { headers: `Bearer ${token}` }
       );
       alert("Lead converted successfully!");
       setShowConvertModal(false);
@@ -495,7 +603,6 @@ function Leads() {
       alert(err.response?.data?.message || "Conversion failed");
     }
   };
-
 
   const handleAssign = async (leadId, userId) => {
     try {
@@ -630,10 +737,10 @@ function Leads() {
   const escapeXml = (value) =>
     String(value ?? "")
       .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
-      .replace(/'/g, "&apos;");
+      .replace(/</g, "<")
+      .replace(/>/g, ">")
+      .replace(/"/g, '"')
+      .replace(/'/g, '&#39;'); 
 
   const getExcelColumnName = (index) => {
     let columnIndex = index + 1;
@@ -1046,7 +1153,7 @@ ET`;
             </div>
           )}
 
-          {/* Search and Filter Bar */}
+          {/* Views & Filters Toolbar */}
           <div className="leads-toolbar-zoho">
             <div className="search-box-zoho">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -1060,20 +1167,41 @@ ET`;
                 onChange={(e) => setSearch(e.target.value)}
               />
             </div>
-            <div className="toolbar-actions">
-              <button className="btn-filter" type="button" onClick={handleOpenExportModal}>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                  <polyline points="7 10 12 15 17 10"></polyline>
-                  <line x1="12" y1="15" x2="12" y2="3"></line>
-                </svg>
+            <div className="views-toolbar">
+              <ViewManager 
+                currentViewId={currentViewId}
+                onViewSelect={loadView}
+              />
+              <button 
+                className="btn-filter" 
+                onClick={() => setShowFilterModal(true)}
+                title="Advanced Filters"
+              >
+                Filters
+              </button>
+
+              <button className="btn-filter" onClick={handleOpenExportModal}>
                 Export
               </button>
             </div>
           </div>
+
         </div>
 
         <div className="leads-scroll-content">
+
+          {/* Active Filter Chips */}
+          {Object.keys(filters).length > 0 && (
+            <div className="filter-chips">
+              {Object.entries(filters).map(([key, value]) => (
+                <span key={key} className="filter-chip">
+                  {key}: {value}
+                  <button onClick={() => updateFilters({})}>×</button>
+                </span>
+              ))}
+            </div>
+          )}
+
           {/* Kanban Board */}
           <div className="kanban-board-zoho">
             {getStagesWithLeads().map((stage) => (
@@ -1649,17 +1777,30 @@ ET`;
               <div className="status-section">
                 <h3>Change Status</h3>
                 <div className="status-grid">
-                  {stages.map((stage) => (
-                    <button 
-                      key={stage.id} 
-                      className={`status-btn-zoho ${selectedLead.status === stage.id ? 'active' : ''}`}
-                      style={{ borderColor: stage.color, color: selectedLead.status === stage.id ? stage.color : '' }}
-                      onClick={() => handleUpdateStatus(selectedLead._id, stage.id)}
-                      disabled={selectedLead.isConverted && stage.id === 'converted'}
-                    >
-                      {stage.name}
-                    </button>
-                  ))}
+{stages.map((stage) => {
+                    const currentStatus = selectedLead.status;
+                    const allowedStages = new Set([
+                      currentStatus,
+                      ...(allowedTransitions[currentStatus] || [])
+                    ]);
+                    return (
+                      <button
+                        key={stage.id}
+                        className={`status-btn-zoho ${selectedLead.status === stage.id ? "active" : ""} ${!allowedStages.has(stage.id) ? "disabled" : ""}`}
+                        style={{ 
+                          borderColor: stage.color,
+                          color: selectedLead.status === stage.id ? stage.color : "",
+                          opacity: allowedStages.has(stage.id) ? 1 : 0.5
+                        }}
+                        disabled={!allowedStages.has(stage.id)}
+                        title={!allowedStages.has(stage.id) ? `Invalid transition from ${stages.find(s => s.id === currentStatus)?.name}` : ""}
+                        onClick={() => handleUpdateStatus(selectedLead._id, stage.id)}
+                      >
+                        {stage.name}
+                      </button>
+                    );
+                  })}
+
                 </div>
               </div>
               <div className="convert-section">

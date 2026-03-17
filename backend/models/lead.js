@@ -30,6 +30,10 @@ const leadSchema = new mongoose.Schema(
       enum: ["hot", "warm", "cold", ""],
       default: "",
     },
+    customFields: {
+      type: mongoose.Schema.Types.Mixed,
+      default: {}
+    },
     address: {
       street: { type: String, trim: true },
       city: { type: String, trim: true },
@@ -62,6 +66,7 @@ const leadSchema = new mongoose.Schema(
 
 leadSchema.index({ name: 1, status: 1 });
 leadSchema.index({ email: 1 }, { sparse: true });
+leadSchema.index({ 'customFields': 1 }, { sparse: true });
 
 module.exports = mongoose.model("Lead", leadSchema);
 

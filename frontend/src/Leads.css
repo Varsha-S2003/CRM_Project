@@ -192,6 +192,118 @@
   align-items: center;
   margin-bottom: 24px;
   gap: 16px;
+  flex-wrap: wrap;
+}
+
+.views-toolbar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-left: auto;
+  flex-wrap: nowrap;
+}
+
+.views-toolbar .btn-filter {
+  white-space: nowrap;
+  font-size: 13px;
+  padding: 8px 12px;
+}
+
+.views-toolbar .view-select {
+  min-width: 160px;
+  padding: 8px 12px;
+  border: 1px solid var(--theme-border);
+  border-radius: 8px;
+  background: white;
+  font-size: 13px;
+}
+
+.views-toolbar .btn-view-action {
+  padding: 6px 10px;
+  font-size: 12px;
+}
+
+.view-selector {
+  position: relative;
+}
+
+.view-dropdown {
+  min-width: 200px;
+}
+
+.btn-view-action {
+  padding: 8px 14px;
+  border: 1px solid var(--theme-border);
+  background: white;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.btn-view-action:hover {
+  border-color: var(--theme-gold);
+  background: var(--theme-gold-soft);
+  color: var(--theme-gold-strong);
+}
+
+.filter-chips {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+.filter-chip {
+  background: var(--theme-gold-soft);
+  color: var(--theme-gold-strong);
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.column-selector {
+  position: relative;
+}
+
+.column-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  background: white;
+  border: 1px solid var(--theme-border);
+  border-radius: 12px;
+  box-shadow: var(--theme-shadow-md);
+  min-width: 220px;
+  max-height: 300px;
+  overflow-y: auto;
+  z-index: 30;
+  padding: 12px;
+}
+
+.column-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.column-item:hover {
+  background: var(--theme-bg-hover);
+}
+
+.column-checkbox {
+  accent-color: var(--theme-gold);
 }
 
 .search-box-zoho {

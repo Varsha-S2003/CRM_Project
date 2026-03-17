@@ -20,7 +20,7 @@ const dealSchema = new mongoose.Schema(
         "qualification",
         "need_analysis",
         "value_proposition",
-        "identify_decision_maker",
+    
         "proposal_price_quote",
         "negotiate",
         "won",

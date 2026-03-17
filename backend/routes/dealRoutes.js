@@ -111,6 +111,32 @@ router.post("/bulk", verifyToken, async (req, res) => {
 
 router.put("/:id", verifyToken, async (req, res) => {
   try {
+    // Stage transition validation
+    const allowedTransitions = {
+      "qualification": ["need_analysis", "lost"],
+      "need_analysis": ["value_proposition", "qualification", "lost"],
+      "value_proposition": ["proposal_price_quote", "need_analysis", "lost"],
+      "proposal_price_quote": ["negotiate", "value_proposition", "lost"],
+      "negotiate": ["won", "proposal_price_quote", "lost"],
+      "won": [],
+      "lost": []
+    };
+
+    if (req.body.stage !== undefined) {
+      const currentDeal = await Deal.findById(req.params.id);
+      if (!currentDeal) {
+        return res.status(404).json({ message: "Deal not found" });
+      }
+      const currentStage = currentDeal.stage;
+      const newStage = req.body.stage;
+      if (currentStage !== newStage && 
+          (!allowedTransitions[currentStage] || !allowedTransitions[currentStage].includes(newStage))) {
+        return res.status(400).json({ 
+          message: `Invalid stage transition: from "${currentStage}" to "${newStage}" not allowed` 
+        });
+      }
+    }
+
     const updates = { ...req.body };
     if (Object.prototype.hasOwnProperty.call(updates, "amount")) {
       updates.amount = Number(updates.amount) || 0;

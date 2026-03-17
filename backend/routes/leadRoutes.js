@@ -58,10 +58,21 @@ const normalizeLeadPayload = (payload = {}) => {
   return normalized;
 };
 
-// GET /api/leads/all -- all leads (admin or manager)
+// Lead stage movement validation
+const allowedTransitions = {
+  new: ["contacted"],
+  contacted: ["qualified", "new", "lost"],
+  qualified: ["proposal", "contacted", "lost"],
+  proposal: ["converted", "qualified", "lost"],
+  converted: [],
+  lost: []
+};
+
+
+// GET /api/leads/all -- all leads (admin or manager) with pagination/sort
 router.get("/all", verifyToken, permit("ADMIN", "MANAGER"), async (req, res, next) => {
   try {
-    const { status, search, dateFrom, dateTo } = req.query;
+    const { status, search, dateFrom, dateTo, sort = 'createdAt', order = '-1', limit = 100, skip = 0 } = req.query;
     const filter = {};
     if (status) filter.status = status;
     if (search) {
@@ -92,17 +103,18 @@ router.get("/all", verifyToken, permit("ADMIN", "MANAGER"), async (req, res, nex
         filter.createdAt.$lte = toDate;
       }
     }
-    const leads = await Lead.find(filter).sort({ createdAt: -1 });
+    
+    const leads = await Lead.find(filter).sort({ [sort]: parseInt(order) }).limit(parseInt(limit)).skip(parseInt(skip));
     res.json(leads);
   } catch (err) {
     next(err);
   }
 });
 
-// GET /api/leads/my -- leads assigned to the requesting employee
+// GET /api/leads/my -- leads assigned to the requesting employee with pagination/sort
 router.get("/my", verifyToken, permit("EMPLOYEE"), async (req, res, next) => {
   try {
-    const { search, dateFrom, dateTo } = req.query;
+    const { search, dateFrom, dateTo, sort = 'createdAt', order = '-1', limit = 100, skip = 0 } = req.query;
     const filter = { assignedTo: req.user._id };
     
     if (search) {
@@ -135,7 +147,7 @@ router.get("/my", verifyToken, permit("EMPLOYEE"), async (req, res, next) => {
       }
     }
     
-    const leads = await Lead.find(filter).sort({ createdAt: -1 });
+    const leads = await Lead.find(filter).sort({ [sort]: parseInt(order) }).limit(parseInt(limit)).skip(parseInt(skip));
     res.json(leads);
   } catch (err) {
     next(err);
@@ -214,10 +226,38 @@ router.put("/:id", verifyToken, permit("ADMIN", "MANAGER", "EMPLOYEE"), async (r
       }
     }
 
-    // Simple status update
-    const { status } = req.body;
-    if (status) {
-      lead.status = status;
+    // Strict stage movement validation
+    const { status: newStatus } = req.body;
+    if (newStatus !== undefined) {
+      const currentStatus = lead.status?.toLowerCase() || 'new';
+      const normalizedNewStatus = newStatus.toString().toLowerCase().trim();
+      
+      // Validate enum
+      const validStatuses = ["new", "contacted", "qualified", "proposal", "converted", "lost"];
+      if (!validStatuses.includes(normalizedNewStatus)) {
+        return res.status(400).json({ 
+          message: `Invalid status: "${normalizedNewStatus}". Must be one of: ${validStatuses.join(", ")}` 
+        });
+      }
+      
+      // Skip if same
+      if (currentStatus === normalizedNewStatus) {
+        res.json(lead);
+        return;
+      }
+      
+      // Strict transition validation
+      if (!allowedTransitions[currentStatus]?.includes(normalizedNewStatus)) {
+        return res.status(400).json({ 
+          message: `Invalid stage transition: "${currentStatus}" → "${normalizedNewStatus}" not allowed`
+        });
+      }
+      
+      // Update
+      lead.status = normalizedNewStatus;
+      if (["converted", "lost"].includes(normalizedNewStatus)) {
+        lead.isConverted = true;
+      }
       await lead.save();
     }
     
@@ -226,6 +266,7 @@ router.put("/:id", verifyToken, permit("ADMIN", "MANAGER", "EMPLOYEE"), async (r
     next(err);
   }
 });
+
 
 // POST /api/leads/:id/convert
 router.post("/:id/convert", verifyToken, async (req, res, next) => {
@@ -300,6 +341,313 @@ router.delete("/:id", verifyToken, permit("ADMIN"), async (req, res, next) => {
     const lead = await Lead.findByIdAndDelete(req.params.id);
     if (!lead) return res.status(404).json({ message: "Lead not found" });
     res.json({ message: "Lead deleted successfully" });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Advanced filter endpoint for saved views
+const View = require("../models/view");
+
+// Helper to build MongoDB query from filter structure
+const buildAdvancedFilter = (filters, user) => {
+  if (!filters || !filters.conditions || filters.conditions.length === 0) {
+    return {};
+  }
+
+  const processCondition = (condition) => {
+    let query = {};
+    
+    // Handle standard fields
+    switch (condition.field) {
+      case 'owner':
+        query.assignedTo = user._id;
+        break;
+      case 'status':
+        if (condition.operator === 'equals') {
+          query.status = condition.value;
+        } else if (condition.operator === 'in') {
+          query.status = { $in: Array.isArray(condition.value) ? condition.value : [condition.value] };
+        }
+        break;
+      case 'source':
+        if (condition.operator === 'equals') {
+          query.source = condition.value;
+        } else if (condition.operator === 'contains') {
+          query.source = { $regex: condition.value, $options: 'i' };
+        }
+        break;
+      case 'createdAt':
+      case 'updatedAt':
+        const dateField = condition.field;
+        query[dateField] = {};
+        if (condition.operator === 'after') {
+          query[dateField].$gte = new Date(condition.value);
+        } else if (condition.operator === 'before') {
+          const endDate = new Date(condition.value);
+          endDate.setHours(23, 59, 59, 999);
+          query[dateField].$lte = endDate;
+        } else if (condition.operator === 'between') {
+          query[dateField].$gte = new Date(condition.from);
+          const endDate2 = new Date(condition.to);
+          endDate2.setHours(23, 59, 59, 999);
+          query[dateField].$lte = endDate2;
+        }
+        break;
+      default:
+        // Custom fields or other string fields
+        if (condition.operator === 'equals') {
+          query[condition.field] = condition.value;
+        } else if (condition.operator === 'contains') {
+          query[condition.field] = { $regex: condition.value, $options: 'i' };
+        } else if (condition.field.startsWith('customFields.')) {
+          const cfField = condition.field.replace('customFields.', '');
+          query['customFields.' + cfField] = condition.operator === 'equals' ? condition.value : { $regex: condition.value, $options: 'i' };
+        }
+    }
+    
+    return query;
+  };
+
+  if (filters.logic === 'OR') {
+    const orConditions = filters.conditions.map(processCondition);
+    return { $or: orConditions };
+  } else {
+    // Default AND
+    const andConditions = filters.conditions.map(processCondition);
+    return { $and: andConditions };
+  }
+};
+
+// POST /api/leads/filter - Advanced filtering for saved views
+router.post("/filter", verifyToken, async (req, res, next) => {
+  try {
+    const { filters, sort = { createdAt: -1 }, limit = 100, skip = 0, viewMode = 'all' } = req.body;
+    
+    let baseFilter = {};
+    
+    // Role-based base filter
+    if (viewMode === 'my' || req.user.role.toUpperCase() === 'EMPLOYEE') {
+      baseFilter.assignedTo = req.user._id;
+    }
+    
+    // Merge advanced filters
+    if (filters) {
+      const advancedFilter = buildAdvancedFilter(filters, req.user);
+      baseFilter = { ...baseFilter, ...advancedFilter };
+    }
+    
+    const leads = await Lead.find(baseFilter)
+      .sort(sort)
+      .limit(limit)
+      .skip(skip)
+      .lean();
+    
+    res.json(leads);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Add pagination/sort support to existing endpoints
+router.get("/all", verifyToken, permit("ADMIN", "MANAGER"), async (req, res, next) => {
+  try {
+    const { status, search, dateFrom, dateTo, sort = 'createdAt', order = '-1', limit = 100, skip = 0 } = req.query;
+    const filter = {};
+    if (status) filter.status = status;
+    if (search) {
+      filter.$or = [
+        { name: { $regex: search, $options: "i" } },
+        { firstName: { $regex: search, $options: "i" } },
+        { lastName: { $regex: search, $options: "i" } },
+        { company: { $regex: search, $options: "i" } },
+        { email: { $regex: search, $options: "i" } },
+        { secondaryEmail: { $regex: search, $options: "i" } },
+        { phone: { $regex: search, $options: "i" } },
+        { mobile: { $regex: search, $options: "i" } },
+        { title: { $regex: search, $options: "i" } },
+        { industry: { $regex: search, $options: "i" } },
+        { "address.city": { $regex: search, $options: "i" } },
+        { "address.state": { $regex: search, $options: "i" } },
+      ];
+    }
+    // Date filtering
+    if (dateFrom || dateTo) {
+      filter.createdAt = {};
+      if (dateFrom) {
+        filter.createdAt.$gte = new Date(dateFrom);
+      }
+      if (dateTo) {
+        const toDate = new Date(dateTo);
+        toDate.setHours(23, 59, 59, 999);
+        filter.createdAt.$lte = toDate;
+      }
+    }
+    
+    const leads = await Lead.find(filter).sort({ [sort]: parseInt(order) }).limit(parseInt(limit)).skip(parseInt(skip));
+    res.json(leads);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get("/my", verifyToken, permit("EMPLOYEE"), async (req, res, next) => {
+  try {
+    const { search, dateFrom, dateTo, sort = 'createdAt', order = '-1', limit = 100, skip = 0 } = req.query;
+    const filter = { assignedTo: req.user._id };
+    
+    if (search) {
+      filter.$or = [
+        { name: { $regex: search, $options: "i" } },
+        { firstName: { $regex: search, $options: "i" } },
+        { lastName: { $regex: search, $options: "i" } },
+        { company: { $regex: search, $options: "i" } },
+        { email: { $regex: search, $options: "i" } },
+        { secondaryEmail: { $regex: search, $options: "i" } },
+        { phone: { $regex: search, $options: "i" } },
+        { mobile: { $regex: search, $options: "i" } },
+        { title: { $regex: search, $options: "i" } },
+        { industry: { $regex: search, $options: "i" } },
+        { "address.city": { $regex: search, $options: "i" } },
+        { "address.state": { $regex: search, $options: "i" } },
+      ];
+    }
+    
+    // Date filtering
+    if (dateFrom || dateTo) {
+      filter.createdAt = {};
+      if (dateFrom) {
+        filter.createdAt.$gte = new Date(dateFrom);
+      }
+      if (dateTo) {
+        const toDate = new Date(dateTo);
+        toDate.setHours(23, 59, 999);
+        filter.createdAt.$lte = toDate;
+      }
+    }
+    
+    const leads = await Lead.find(filter).sort({ [sort]: parseInt(order) }).limit(parseInt(limit)).skip(parseInt(skip));
+    res.json(leads);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Views API for saved views system
+router.get("/views", verifyToken, async (req, res, next) => {
+  try {
+    const { userId: reqUserId } = req.user;
+    
+    const views = await View.find({
+      $or: [
+        { userId: reqUserId, visibility: 'private' },
+        { visibility: 'shared' }
+      ]
+    }).sort({ createdAt: -1 }).lean();
+    
+    res.json(views);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post("/views", verifyToken, async (req, res, next) => {
+  try {
+    const viewData = {
+      ...req.body,
+      userId: req.user._id
+    };
+    
+    // Validation
+    if (!viewData.name) {
+      return res.status(400).json({ message: 'View name required' });
+    }
+    if (!['private', 'shared'].includes(viewData.visibility)) {
+      viewData.visibility = 'private';
+    }
+    
+    const view = await View.create(viewData);
+    res.status(201).json(view);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.put("/views/:id", verifyToken, async (req, res, next) => {
+  try {
+    const view = await View.findOne({ _id: req.params.id, userId: req.user._id });
+    if (!view) {
+      return res.status(404).json({ message: 'View not found or access denied' });
+    }
+    
+    const updateData = req.body;
+    Object.assign(view, updateData);
+    await view.save();
+    
+    res.json(view);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.delete("/views/:id", verifyToken, async (req, res, next) => {
+  try {
+    const view = await View.findOneAndDelete({ 
+      _id: req.params.id, 
+      userId: req.user._id 
+    });
+    
+    if (!view) {
+      return res.status(404).json({ message: 'View not found or access denied' });
+    }
+    
+    res.json({ message: 'View deleted successfully' });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Seed default views on first login (run once per user)
+router.post("/views/seed-defaults", verifyToken, async (req, res, next) => {
+  try {
+    const userId = req.user._id;
+    
+    const defaultViews = [
+      {
+        name: 'All Leads',
+        filters: {},
+        columns: ['name', 'company', 'email', 'phone', 'status', 'source'],
+        sort: { createdAt: -1 },
+        visibility: 'shared'
+      },
+      {
+        name: 'My Leads',
+        filters: { conditions: [{ field: 'owner', operator: 'equals', value: true }], logic: 'AND' },
+        columns: ['name', 'company', 'status', 'source'],
+        sort: { updatedAt: -1 },
+        visibility: 'private'
+      },
+      {
+        name: 'Recently Added',
+        filters: { 
+          conditions: [{ field: 'createdAt', operator: 'after', value: new Date(Date.now() - 7*24*60*60*1000).toISOString() }], 
+          logic: 'AND' 
+        },
+        columns: ['name', 'email', 'status', 'createdAt'],
+        sort: { createdAt: -1 },
+        visibility: 'shared'
+      }
+    ];
+
+    const existingViews = await View.find({ userId });
+    if (existingViews.length === 0) {
+      const seededViews = await View.insertMany(
+        defaultViews.map(v => ({ ...v, userId }))
+      );
+      res.json({ message: 'Default views seeded', views: seededViews });
+    } else {
+      res.json({ message: 'Default views already exist', count: existingViews.length });
+    }
   } catch (err) {
     next(err);
   }

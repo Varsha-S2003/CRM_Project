@@ -8,12 +8,21 @@ const stages = [
   { id: "qualification", name: "Qualification", color: "#2563eb" },
   { id: "need_analysis", name: "Need Analysis", color: "#0ea5e9" },
   { id: "value_proposition", name: "Value Proposition", color: "#6366f1" },
-  { id: "identify_decision_maker", name: "Identify Decision Maker", color: "#8b5cf6" },
   { id: "proposal_price_quote", name: "Proposal/Price Quote", color: "#14b8a6" },
   { id: "negotiate", name: "Negotiate", color: "#f59e0b" },
   { id: "won", name: "Won", color: "#10b981" },
   { id: "lost", name: "Lost", color: "#ef4444" },
 ];
+
+const allowedTransitions = {
+  "qualification": ["need_analysis", "lost"],
+  "need_analysis": ["value_proposition", "qualification", "lost"],
+  "value_proposition": ["proposal_price_quote", "need_analysis", "lost"],
+  "proposal_price_quote": ["negotiate", "value_proposition", "lost"],
+  "negotiate": ["won", "proposal_price_quote", "lost"],
+  "won": [],
+  "lost": []
+};
 
 function Deals() {
   const [deals, setDeals] = useState([]);
@@ -293,6 +302,17 @@ function Deals() {
   };
 
   const updateStage = async (dealId, stageId) => {
+    // Client-side validation
+    const currentDeal = deals.find(d => d._id === dealId);
+    if (currentDeal) {
+      const currentStage = currentDeal.stage;
+      if (currentStage !== stageId && 
+          (!allowedTransitions[currentStage] || !allowedTransitions[currentStage].includes(stageId))) {
+        alert(`Invalid stage transition: from "${currentStage.replace(/_/g, ' ')}" to "${stages.find(s => s.id === stageId)?.name || stageId}" not allowed`);
+        return;
+      }
+    }
+
     try {
       const token = localStorage.getItem("token");
       const res = await axios.put(
@@ -1084,16 +1104,30 @@ ET`;
               <div className="status-section">
                 <h3>Change Stage</h3>
                 <div className="status-grid">
-                  {stages.map((stage) => (
-                    <button
-                      key={stage.id}
-                      className={`status-btn-zoho ${selectedDeal.stage === stage.id ? "active" : ""}`}
-                      style={{ borderColor: stage.color, color: selectedDeal.stage === stage.id ? stage.color : "" }}
-                      onClick={() => updateStage(selectedDeal._id, stage.id)}
-                    >
-                      {stage.name}
-                    </button>
-                  ))}
+                  {(() => {
+                    const currentStage = selectedDeal.stage;
+                    const allowedStages = new Set([
+                      currentStage,
+                      "lost",
+                      ...(allowedTransitions[currentStage] || [])
+                    ]);
+                    return stages.map((stage) => (
+                      <button
+                        key={stage.id}
+                        className={`status-btn-zoho ${selectedDeal.stage === stage.id ? "active" : ""} ${!allowedStages.has(stage.id) ? "disabled" : ""}`}
+                        style={{ 
+                          borderColor: stage.color, 
+                          color: selectedDeal.stage === stage.id ? stage.color : "",
+                          opacity: allowedStages.has(stage.id) ? 1 : 0.5
+                        }}
+                        disabled={!allowedStages.has(stage.id)}
+                        title={!allowedStages.has(stage.id) ? `Invalid transition from ${currentStage.replace(/_/g, " ")}` : ""}
+                        onClick={() => updateStage(selectedDeal._id, stage.id)}
+                      >
+                        {stage.name}
+                      </button>
+                    ));
+                  })()}
                 </div>
               </div>
               <RecordActivityPanel
