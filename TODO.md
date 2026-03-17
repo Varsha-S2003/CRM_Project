@@ -1,11 +1,11 @@
-# Merge Conflict Resolution - Progress Tracker
+# CRM_Project Leads Error Fix - TODO
 
-## Plan Steps
-- [x] **Step 1**: Understand files (read Sidebar.js conflict)
-- [x] **Step 2**: Resolve conflict in frontend/src/Sidebar.js
-- [x] **Step 3**: Stage resolved file (`git add frontend/src/Sidebar.js`)
-- [x] **Step 4**: Complete merge commit
-- [x] **Step 5**: Push to resolve divergence (`git push`)
-- [x] **Step 6**: Verify clean status
-
-**Merge conflict resolved! Repository clean and synced.**
+**Current Status:** Backend server crash fixed ✅  
+**Completed:** Syntax fixes in leadRoutes.js  
+**Remaining:**
+- [ ] Restart backend server: `cd backend && node server.js`
+- [ ] Login to CRM (admin@elogixa.com / 123456 if needed)
+- [ ] Navigate to http://localhost:3000/leads 
+- [ ] Check browser console (F12) for any remaining errors
+- [ ] Test lead operations (add/view) to confirm no popups
+- [ ] attempt_completion when fully working

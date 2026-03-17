@@ -248,3 +248,59 @@
   }
 }
 
+/* Elogixa palette overrides */
+.inventory-fixed-top {
+  background: var(--theme-bg);
+  border-bottom-color: var(--theme-border);
+}
+
+.inventory-header-left h1,
+.inventory-table td,
+.inventory-stats .stat-value {
+  color: var(--theme-ink);
+}
+
+.inventory-header-left p,
+.inventory-table th,
+.inventory-stats .stat-label,
+.no-data {
+  color: var(--theme-text-muted);
+}
+
+.inventory-stats .stat-card,
+.inventory-table-container {
+  background: rgba(255, 255, 255, 0.88);
+  border: 1px solid var(--theme-border);
+  box-shadow: var(--theme-shadow-sm);
+}
+
+.inventory-table thead,
+.inventory-table tbody tr:hover,
+.inventory-table .sku-badge {
+  background: #f4efe6;
+}
+
+.inventory-table th,
+.inventory-table td {
+  border-bottom-color: var(--theme-border);
+}
+
+.stock-type-badge.stock-in {
+  background: #e7f6e7;
+  color: var(--theme-green-strong);
+}
+
+.stock-type-badge.stock-out,
+.delete-btn {
+  background: var(--theme-danger-soft);
+  color: var(--theme-danger);
+}
+
+.quantity-in {
+  color: var(--theme-green-strong);
+}
+
+.quantity-out {
+  color: var(--theme-danger);
+}
+

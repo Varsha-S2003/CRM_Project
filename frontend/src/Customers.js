@@ -48,12 +48,12 @@ export default function Customers() {
               <table style={{ width: "100%", borderCollapse: "collapse" }}>
                 <thead>
                   <tr>
-                    <th style={{ textAlign: "left", padding: "10px", borderBottom: "1px solid #e5e7eb" }}>Name</th>
-                    <th style={{ textAlign: "left", padding: "10px", borderBottom: "1px solid #e5e7eb" }}>Company</th>
-                    <th style={{ textAlign: "left", padding: "10px", borderBottom: "1px solid #e5e7eb" }}>Email</th>
-                    <th style={{ textAlign: "left", padding: "10px", borderBottom: "1px solid #e5e7eb" }}>Phone</th>
-                    <th style={{ textAlign: "left", padding: "10px", borderBottom: "1px solid #e5e7eb" }}>Source</th>
-                    <th style={{ textAlign: "left", padding: "10px", borderBottom: "1px solid #e5e7eb" }}>Converted At</th>
+                    <th style={{ textAlign: "left", padding: "10px", borderBottom: "1px solid var(--theme-border)" }}>Name</th>
+                    <th style={{ textAlign: "left", padding: "10px", borderBottom: "1px solid var(--theme-border)" }}>Company</th>
+                    <th style={{ textAlign: "left", padding: "10px", borderBottom: "1px solid var(--theme-border)" }}>Email</th>
+                    <th style={{ textAlign: "left", padding: "10px", borderBottom: "1px solid var(--theme-border)" }}>Phone</th>
+                    <th style={{ textAlign: "left", padding: "10px", borderBottom: "1px solid var(--theme-border)" }}>Source</th>
+                    <th style={{ textAlign: "left", padding: "10px", borderBottom: "1px solid var(--theme-border)" }}>Converted At</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -63,12 +63,12 @@ export default function Customers() {
                       style={{ cursor: "pointer" }}
                       onClick={() => setSelectedCustomer(customer)}
                     >
-                      <td style={{ padding: "10px", borderBottom: "1px solid #f1f5f9" }}>{customer.name || "-"}</td>
-                      <td style={{ padding: "10px", borderBottom: "1px solid #f1f5f9" }}>{customer.company || "-"}</td>
-                      <td style={{ padding: "10px", borderBottom: "1px solid #f1f5f9" }}>{customer.email || "-"}</td>
-                      <td style={{ padding: "10px", borderBottom: "1px solid #f1f5f9" }}>{customer.phone || "-"}</td>
-                      <td style={{ padding: "10px", borderBottom: "1px solid #f1f5f9" }}>{customer.source || "-"}</td>
-                      <td style={{ padding: "10px", borderBottom: "1px solid #f1f5f9" }}>
+                      <td style={{ padding: "10px", borderBottom: "1px solid #efe8d8" }}>{customer.name || "-"}</td>
+                      <td style={{ padding: "10px", borderBottom: "1px solid #efe8d8" }}>{customer.company || "-"}</td>
+                      <td style={{ padding: "10px", borderBottom: "1px solid #efe8d8" }}>{customer.email || "-"}</td>
+                      <td style={{ padding: "10px", borderBottom: "1px solid #efe8d8" }}>{customer.phone || "-"}</td>
+                      <td style={{ padding: "10px", borderBottom: "1px solid #efe8d8" }}>{customer.source || "-"}</td>
+                      <td style={{ padding: "10px", borderBottom: "1px solid #efe8d8" }}>
                         {customer.convertedAt ? new Date(customer.convertedAt).toLocaleString() : "-"}
                       </td>
                     </tr>

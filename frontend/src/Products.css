@@ -219,3 +219,67 @@
   }
 }
 
+/* Elogixa palette overrides */
+.products-fixed-top {
+  background: var(--theme-bg);
+  border-bottom-color: var(--theme-border);
+}
+
+.products-header-left h1,
+.products-table td {
+  color: var(--theme-ink);
+}
+
+.products-header-left p,
+.products-table th,
+.no-data {
+  color: var(--theme-text-muted);
+}
+
+.products-table-container {
+  background: rgba(255, 255, 255, 0.88);
+  border: 1px solid var(--theme-border);
+  box-shadow: var(--theme-shadow-sm);
+}
+
+.products-table thead,
+.products-table tbody tr:hover,
+.disabled-input,
+.sku-badge,
+.status-badge-zoho.inactive,
+.edit-btn {
+  background: #f4efe6;
+}
+
+.products-table th,
+.products-table td {
+  border-bottom-color: var(--theme-border);
+}
+
+.stock-badge.in-stock,
+.status-badge-zoho.active {
+  background: #e7f6e7;
+  color: var(--theme-green-strong);
+}
+
+.stock-badge.low-stock {
+  background: #fff4d7;
+  color: var(--theme-warning);
+}
+
+.stock-badge.out-of-stock,
+.delete-btn {
+  background: var(--theme-danger-soft);
+  color: var(--theme-danger);
+}
+
+.edit-btn:hover {
+  background: #e8dfce;
+  color: var(--theme-ink);
+}
+
+.delete-btn:hover {
+  background: #ffe1dd;
+  color: #b63d3d;
+}
+

@@ -763,3 +763,183 @@
     width: 100%;
   }
 }
+
+/* Elogixa palette overrides */
+.activity-module,
+.task-page {
+  background: linear-gradient(180deg, #faf7f0 0%, #f1ede3 100%);
+}
+
+.activity-topbar p,
+.activity-card-header p,
+.record-activity-panel__header p,
+.record-activity-card p,
+.activity-section-item p,
+.timeline-item p,
+.calendar-weekday,
+.activity-report-metrics span,
+.record-activity-panel__section-title,
+.record-activity-card__meta,
+.record-activity-panel__empty {
+  color: var(--theme-text-muted);
+}
+
+.activity-primary-btn,
+.task-page__create-btn {
+  background: var(--theme-gradient-brand);
+}
+
+.notification-badge,
+.activity-menu,
+.activity-content,
+.activity-dashboard-card,
+.activity-table-card,
+.activity-calendar-card,
+.activity-reports-card,
+.activity-timeline-card,
+.record-activity-panel,
+.activity-modal,
+.task-card {
+  border: 1px solid var(--theme-border);
+  box-shadow: var(--theme-shadow-sm);
+}
+
+.notification-badge span,
+.activity-pill.task,
+.record-activity-panel__link {
+  background: #f2ecdf;
+  color: var(--theme-ink-soft);
+}
+
+.activity-toast,
+.activity-menu button.active {
+  background: var(--theme-gradient-dark);
+}
+
+.activity-menu button {
+  background: #fff4d7;
+  color: #8a6400;
+}
+
+.activity-search input,
+.activity-filterbar select,
+.activity-form input,
+.activity-form select,
+.activity-form textarea,
+.task-page__search input,
+.task-page__select {
+  border-color: var(--theme-border-strong);
+  background: #fbfaf6;
+}
+
+.activity-stat-card.blue,
+.calendar-event.task,
+.timeline-dot.task {
+  background: linear-gradient(135deg, #202124, #5f6368);
+}
+
+.activity-stat-card.orange,
+.calendar-event.meeting,
+.timeline-dot.meeting {
+  background: linear-gradient(135deg, #efb521, #d89a06);
+}
+
+.activity-stat-card.green,
+.calendar-event.call,
+.timeline-dot.call {
+  background: linear-gradient(135deg, #9dc63b, #46b84d);
+}
+
+.activity-stat-card.red {
+  background: linear-gradient(135deg, #d84c4c, #b63d3d);
+}
+
+.activity-section-item,
+.timeline-item,
+.calendar-list-item,
+.activity-report-metrics div,
+.record-activity-card,
+.calendar-cell.muted,
+.task-column__body {
+  background: #f6f1e7;
+}
+
+.activity-table th,
+.activity-table td,
+.task-page__header,
+.task-page__viewbar,
+.task-page__toolbar {
+  border-color: var(--theme-border);
+}
+
+.activity-table-actions button,
+.calendar-controls button,
+.activity-form-actions .secondary,
+.task-page__view-pill,
+.task-page__icon-btn,
+.task-page__toolbar-btn,
+.task-page__toolbar-icon,
+.task-card__actions button,
+.task-card__edit {
+  border-color: var(--theme-border-strong);
+  background: #f4efe6;
+  color: var(--theme-text);
+}
+
+.activity-pill.meeting,
+.activity-status.pending,
+.activity-status.scheduled,
+.meeting-column__header {
+  background: #fff3d4;
+  color: #8a6400;
+}
+
+.activity-pill.call,
+.activity-status.completed,
+.call-column__header {
+  background: #e8f6e8;
+  color: var(--theme-green-strong);
+}
+
+.activity-status.cancelled,
+.activity-table-actions button.danger {
+  background: var(--theme-danger-soft);
+  color: var(--theme-danger);
+}
+
+.calendar-cell.today {
+  border-color: var(--theme-gold);
+  box-shadow: inset 0 0 0 1px var(--theme-gold);
+}
+
+.activity-modal-overlay {
+  background: rgba(32, 33, 36, 0.45);
+}
+
+.task-page__header,
+.task-page__viewbar,
+.task-page__toolbar {
+  background: rgba(255, 255, 255, 0.88);
+}
+
+.task-page__header h1,
+.task-card h3 {
+  color: var(--theme-ink);
+}
+
+.task-page__view-pill.active,
+.task-page__toolbar-icon.active {
+  background: #fff4d7;
+  color: #8a6400;
+  border-color: #efd08b;
+}
+
+.task-column__header {
+  background: #ece7dc;
+  border-top-color: var(--theme-ink-soft);
+  color: var(--theme-ink);
+}
+
+.task-column__title strong {
+  background: #d9cfbc;
+}

@@ -42,6 +42,8 @@ console.log({
 });
 
 function Home() {
+  const crmDemoUrl = "https://www.youtube.com/results?search_query=crm+demo+for+beginners";
+
   // log again now that Home is defined
   console.log('Home component defined? ->', Home);
   return (
@@ -51,11 +53,11 @@ function Home() {
         <div className="navbar-container">
           <div className="logo">ELOGIXA <span className="logo-highlight">CRM</span></div>
           <nav className="nav-menu">
-            <Link to="#" className="nav-link">Features</Link>
-            <Link to="#" className="nav-link">Solutions</Link>
-            <Link to="#" className="nav-link">Pricing</Link>
-            <Link to="#" className="nav-link">Resources</Link>
-            <Link to="#" className="nav-link">Support</Link>
+            <a href="#features" className="nav-link">Features</a>
+            <a href="#solutions" className="nav-link">Solutions</a>
+            <a href="#pricing" className="nav-link">Pricing</a>
+            <a href="#resources" className="nav-link">Resources</a>
+            <a href="#support" className="nav-link">Support</a>
           </nav>
           <div className="nav-actions">
             <button className="icon-btn">
@@ -71,35 +73,37 @@ function Home() {
       </header>
 
       {/* Enhanced Hero Section */}
-      <section className="hero">
+      <section className="hero" id="top">
+        <div className="hero-orb hero-orb-1"></div>
+        <div className="hero-orb hero-orb-2"></div>
+        <div className="hero-orb hero-orb-3"></div>
         <div className="hero-container">
           <div className="hero-content">
-            <div className="hero-badge">
+            <div className="hero-badge animate-rise">
               <span className="badge-dot"></span>
               #1 CRM Software in 2024
             </div>
-            <h1 className="hero-title">
+            <h1 className="hero-title animate-rise animate-delay-1">
               Grow Your Business with <span className="gradient-text">Elogixa CRM</span>
             </h1>
-            <p className="hero-description">
+            <p className="hero-description animate-rise animate-delay-2">
               Powerful, intuitive, and affordable CRM software that helps businesses 
               streamline sales, automate marketing, and deliver exceptional customer experiences.
             </p>
-            <div className="hero-actions">
-              <Link to="/login" className="btn btn-primary btn-large">
-                Start Free Trial
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M5 12h14M12 5l7 7-7 7"/>
-                </svg>
-              </Link>
-              <button className="btn btn-outline btn-large">
+            <div className="hero-actions animate-rise animate-delay-3">
+              <a
+                href={crmDemoUrl}
+                className="btn btn-outline btn-large"
+                target="_blank"
+                rel="noreferrer"
+              >
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
                   <polygon points="5 3 19 12 5 21 5 3"></polygon>
                 </svg>
                 Watch Demo
-              </button>
+              </a>
             </div>
-            <div className="hero-trust">
+            <div className="hero-trust animate-rise animate-delay-4">
               <span>Trusted by 10,000+ businesses worldwide</span>
               <div className="trust-logos">
                 <span className="trust-logo">Acme Corp</span>
@@ -109,7 +113,7 @@ function Home() {
               </div>
             </div>
           </div>
-          <div className="hero-visual">
+          <div className="hero-visual animate-float-in">
             <div className="dashboard-mockup">
               <div className="mockup-header">
                 <div className="mockup-dots">
@@ -179,9 +183,9 @@ function Home() {
       </section>
 
       {/* Features Section */}
-      <section className="features-section">
+      <section className="features-section" id="features">
         <div className="section-container">
-          <div className="section-header">
+          <div className="section-header animate-rise">
             <span className="section-tag">Features</span>
             <h2 className="section-title">Everything You Need to Succeed</h2>
             <p className="section-description">
@@ -189,7 +193,7 @@ function Home() {
             </p>
           </div>
           <div className="features-grid">
-            <div className="feature-card">
+            <div className="feature-card stagger-card">
               <div className="feature-icon">
                 <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
@@ -201,7 +205,7 @@ function Home() {
               <h3>Contact Management</h3>
               <p>Organize and manage all your customer contacts in one centralized database with easy access.</p>
             </div>
-            <div className="feature-card">
+            <div className="feature-card stagger-card">
               <div className="feature-icon">
                 <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
@@ -210,7 +214,7 @@ function Home() {
               <h3>Sales Tracking</h3>
               <p>Track your sales pipeline in real-time and monitor performance with detailed analytics.</p>
             </div>
-            <div className="feature-card">
+            <div className="feature-card stagger-card">
               <div className="feature-icon">
                 <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path>
@@ -220,7 +224,7 @@ function Home() {
               <h3>Email Marketing</h3>
               <p>Create and send beautiful email campaigns to engage with your customers effectively.</p>
             </div>
-            <div className="feature-card">
+            <div className="feature-card stagger-card">
               <div className="feature-icon">
                 <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
@@ -232,7 +236,7 @@ function Home() {
               <h3>Task Management</h3>
               <p>Stay organized with built-in task management and automation features.</p>
             </div>
-            <div className="feature-card">
+            <div className="feature-card stagger-card">
               <div className="feature-icon">
                 <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
@@ -241,7 +245,7 @@ function Home() {
               <h3>Live Chat</h3>
               <p>Connect with customers instantly through live chat and provide instant support.</p>
             </div>
-            <div className="feature-card">
+            <div className="feature-card stagger-card">
               <div className="feature-icon">
                 <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <path d="M12 20V10"></path>
@@ -257,7 +261,7 @@ function Home() {
       </section>
 
       {/* Benefits Section */}
-      <section className="benefits-section">
+      <section className="benefits-section" id="solutions">
         <div className="benefits-container">
           <div className="benefits-content">
             <span className="section-tag">Why Choose Us</span>
@@ -330,7 +334,7 @@ function Home() {
       </section>
 
       {/* CTA Section */}
-      <section className="cta-section">
+      <section className="cta-section" id="pricing">
         <div className="cta-container">
           <h2>Ready to Transform Your Business?</h2>
           <p>Join thousands of businesses already growing with Elogixa CRM</p>
@@ -343,7 +347,7 @@ function Home() {
       </section>
 
       {/* Footer */}
-      <footer className="footer">
+      <footer className="footer" id="resources">
         <div className="footer-container">
           <div className="footer-main">
             <div className="footer-brand">
@@ -370,8 +374,8 @@ function Home() {
             <div className="footer-links">
               <div className="footer-column">
                 <h4>Product</h4>
-                <a href="/">Features</a>
-                <a href="/">Pricing</a>
+                <a href="#features">Features</a>
+                <a href="#pricing">Pricing</a>
                 <a href="/">Integrations</a>
                 <a href="/">Updates</a>
               </div>
@@ -391,14 +395,14 @@ function Home() {
               </div>
               <div className="footer-column">
                 <h4>Contact</h4>
-                <a href="/">Sales</a>
-                <a href="/">Support</a>
+                <a href="#pricing">Sales</a>
+                <a href="#support">Support</a>
                 <a href="/">Partners</a>
                 <a href="/">Status</a>
               </div>
             </div>
           </div>
-          <div className="footer-bottom">
+          <div className="footer-bottom" id="support">
             <p>© 2024 Elogixa CRM. All rights reserved.</p>
             <div className="footer-legal">
               <a href="/">Privacy Policy</a>

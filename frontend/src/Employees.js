@@ -1,11 +1,9 @@
 import React, { useEffect, useState } from "react";
 import axios from "axios";
-import { useNavigate } from "react-router-dom";
 import Sidebar from "./Sidebar";
 import "./Employees.css";
 
 export default function Employees() {
-  const navigate = useNavigate();
   const [employees, setEmployees] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -45,25 +43,18 @@ export default function Employees() {
               <h1>Employee Directory</h1>
               <p>All employees added by the admin will appear here for quick review.</p>
             </div>
-            <button
-              type="button"
-              className="employees-add-btn"
-              onClick={() => navigate("/add-employee")}
-            >
-              Add Employee
-            </button>
           </div>
 
           <div className="employees-stats">
-            <div className="stat-card">
+            <div className="stat-card employees-stat-card">
               <span>Total Staff</span>
               <strong>{loading ? "--" : employees.length}</strong>
             </div>
-            <div className="stat-card">
+            <div className="stat-card employees-stat-card">
               <span>Managers</span>
               <strong>{loading ? "--" : managerCount}</strong>
             </div>
-            <div className="stat-card">
+            <div className="stat-card employees-stat-card">
               <span>Employees</span>
               <strong>{loading ? "--" : employeeCount}</strong>
             </div>

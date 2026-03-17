@@ -897,4 +897,155 @@
 
 }
 
+/* Elogixa palette overrides */
+.leads-layout,
+.leads-fixed-top,
+.leads-header-section {
+  background: var(--theme-bg);
+}
+
+.leads-header-left h1,
+.stat-value,
+.column-header-zoho h3,
+.card-top-row h4,
+.modal-header-zoho h2,
+.detail-value {
+  color: var(--theme-ink);
+}
+
+.leads-header-left p,
+.stat-label,
+.card-company-zoho,
+.card-detail,
+.detail-label,
+.import-helper-text {
+  color: var(--theme-text-muted);
+}
+
+.btn-primary,
+.btn-submit {
+  background: var(--theme-gradient-brand);
+}
+
+.btn-primary:hover,
+.btn-submit:hover {
+  box-shadow: var(--theme-shadow-md);
+}
+
+.create-lead-dropdown,
+.modal-box-zoho {
+  border-color: var(--theme-border);
+  box-shadow: var(--theme-shadow-md);
+}
+
+.create-lead-dropdown-item:hover,
+.btn-filter:hover,
+.add-card-btn:hover,
+.status-btn-zoho:hover,
+.status-btn-zoho.active {
+  background: #eaf3ff;
+  color: var(--theme-green-strong);
+}
+
+.stat-card-zoho,
+.kanban-card-zoho,
+.inventory-table-container,
+.products-table-container {
+  border: 1px solid var(--theme-border);
+  box-shadow: var(--theme-shadow-sm);
+}
+
+.stat-icon-blue,
+.status-badge-zoho.new {
+  background: #eaf3ff;
+  color: var(--theme-gold-strong);
+}
+
+.stat-icon-orange,
+.status-badge-zoho.contacted {
+  background: #eff6ff;
+  color: var(--theme-warning);
+}
+
+.stat-icon-purple,
+.status-badge-zoho.qualified,
+.status-badge-zoho.proposal {
+  background: #f0f7f1;
+  color: var(--theme-green-strong);
+}
+
+.stat-icon-green,
+.status-badge-zoho.converted {
+  background: #e7f6e7;
+  color: var(--theme-green-strong);
+}
+
+.status-badge-zoho.lost,
+.delete-btn-zoho,
+.employees-message.error {
+  background: var(--theme-danger-soft);
+  color: var(--theme-danger);
+}
+
+.search-box-zoho input:focus,
+.form-group input:focus,
+.form-group select:focus {
+  border-color: var(--theme-gold);
+  box-shadow: 0 0 0 3px rgba(15, 76, 129, 0.18);
+}
+
+.btn-filter {
+  border-color: var(--theme-border);
+  color: var(--theme-text-muted);
+}
+
+.kanban-column-zoho {
+  background: #f3f6f3;
+}
+
+.column-header-zoho {
+  border-top-color: var(--theme-gold);
+}
+
+.lead-count-zoho,
+.card-source {
+  background: #f0f3f0;
+  color: var(--theme-text-muted);
+}
+
+.kanban-card-zoho:hover {
+  border-color: var(--theme-gold);
+}
+
+.modal-header-zoho,
+.modal-actions,
+.import-preview-table-wrapper,
+.import-preview-table th,
+.import-preview-table td {
+  border-color: var(--theme-border);
+}
+
+.modal-close {
+  background: #f0f3f0;
+  color: var(--theme-text-muted);
+}
+
+.modal-close:hover {
+  background: #e3e9e4;
+  color: var(--theme-ink);
+}
+
+.import-note-box,
+.export-note-box {
+  border-color: #bfdbfe;
+  background: #eaf3ff;
+  color: var(--theme-gold-strong);
+}
+
+.csv-file-input,
+.add-card-btn {
+  border-color: var(--theme-border-strong);
+  background: #fafbfa;
+}
+
 

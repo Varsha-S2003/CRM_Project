@@ -14,8 +14,13 @@ function Leads() {
   const [showCreateMenu, setShowCreateMenu] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
   const [showExportModal, setShowExportModal] = useState(false);
+  const [showConvertModal, setShowConvertModal] = useState(false);
+  const [showDupeModal, setShowDupeModal] = useState(false);
+  const [dupeContact, setDupeContact] = useState(null);
+  const [convertData, setConvertData] = useState({ createDeal: true, dealName: '', dealAmount: 0, handleDupe: 'create' });
   const [importFileName, setImportFileName] = useState("");
-  const [importRows, setImportRows] = useState([]);
+  const [importRows, setImportRows] = useState([]);  
+
   const [selectedLead, setSelectedLead] = useState(null);
   const [exportView, setExportView] = useState("all");
   const [exportFieldScope, setExportFieldScope] = useState("custom");
@@ -24,13 +29,28 @@ function Leads() {
   const createMenuRef = useRef(null);
   const fileInputRef = useRef(null);
   const [newLead, setNewLead] = useState({
+    salutation: "",
     firstName: "",
     lastName: "",
+    title: "",
     email: "",
+    secondaryEmail: "",
     phone: "",
+    mobile: "",
     company: "",
+    website: "",
+    industry: "",
+    annualRevenue: "",
+    employeeCount: "",
     source: "",
+    rating: "",
     status: "new",
+    notes: "",
+    street: "",
+    city: "",
+    state: "",
+    postalCode: "",
+    country: "",
   });
   // compute role flags for UI
   const role = localStorage.getItem("role")?.toUpperCase();
@@ -54,28 +74,42 @@ function Leads() {
   const navigate = useNavigate();
 
   const stages = [
-    { id: "new", name: "New", color: "#3b82f6" },
-    { id: "contacted", name: "Contacted", color: "#f59e0b" },
-    { id: "qualified", name: "Qualified", color: "#8b5cf6" },
-    { id: "proposal", name: "Proposal", color: "#ec4899" },
+    { id: "new", name: "New", color: "#2563eb" },
+    { id: "contacted", name: "Contacted", color: "#0ea5e9" },
+    { id: "qualified", name: "Qualified", color: "#6366f1" },
+    { id: "proposal", name: "Proposal", color: "#14b8a6" },
     { id: "converted", name: "Converted", color: "#10b981" },
     { id: "lost", name: "Lost", color: "#ef4444" },
   ];
 
+  const salutations = ["Mr.", "Mrs.", "Ms.", "Dr.", "Prof."];
   const sources = ["Website", "Referral", "Social Media", "Email Campaign", "Cold Call", "Trade Show", "Other"];
+  const industries = ["Technology", "Manufacturing", "Finance", "Healthcare", "Retail", "Education", "Real Estate", "Other"];
+  const ratings = ["hot", "warm", "cold"];
   const exportViews = [{ id: "all", name: "All Leads" }, ...stages.map((stage) => ({ id: stage.id, name: `${stage.name} Leads` }))];
   const exportFieldPresets = {
     custom: ["name", "email", "phone", "company", "source", "status"],
-    basic: ["name", "email", "company", "status"],
-    all: ["name", "email", "phone", "company", "source", "status", "assignedTo", "createdAt"],
+    basic: ["name", "title", "email", "company", "status"],
+    all: ["name", "title", "email", "secondaryEmail", "phone", "mobile", "company", "website", "industry", "annualRevenue", "employeeCount", "source", "rating", "status", "city", "state", "country", "assignedTo", "createdAt"],
   };
   const exportFields = [
     { key: "name", label: "Lead Name", getValue: (lead) => lead.name || "-" },
+    { key: "title", label: "Title", getValue: (lead) => lead.title || "-" },
     { key: "email", label: "Email", getValue: (lead) => lead.email || "-" },
+    { key: "secondaryEmail", label: "Secondary Email", getValue: (lead) => lead.secondaryEmail || "-" },
     { key: "phone", label: "Phone", getValue: (lead) => lead.phone || "-" },
+    { key: "mobile", label: "Mobile", getValue: (lead) => lead.mobile || "-" },
     { key: "company", label: "Company", getValue: (lead) => lead.company || "-" },
+    { key: "website", label: "Website", getValue: (lead) => lead.website || "-" },
+    { key: "industry", label: "Industry", getValue: (lead) => lead.industry || "-" },
+    { key: "annualRevenue", label: "Annual Revenue", getValue: (lead) => lead.annualRevenue || "-" },
+    { key: "employeeCount", label: "Employee Count", getValue: (lead) => lead.employeeCount || "-" },
     { key: "source", label: "Source", getValue: (lead) => lead.source || "-" },
+    { key: "rating", label: "Rating", getValue: (lead) => lead.rating || "-" },
     { key: "status", label: "Status", getValue: (lead) => lead.status || "-" },
+    { key: "city", label: "City", getValue: (lead) => lead.address?.city || "-" },
+    { key: "state", label: "State", getValue: (lead) => lead.address?.state || "-" },
+    { key: "country", label: "Country", getValue: (lead) => lead.address?.country || "-" },
     {
       key: "assignedTo",
       label: "Assigned To",
@@ -154,13 +188,28 @@ function Leads() {
 
   const handleAddLead = () => {
     setNewLead({
+      salutation: "",
       firstName: "",
       lastName: "",
+      title: "",
       email: "",
+      secondaryEmail: "",
       phone: "",
+      mobile: "",
       company: "",
+      website: "",
+      industry: "",
+      annualRevenue: "",
+      employeeCount: "",
       source: "",
+      rating: "",
       status: "new",
+      notes: "",
+      street: "",
+      city: "",
+      state: "",
+      postalCode: "",
+      country: "",
     });
     setShowModal(true);
     setShowCreateMenu(false);
@@ -226,15 +275,35 @@ function Leads() {
     const fullName = row.name || `${firstName} ${lastName}`.trim();
     const rawStatus = String(row.status || "new").trim().toLowerCase();
     const validStatuses = new Set(stages.map((stage) => stage.id));
+    const rawRating = String(row.rating || "").trim().toLowerCase();
+    const validRatings = new Set(ratings);
 
     return {
+      salutation: row.salutation || "",
+      firstName,
+      lastName,
       name: fullName,
+      title: row.title || "",
       email: row.email || "",
+      secondaryEmail: row.secondaryemail || "",
       phone: row.phone || row.mobile || "",
+      mobile: row.mobile || "",
       company: row.company || row.organization || "",
+      website: row.website || "",
+      industry: row.industry || "",
+      annualRevenue: row.annualrevenue || "",
+      employeeCount: row.employeecount || row.noofemployees || "",
       source: row.source || "",
+      rating: validRatings.has(rawRating) ? rawRating : "",
       status: validStatuses.has(rawStatus) ? rawStatus : "new",
       notes: row.notes || row.note || "",
+      address: {
+        street: row.street || "",
+        city: row.city || "",
+        state: row.state || "",
+        postalCode: row.postalcode || row.zip || "",
+        country: row.country || "",
+      },
     };
   };
 
@@ -279,13 +348,37 @@ function Leads() {
     e.preventDefault();
     try {
       const token = localStorage.getItem("token");
+      const fullName = [newLead.firstName.trim(), newLead.lastName.trim()].filter(Boolean).join(' ').trim();
+      if (!fullName) {
+        alert('First name or last name required');
+        return;
+      }
+
       const leadData = {
-        name: `${newLead.firstName} ${newLead.lastName}`,
+        salutation: newLead.salutation,
+        firstName: newLead.firstName,
+        lastName: newLead.lastName,
+        title: newLead.title,
         email: newLead.email,
+        secondaryEmail: newLead.secondaryEmail,
         phone: newLead.phone,
+        mobile: newLead.mobile,
         company: newLead.company,
+        website: newLead.website,
+        industry: newLead.industry,
+        annualRevenue: newLead.annualRevenue,
+        employeeCount: newLead.employeeCount,
         source: newLead.source,
+        rating: newLead.rating,
         status: newLead.status,
+        notes: newLead.notes,
+        address: {
+          street: newLead.street,
+          city: newLead.city,
+          state: newLead.state,
+          postalCode: newLead.postalCode,
+          country: newLead.country,
+        },
       };
       await axios.post(
         "http://localhost:5000/api/leads",
@@ -332,52 +425,77 @@ function Leads() {
   const handleUpdateStatus = async (leadId, newStatus) => {
     try {
       const token = localStorage.getItem("token");
-      const leadToConvert = leads.find((lead) => lead._id === leadId);
       await axios.put(
         `http://localhost:5000/api/leads/${leadId}`,
         { status: newStatus },
         { headers: { Authorization: `Bearer ${token}` } }
       );
-
-      // When a lead is converted, create matching records in Mongo deals and contacts collections.
-      if (newStatus === "converted" && leadToConvert) {
-        const newDeal = {
-          sourceLeadId: leadId,
-          name: leadToConvert.name || "Converted Lead Deal",
-          company: leadToConvert.company || "",
-          amount: 0,
-          contact: leadToConvert.name || "",
-          email: leadToConvert.email || "",
-          stage: "qualification",
-        };
-        const newCustomer = {
-          sourceLeadId: leadId,
-          name: leadToConvert.name || "",
-          company: leadToConvert.company || "",
-          email: leadToConvert.email || "",
-          phone: leadToConvert.phone || "",
-          source: leadToConvert.source || "",
-          convertedAt: new Date().toISOString(),
-        };
-
-        await Promise.all([
-          axios.post("http://localhost:5000/api/deals", newDeal, {
-            headers: { Authorization: `Bearer ${token}` },
-          }),
-          axios.post("http://localhost:5000/api/contacts", newCustomer, {
-            headers: { Authorization: `Bearer ${token}` },
-          }),
-        ]);
-      }
-
+      alert(`Status updated to "${stages.find(s => s.id === newStatus)?.name || newStatus}"`);
       fetchLeads();
       fetchStats();
       setSelectedLead(null);
     } catch (err) {
       console.error(err);
-      alert("Failed to update lead status");
+      console.error('Full error:', err.response?.data);
+      alert(`Failed to update lead status: ${err.response?.data?.message || err.message}`);
     }
   };
+
+  const handleOpenConvertModal = () => {
+    if (selectedLead.isConverted) {
+      alert("This lead is already converted.");
+      return;
+    }
+    if (!["qualified", "proposal"].includes(selectedLead.status)) {
+      alert("Lead must be Qualified or Proposal to convert.");
+      return;
+    }
+    setConvertData({ createDeal: true, dealName: `${selectedLead.name || "Lead"} Deal`, dealAmount: 0, handleDupe: 'create' });
+    setShowConvertModal(true);
+  };
+
+  const checkLeadDupe = async (leadId) => {
+    try {
+      const token = localStorage.getItem("token");
+      const lead = leads.find(l => l._id === leadId);
+      if (!lead.email) {
+        return; // no dupe check needed
+      }
+      const res = await axios.get(`http://localhost:5000/api/contacts`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const dupe = res.data.find(c => c.email === lead.email && c._id !== lead.convertedContactId);
+      if (dupe) {
+        setDupeContact(dupe);
+        setShowDupeModal(true);
+        return false;
+      }
+      return true;
+    } catch (err) {
+      console.error(err);
+      return true; // proceed if check fails
+    }
+  };
+
+  const handleConvertLead = async () => {
+    try {
+      const token = localStorage.getItem("token");
+      await axios.post(
+        `http://localhost:5000/api/leads/${selectedLead._id}/convert`,
+        convertData,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      alert("Lead converted successfully!");
+      setShowConvertModal(false);
+      fetchLeads();
+      fetchStats();
+      setSelectedLead(null);
+    } catch (err) {
+      console.error(err);
+      alert(err.response?.data?.message || "Conversion failed");
+    }
+  };
+
 
   const handleAssign = async (leadId, userId) => {
     try {
@@ -449,6 +567,17 @@ function Leads() {
     const matchingLeads = search.trim()
       ? leads.filter((lead) =>
           [lead.name, lead.email, lead.company, lead.phone, lead.source, lead.status]
+            .concat([
+              lead.secondaryEmail,
+              lead.mobile,
+              lead.title,
+              lead.website,
+              lead.industry,
+              lead.rating,
+              lead.address?.city,
+              lead.address?.state,
+              lead.address?.country,
+            ])
             .filter(Boolean)
             .some((value) => String(value).toLowerCase().includes(search.toLowerCase()))
         )
@@ -1094,6 +1223,18 @@ ET`;
                   <h3>Basic Information</h3>
                   <div className="form-row-zoho">
                     <div className="form-group">
+                      <label>Salutation</label>
+                      <select
+                        value={newLead.salutation}
+                        onChange={(e) => setNewLead({ ...newLead, salutation: e.target.value })}
+                      >
+                        <option value="">Salutation</option>
+                        {salutations.map((salutation) => (
+                          <option key={salutation} value={salutation}>{salutation}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="form-group">
                       <label>First Name *</label>
                       <input
                         type="text"
@@ -1116,6 +1257,15 @@ ET`;
                   </div>
                   <div className="form-row-zoho">
                     <div className="form-group">
+                      <label>Title</label>
+                      <input
+                        type="text"
+                        placeholder="Enter job title"
+                        value={newLead.title}
+                        onChange={(e) => setNewLead({ ...newLead, title: e.target.value })}
+                      />
+                    </div>
+                    <div className="form-group">
                       <label>Email *</label>
                       <input
                         type="email"
@@ -1125,6 +1275,17 @@ ET`;
                         required
                       />
                     </div>
+                  </div>
+                  <div className="form-row-zoho">
+                    <div className="form-group">
+                      <label>Secondary Email</label>
+                      <input
+                        type="email"
+                        placeholder="Enter secondary email"
+                        value={newLead.secondaryEmail}
+                        onChange={(e) => setNewLead({ ...newLead, secondaryEmail: e.target.value })}
+                      />
+                    </div>
                     <div className="form-group">
                       <label>Phone</label>
                       <input
@@ -1132,6 +1293,15 @@ ET`;
                         placeholder="Enter phone number"
                         value={newLead.phone}
                         onChange={(e) => setNewLead({ ...newLead, phone: e.target.value })}
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label>Mobile</label>
+                      <input
+                        type="tel"
+                        placeholder="Enter mobile number"
+                        value={newLead.mobile}
+                        onChange={(e) => setNewLead({ ...newLead, mobile: e.target.value })}
                       />
                     </div>
                   </div>
@@ -1149,6 +1319,15 @@ ET`;
                       />
                     </div>
                     <div className="form-group">
+                      <label>Website</label>
+                      <input
+                        type="url"
+                        placeholder="https://example.com"
+                        value={newLead.website}
+                        onChange={(e) => setNewLead({ ...newLead, website: e.target.value })}
+                      />
+                    </div>
+                    <div className="form-group">
                       <label>Lead Source</label>
                       <select
                         value={newLead.source}
@@ -1157,6 +1336,54 @@ ET`;
                         <option value="">Select source</option>
                         {sources.map((source) => (
                           <option key={source} value={source}>{source}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                  <div className="form-row-zoho">
+                    <div className="form-group">
+                      <label>Industry</label>
+                      <select
+                        value={newLead.industry}
+                        onChange={(e) => setNewLead({ ...newLead, industry: e.target.value })}
+                      >
+                        <option value="">Select industry</option>
+                        {industries.map((industry) => (
+                          <option key={industry} value={industry}>{industry}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="form-group">
+                      <label>Annual Revenue</label>
+                      <input
+                        type="number"
+                        min="0"
+                        placeholder="Enter annual revenue"
+                        value={newLead.annualRevenue}
+                        onChange={(e) => setNewLead({ ...newLead, annualRevenue: e.target.value })}
+                      />
+                    </div>
+                  </div>
+                  <div className="form-row-zoho">
+                    <div className="form-group">
+                      <label>Employee Count</label>
+                      <input
+                        type="number"
+                        min="0"
+                        placeholder="Enter employee count"
+                        value={newLead.employeeCount}
+                        onChange={(e) => setNewLead({ ...newLead, employeeCount: e.target.value })}
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label>Rating</label>
+                      <select
+                        value={newLead.rating}
+                        onChange={(e) => setNewLead({ ...newLead, rating: e.target.value })}
+                      >
+                        <option value="">Select rating</option>
+                        {ratings.map((rating) => (
+                          <option key={rating} value={rating}>{rating}</option>
                         ))}
                       </select>
                     </div>
@@ -1172,6 +1399,67 @@ ET`;
                           <option key={stage.id} value={stage.id}>{stage.name}</option>
                         ))}
                       </select>
+                    </div>
+                    <div className="form-group">
+                      <label>Notes</label>
+                      <textarea
+                        placeholder="Enter lead notes"
+                        value={newLead.notes}
+                        onChange={(e) => setNewLead({ ...newLead, notes: e.target.value })}
+                        rows="3"
+                      />
+                    </div>
+                  </div>
+                </div>
+                <div className="form-section">
+                  <h3>Address</h3>
+                  <div className="form-row-zoho">
+                    <div className="form-group">
+                      <label>Street</label>
+                      <input
+                        type="text"
+                        placeholder="Enter street"
+                        value={newLead.street}
+                        onChange={(e) => setNewLead({ ...newLead, street: e.target.value })}
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label>City</label>
+                      <input
+                        type="text"
+                        placeholder="Enter city"
+                        value={newLead.city}
+                        onChange={(e) => setNewLead({ ...newLead, city: e.target.value })}
+                      />
+                    </div>
+                  </div>
+                  <div className="form-row-zoho">
+                    <div className="form-group">
+                      <label>State</label>
+                      <input
+                        type="text"
+                        placeholder="Enter state"
+                        value={newLead.state}
+                        onChange={(e) => setNewLead({ ...newLead, state: e.target.value })}
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label>Postal Code</label>
+                      <input
+                        type="text"
+                        placeholder="Enter postal code"
+                        value={newLead.postalCode}
+                        onChange={(e) => setNewLead({ ...newLead, postalCode: e.target.value })}
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label>Country</label>
+                      <input
+                        type="text"
+                        placeholder="Enter country"
+                        value={newLead.country}
+                        onChange={(e) => setNewLead({ ...newLead, country: e.target.value })}
+                      />
                     </div>
                   </div>
                 </div>
@@ -1200,7 +1488,7 @@ ET`;
                 <div className="form-section">
                   <h3>Upload CSV File</h3>
                   <p className="import-helper-text">
-                    Supported headers: `name`, `firstName`, `lastName`, `email`, `phone`, `company`, `source`, `status`, `notes`.
+                    Supported headers: `name`, `salutation`, `firstName`, `lastName`, `title`, `email`, `secondaryEmail`, `phone`, `mobile`, `company`, `website`, `industry`, `annualRevenue`, `employeeCount`, `source`, `rating`, `status`, `notes`, `street`, `city`, `state`, `postalCode`, `country`.
                   </p>
                   <input
                     ref={fileInputRef}
@@ -1270,6 +1558,14 @@ ET`;
               </div>
               <div className="lead-details-view">
                 <div className="detail-row">
+                  <span className="detail-label">Salutation</span>
+                  <span className="detail-value">{selectedLead.salutation || "-"}</span>
+                </div>
+                <div className="detail-row">
+                  <span className="detail-label">Title</span>
+                  <span className="detail-value">{selectedLead.title || "-"}</span>
+                </div>
+                <div className="detail-row">
                   <span className="detail-label">Company</span>
                   <span className="detail-value">{selectedLead.company || "-"}</span>
                 </div>
@@ -1278,16 +1574,56 @@ ET`;
                   <span className="detail-value">{selectedLead.email || "-"}</span>
                 </div>
                 <div className="detail-row">
+                  <span className="detail-label">Secondary Email</span>
+                  <span className="detail-value">{selectedLead.secondaryEmail || "-"}</span>
+                </div>
+                <div className="detail-row">
                   <span className="detail-label">Phone</span>
                   <span className="detail-value">{selectedLead.phone || "-"}</span>
+                </div>
+                <div className="detail-row">
+                  <span className="detail-label">Mobile</span>
+                  <span className="detail-value">{selectedLead.mobile || "-"}</span>
+                </div>
+                <div className="detail-row">
+                  <span className="detail-label">Website</span>
+                  <span className="detail-value">{selectedLead.website || "-"}</span>
+                </div>
+                <div className="detail-row">
+                  <span className="detail-label">Industry</span>
+                  <span className="detail-value">{selectedLead.industry || "-"}</span>
+                </div>
+                <div className="detail-row">
+                  <span className="detail-label">Annual Revenue</span>
+                  <span className="detail-value">{selectedLead.annualRevenue ?? "-"}</span>
+                </div>
+                <div className="detail-row">
+                  <span className="detail-label">Employee Count</span>
+                  <span className="detail-value">{selectedLead.employeeCount ?? "-"}</span>
                 </div>
                 <div className="detail-row">
                   <span className="detail-label">Source</span>
                   <span className="detail-value">{selectedLead.source || "-"}</span>
                 </div>
                 <div className="detail-row">
+                  <span className="detail-label">Rating</span>
+                  <span className="detail-value">{selectedLead.rating || "-"}</span>
+                </div>
+                <div className="detail-row">
+                  <span className="detail-label">Address</span>
+                  <span className="detail-value">
+                    {[selectedLead.address?.street, selectedLead.address?.city, selectedLead.address?.state, selectedLead.address?.postalCode, selectedLead.address?.country]
+                      .filter(Boolean)
+                      .join(", ") || "-"}
+                  </span>
+                </div>
+                <div className="detail-row">
                   <span className="detail-label">Status</span>
                   <span className={`status-badge-zoho ${selectedLead.status}`}>{selectedLead.status}</span>
+                </div>
+                <div className="detail-row">
+                  <span className="detail-label">Notes</span>
+                  <span className="detail-value">{selectedLead.notes || "-"}</span>
                 </div>
                 <div className="detail-row">
                   <span className="detail-label">Added On</span>
@@ -1319,12 +1655,26 @@ ET`;
                       className={`status-btn-zoho ${selectedLead.status === stage.id ? 'active' : ''}`}
                       style={{ borderColor: stage.color, color: selectedLead.status === stage.id ? stage.color : '' }}
                       onClick={() => handleUpdateStatus(selectedLead._id, stage.id)}
+                      disabled={selectedLead.isConverted && stage.id === 'converted'}
                     >
                       {stage.name}
                     </button>
                   ))}
                 </div>
               </div>
+              <div className="convert-section">
+                <button className="btn-convert-lead" onClick={handleOpenConvertModal}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M17 14V2h-5M15 2v14"></path>
+                    <path d="M15 10h4v4h-4V10z"></path>
+                    <path d="M7 10H3v4h4v-4z"></path>
+                    <path d="M7 22H3v-4h4v4z"></path>
+                    <path d="M15 22h4v-4h-4v4z"></path>
+                  </svg>
+                  Convert Lead
+                </button>
+              </div>
+
               <RecordActivityPanel
                 recordType="Lead"
                 recordId={selectedLead._id}

@@ -223,3 +223,56 @@
     align-items: stretch;
   }
 }
+
+/* Elogixa palette overrides */
+.settings-page {
+  background:
+    radial-gradient(circle at top right, rgba(239, 181, 33, 0.1), transparent 24%),
+    radial-gradient(circle at bottom left, rgba(70, 184, 77, 0.1), transparent 26%),
+    linear-gradient(180deg, #faf7f0 0%, #f3eee4 100%);
+}
+
+.settings-hero {
+  background: var(--theme-gradient-brand);
+  box-shadow: 0 24px 60px rgba(32, 33, 36, 0.16);
+}
+
+.settings-alert,
+.settings-loading-card,
+.settings-card {
+  border-color: var(--theme-border);
+  box-shadow: var(--theme-shadow-sm);
+}
+
+.settings-card-head h2,
+.settings-toggle strong {
+  color: var(--theme-ink);
+}
+
+.settings-card-head p,
+.settings-field span,
+.settings-toggle span {
+  color: var(--theme-text-muted);
+}
+
+.settings-field,
+.settings-toggle {
+  background: var(--theme-gradient-soft);
+  border-color: var(--theme-border);
+}
+
+.settings-field input:focus,
+.settings-field select:focus,
+.settings-field textarea:focus {
+  border-color: var(--theme-gold);
+  box-shadow: 0 0 0 4px rgba(239, 181, 33, 0.12);
+}
+
+.settings-secondary {
+  border-color: var(--theme-border-strong);
+}
+
+.settings-primary {
+  background: var(--theme-gradient-brand);
+  box-shadow: var(--theme-shadow-md);
+}

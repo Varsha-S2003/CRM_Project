@@ -1,10 +1,54 @@
+:root {
+  --theme-ink: #2a1b4d;
+  --theme-ink-soft: #6f42c1;
+  --theme-ink-deep: #22133f;
+  --theme-gold: #6f42c1;
+  --theme-gold-strong: #5a32a3;
+  --theme-green: #007bff;
+  --theme-green-strong: #005fcc;
+  --theme-lime: #0dcaf0;
+  --theme-bg: #f4f7fc;
+  --theme-bg-soft: #ffffff;
+  --theme-surface: rgba(255, 255, 255, 0.96);
+  --theme-surface-solid: #ffffff;
+  --theme-surface-muted: #eef5ff;
+  --theme-surface-accent: #e4dcf7;
+  --theme-border: #d9e3f2;
+  --theme-border-strong: #c9d8ef;
+  --theme-text: #2a1b4d;
+  --theme-text-muted: #6d7a96;
+  --theme-text-soft: #97a4bf;
+  --theme-danger: #dc2626;
+  --theme-danger-soft: #fef2f2;
+  --theme-success: #17a2b8;
+  --theme-success-soft: #ecfdf5;
+  --theme-warning: #d97706;
+  --theme-warning-soft: #fff7ed;
+  --theme-shadow-sm: 0 8px 22px rgba(42, 27, 77, 0.08);
+  --theme-shadow-md: 0 18px 40px rgba(42, 27, 77, 0.12);
+  --theme-shadow-lg: 0 28px 68px rgba(42, 27, 77, 0.16);
+  --theme-gradient-brand: #6f42c1;
+  --theme-gradient-dark: #eef5ff;
+  --theme-gradient-gold: #6f42c1;
+  --theme-gradient-green: #007bff;
+  --theme-gradient-soft: #eef5ff;
+}
+
+html {
+  background: var(--theme-bg);
+}
+
 body {
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-    sans-serif;
+  font-family: "Segoe UI", "Trebuchet MS", "Helvetica Neue", Arial, sans-serif;
+  background: var(--theme-bg);
+  color: var(--theme-text);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+#root {
+  min-height: 100vh;
 }
 
 code {

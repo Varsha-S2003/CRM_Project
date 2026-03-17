@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
+import BrandLogo from "./BrandLogo";
 import "./Dashboard.css";
 
 function Sidebar() {
@@ -60,18 +61,7 @@ function Sidebar() {
   return (
     <div className="sidebar-zoho">
       <div className="sidebar-brand">
-        <div className="brand-icon">
-          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
-            <circle cx="9" cy="7" r="4"></circle>
-            <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
-            <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
-          </svg>
-        </div>
-        <div className="brand-text">
-          <span className="brand-name">ELOGIXA</span>
-          <span className="brand-tag">CRM</span>
-        </div>
+        <BrandLogo className="company-logo sidebar-company-logo" title="ELOGIXA" />
       </div>
       
       <button
@@ -93,7 +83,6 @@ function Sidebar() {
 
       <nav className="sidebar-nav">
         <div className="nav-section">
-          <span className="nav-section-title">Main</span>
           {canSee(["ADMIN","MANAGER","EMPLOYEE"]) && (
             <a
               href="/"
@@ -253,7 +242,6 @@ function Sidebar() {
         </div>
 
         <div className="nav-section">
-          <span className="nav-section-title">Admin</span>
           {canSee(["ADMIN"]) && (
             <a
               href="/"
@@ -267,19 +255,6 @@ function Sidebar() {
                 <line x1="23" y1="11" x2="17" y2="11"></line>
               </svg>
               <span>Users</span>
-            </a>
-          )}
-          {canSee(["ADMIN"]) && (
-            <a
-              href="/"
-              onClick={(e) => handleNav("/add-employee", e)}
-              className={`nav-item ${isActive("/add-employee") ? "active" : ""}`}
-            >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M12 5v14"></path>
-                <path d="M5 12h14"></path>
-              </svg>
-              <span>Add Employee</span>
             </a>
           )}
           {canSee(["ADMIN","MANAGER"]) && (

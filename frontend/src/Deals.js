@@ -5,12 +5,12 @@ import "./Leads.css";
 import RecordActivityPanel from "./RecordActivityPanel";
 
 const stages = [
-  { id: "qualification", name: "Qualification", color: "#3b82f6" },
-  { id: "need_analysis", name: "Need Analysis", color: "#f59e0b" },
-  { id: "value_proposition", name: "Value Proposition", color: "#8b5cf6" },
-  { id: "identify_decision_maker", name: "Identify Decision Maker", color: "#06b6d4" },
-  { id: "proposal_price_quote", name: "Proposal/Price Quote", color: "#ec4899" },
-  { id: "negotiate", name: "Negotiate", color: "#6366f1" },
+  { id: "qualification", name: "Qualification", color: "#2563eb" },
+  { id: "need_analysis", name: "Need Analysis", color: "#0ea5e9" },
+  { id: "value_proposition", name: "Value Proposition", color: "#6366f1" },
+  { id: "identify_decision_maker", name: "Identify Decision Maker", color: "#8b5cf6" },
+  { id: "proposal_price_quote", name: "Proposal/Price Quote", color: "#14b8a6" },
+  { id: "negotiate", name: "Negotiate", color: "#f59e0b" },
   { id: "won", name: "Won", color: "#10b981" },
   { id: "lost", name: "Lost", color: "#ef4444" },
 ];

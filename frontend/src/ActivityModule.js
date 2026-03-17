@@ -35,7 +35,7 @@ const TYPE_OPTIONS = [
 
 const PRIORITY_OPTIONS = ["Low", "Medium", "High"];
 const VIEW_OPTIONS = ["month", "week", "day"];
-const CHART_COLORS = ["#3b82f6", "#f97316", "#10b981", "#8b5cf6"];
+const CHART_COLORS = ["#202124", "#efb521", "#46b84d", "#9dc63b"];
 const TASK_BOARD_COLUMNS = ["Not Started", "Deferred", "In Progress", "Completed"];
 const MEETING_BOARD_COLUMNS = ["Scheduled", "Today", "Completed", "Cancelled"];
 const CALL_BOARD_COLUMNS = ["Scheduled", "Today", "Completed", "Missed"];
@@ -1039,7 +1039,7 @@ function ActivityModule() {
                       <YAxis allowDecimals={false} />
                       <Tooltip />
                       <Legend />
-                      <Bar dataKey="count" fill="#2563eb" />
+                      <Bar dataKey="count" fill="#efb521" />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>

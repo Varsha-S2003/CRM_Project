@@ -2,6 +2,7 @@ import { useState } from "react";
 import axios from "axios";
 import { FiEye, FiEyeOff } from "react-icons/fi";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import BrandLogo from "./BrandLogo";
 import "./Login.css";
 
 export default function ResetPassword() {
@@ -59,12 +60,7 @@ export default function ResetPassword() {
     <div className="login-wrapper-zoho">
       <div className="login-container-zoho">
         <div className="login-brand">
-          <div className="brand-icon">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <rect x="3" y="11" width="18" height="10" rx="2" />
-              <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-            </svg>
-          </div>
+          <BrandLogo className="company-logo auth-company-logo" title="ELOGIXA" />
           <h1>Reset Password</h1>
           <p>Choose a new password for your account.</p>
         </div>
