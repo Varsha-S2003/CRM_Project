@@ -564,3 +564,22 @@ button.nav-item {
   }
 }
 
+/* Brand Logo Styles for Sidebar */
+.brand-logo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.sidebar-company-logo .brand-text {
+  color: #001a4d;
+  font-weight: 700;
+}
+
+.sidebar-company-logo .brand-highlight {
+  color: #6f42c1;
+  font-weight: 700;
+}
+

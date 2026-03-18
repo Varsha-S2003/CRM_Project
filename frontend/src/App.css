@@ -31,10 +31,10 @@ a {
   top: 0;
   left: 0;
   right: 0;
-  background: rgba(255, 255, 255, 0.96);
+  background: linear-gradient(135deg, #22133f 0%, #2a1b4d 45%, #123a73 100%);
   backdrop-filter: blur(10px);
   z-index: 1000;
-  box-shadow: 0 1px 0 rgba(42, 27, 77, 0.08);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.2);
   transition: box-shadow 0.25s ease, background 0.25s ease;
 }
 
@@ -46,6 +46,16 @@ a {
   display: flex;
   align-items: center;
   justify-content: space-between;
+}
+
+.navbar .logo {
+  font-size: 24px;
+  font-weight: 700;
+  color: white;
+}
+
+.navbar .logo-highlight {
+  color: #a78bfa;
 }
 
 .logo {
@@ -66,12 +76,12 @@ a {
 .nav-link {
   font-size: 15px;
   font-weight: 500;
-  color: var(--theme-text-muted);
+  color: rgba(224, 232, 255, 0.72);
   transition: color 0.2s, transform 0.2s ease;
 }
 
 .nav-link:hover {
-  color: var(--theme-green-strong);
+  color: #a78bfa;
   transform: translateY(-1px);
 }
 
@@ -86,18 +96,39 @@ a {
   height: 40px;
   border-radius: 10px;
   border: none;
-  background: var(--theme-surface-muted);
+  background: rgba(255, 255, 255, 0.1);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--theme-text-soft);
+  color: rgba(255, 255, 255, 0.82);
   transition: all 0.2s;
 }
 
 .icon-btn:hover {
-  background: var(--theme-surface-accent);
-  color: var(--theme-ink);
+  background: rgba(167, 139, 250, 0.2);
+  color: #a78bfa;
+}
+
+.navbar .btn-outline {
+  color: rgba(224, 232, 255, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.navbar .btn-outline:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.3);
+  color: white;
+}
+
+.navbar .btn-primary {
+  background: #a78bfa;
+  color: white;
+}
+
+.navbar .btn-primary:hover {
+  background: #c4b5fd;
+  transform: translateY(-1px);
 }
 
 .btn {
@@ -1053,6 +1084,18 @@ a {
 
 .footer-legal a:hover {
   color: #8fdcff;
+}
+
+/* Footer Logo - Override navbar logo styling */
+.footer .logo {
+  font-size: 20px;
+  font-weight: 700;
+  color: white;
+  margin-bottom: 16px;
+}
+
+.footer .logo-highlight {
+  color: #a78bfa;
 }
 
 /* Responsive Design */
