@@ -6,7 +6,7 @@ const Customer = require("../models/customer");
 router.get("/", verifyToken, async (req, res) => {
   try {
     const customers = await Customer.find()
-      .populate("leadId", "name email phone status")
+      .populate("leadId", "name email phone status source")
       .sort({ createdAt: -1 });
 
     res.json(customers);

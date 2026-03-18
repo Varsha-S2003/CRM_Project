@@ -4,6 +4,11 @@ import Sidebar from "./Sidebar";
 import RecordActivityPanel from "./RecordActivityPanel";
 import "./Leads.css";
 
+const getLeadSource = (leadValue) => {
+  if (!leadValue || typeof leadValue !== "object") return "-";
+  return String(leadValue.source || "").trim() || "-";
+};
+
 export default function Customers() {
   const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -52,7 +57,7 @@ export default function Customers() {
                     <th style={{ textAlign: "left", padding: "10px", borderBottom: "1px solid var(--theme-border)" }}>Company</th>
                     <th style={{ textAlign: "left", padding: "10px", borderBottom: "1px solid var(--theme-border)" }}>Email</th>
                     <th style={{ textAlign: "left", padding: "10px", borderBottom: "1px solid var(--theme-border)" }}>Phone</th>
-                    <th style={{ textAlign: "left", padding: "10px", borderBottom: "1px solid var(--theme-border)" }}>Lead Reference</th>
+                    <th style={{ textAlign: "left", padding: "10px", borderBottom: "1px solid var(--theme-border)" }}>Source</th>
                     <th style={{ textAlign: "left", padding: "10px", borderBottom: "1px solid var(--theme-border)" }}>Created At</th>
                   </tr>
                 </thead>
@@ -68,7 +73,7 @@ export default function Customers() {
                       <td style={{ padding: "10px", borderBottom: "1px solid #efe8d8" }}>{customer.email || "-"}</td>
                       <td style={{ padding: "10px", borderBottom: "1px solid #efe8d8" }}>{customer.phone || "-"}</td>
                       <td style={{ padding: "10px", borderBottom: "1px solid #efe8d8" }}>
-                        {customer.leadId?._id || customer.leadId || "-"}
+                        {getLeadSource(customer.leadId)}
                       </td>
                       <td style={{ padding: "10px", borderBottom: "1px solid #efe8d8" }}>
                         {customer.createdAt ? new Date(customer.createdAt).toLocaleString() : "-"}
@@ -101,9 +106,9 @@ export default function Customers() {
                     <span className="detail-value">{selectedCustomer.phone || "-"}</span>
                   </div>
                   <div className="detail-row">
-                    <span className="detail-label">Lead Reference</span>
+                    <span className="detail-label">Source</span>
                     <span className="detail-value">
-                      {selectedCustomer.leadId?._id || selectedCustomer.leadId || "-"}
+                      {getLeadSource(selectedCustomer.leadId)}
                     </span>
                   </div>
                 </div>
