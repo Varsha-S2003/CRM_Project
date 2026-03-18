@@ -251,20 +251,7 @@ function AddEmployee() {
       );
 
       alert(`✅ Employee Created Successfully!\n\nEmployee ID: ${res.data.employee_id}\nUsername: ${res.data.username}\nRole: ${res.data.role}\n\nThe employee can now login to the CRM system.`);
-      
-      setFormData({
-        name: "",
-        username: "",
-        email: "",
-        phone: "",
-        department: "",
-        designation: "",
-        password: "",
-        confirmPassword: "",
-        role: "EMPLOYEE"
-      });
-      setErrors({});
-      setTouched({});
+      navigate("/employees");
     } catch (err) {
       console.error(err);
       const errorMessage = err.response?.data?.message || "Failed to create employee. Please try again.";
@@ -298,12 +285,6 @@ function AddEmployee() {
     <div className="add-employee-page-zoho">
       <div className="add-employee-container-zoho">
         <div className="form-header-zoho">
-          <button className="back-button-zoho" onClick={() => navigate("/dashboard")}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M19 12H5M12 19l-7-7 7-7"/>
-            </svg>
-            Back
-          </button>
           <div className="header-content">
             <div className="header-icon">
               <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -637,7 +618,7 @@ function AddEmployee() {
           </div>
           
           <div className="form-actions-zoho">
-            <button type="button" className="btn-cancel-zoho" onClick={() => navigate("/dashboard")}>
+            <button type="button" className="btn-cancel-zoho" onClick={() => navigate("/employees")}>
               Cancel
             </button>
             <button type="submit" className="btn-submit-zoho" disabled={!canSubmit}>

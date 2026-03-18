@@ -328,6 +328,8 @@ const convertLeadToCustomerDeal = async (req, res, next) => {
             phone: lead.phone || lead.mobile,
             company: lead.company,
             leadId: lead._id,
+            status: "Active",
+            reason: "",
           },
         ],
         { session }
@@ -344,6 +346,8 @@ const convertLeadToCustomerDeal = async (req, res, next) => {
             email: customer.email,
             phone: customer.phone,
             stage: "Qualification",
+            status: "Active",
+            reason: "",
             value: normalizedValue,
             amount: normalizedValue || 0,
             assignedTo: lead.assignedTo || req.user._id,

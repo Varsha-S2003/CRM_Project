@@ -2,36 +2,27 @@
 /* Base Container */
 .add-employee-page-zoho {
   min-height: 100vh;
-  background:
-    radial-gradient(circle at top left, rgba(250, 204, 21, 0.24), transparent 24%),
-    radial-gradient(circle at top right, rgba(34, 197, 94, 0.18), transparent 28%),
-    radial-gradient(circle at bottom left, rgba(163, 230, 53, 0.14), transparent 30%),
-    linear-gradient(145deg, #fffef4 0%, #f7fde9 42%, #edf7ef 100%);
+  background: #f5f7fa;
   padding: 40px 20px;
   position: relative;
-  overflow: hidden;
+  overflow-x: hidden;
 }
 
 .add-employee-page-zoho::before {
   content: "";
   position: absolute;
   inset: 0;
-  background:
-    linear-gradient(rgba(255, 255, 255, 0.25) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.25) 1px, transparent 1px);
-  background-size: 44px 44px;
-  mask-image: radial-gradient(circle at center, black 48%, transparent 88%);
+  background: radial-gradient(circle at top right, rgba(79, 70, 229, 0.08), transparent 36%);
   pointer-events: none;
 }
 
 .add-employee-container-zoho {
   max-width: 900px;
   margin: 0 auto;
-  background: rgba(255, 255, 255, 0.84);
-  border: 1px solid rgba(255, 255, 255, 0.9);
-  border-radius: 28px;
-  box-shadow: 0 30px 90px rgba(148, 163, 184, 0.24);
-  backdrop-filter: blur(18px);
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 16px;
+  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.12);
   overflow: hidden;
   position: relative;
   z-index: 1;
@@ -39,36 +30,10 @@
 
 /* Header */
 .form-header-zoho {
-  background:
-    radial-gradient(circle at top right, rgba(255, 255, 255, 0.18), transparent 26%),
-    linear-gradient(135deg, #111827 0%, #1f2937 45%, #166534 100%);
+  background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
   padding: 32px 40px;
   color: white;
   position: relative;
-}
-
-.back-button-zoho {
-  position: absolute;
-  top: 20px;
-  left: 20px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  background: rgba(255, 255, 255, 0.14);
-  border: none;
-  color: rgba(255, 255, 255, 0.92);
-  padding: 8px 16px;
-  border-radius: 12px;
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s;
-  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.18);
-}
-
-.back-button-zoho:hover {
-  background: rgba(255, 255, 255, 0.24);
-  color: white;
 }
 
 .header-content {
@@ -81,16 +46,16 @@
 .header-icon {
   width: 64px;
   height: 64px;
-  background: linear-gradient(135deg, #facc15 0%, #22c55e 100%);
+  background: rgba(255, 255, 255, 0.18);
   border-radius: 20px;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 16px 32px rgba(34, 197, 94, 0.26);
+  box-shadow: 0 12px 28px rgba(49, 46, 129, 0.22);
 }
 
 .header-icon svg {
-  color: #111827;
+  color: #ffffff;
 }
 
 .form-header-zoho h1 {
@@ -111,11 +76,11 @@
 
 .form-section-zoho {
   margin-bottom: 32px;
-  padding: 28px;
-  border-radius: 24px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(248, 250, 252, 0.78));
-  border: 1px solid rgba(226, 232, 240, 0.85);
-  box-shadow: 0 14px 40px rgba(226, 232, 240, 0.4);
+  padding: 24px;
+  border-radius: 14px;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
 }
 
 .section-header {
@@ -128,15 +93,15 @@
 .section-number {
   width: 34px;
   height: 34px;
-  background: linear-gradient(135deg, #facc15 0%, #22c55e 100%);
+  background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #111827;
+  color: #ffffff;
   font-size: 13px;
   font-weight: 600;
-  box-shadow: 0 8px 20px rgba(34, 197, 94, 0.18);
+  box-shadow: 0 8px 20px rgba(79, 70, 229, 0.2);
 }
 
 .section-header h3 {
@@ -186,20 +151,20 @@
 .input-wrapper select {
   width: 100%;
   padding: 14px 16px 14px 46px;
-  border-radius: 16px;
-  border: 2px solid #dbe4f0;
+  border-radius: 10px;
+  border: 2px solid #e5e7eb;
   font-size: 14px;
   transition: all 0.2s;
-  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+  background: #ffffff;
   color: #1e293b;
 }
 
 .input-wrapper input:focus,
 .input-wrapper select:focus {
   outline: none;
-  border-color: #22c55e;
+  border-color: #4f46e5;
   background: white;
-  box-shadow: 0 0 0 5px rgba(34, 197, 94, 0.14);
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
 }
 
 .input-wrapper input::placeholder {
@@ -262,10 +227,10 @@
   transform: translateY(-50%);
   width: 34px;
   height: 34px;
-  background: rgba(250, 204, 21, 0.12);
-  border: 1px solid rgba(34, 197, 94, 0.2);
+  background: #f3f4f6;
+  border: 1px solid #d1d5db;
   border-radius: 10px;
-  color: #166534;
+  color: #4b5563;
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -275,14 +240,14 @@
 }
 
 .toggle-password:hover {
-  color: #111827;
-  background: rgba(250, 204, 21, 0.22);
-  border-color: rgba(34, 197, 94, 0.32);
+  color: #1f2937;
+  background: #e5e7eb;
+  border-color: #cbd5e1;
 }
 
 .toggle-password:focus {
   outline: none;
-  box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.16);
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
 }
 
 .toggle-password svg {
@@ -297,10 +262,10 @@
 }
 
 .password-requirements-zoho {
-  background: linear-gradient(180deg, #fffbeb 0%, #f7fee7 100%);
+  background: #f8fafc;
   padding: 20px;
-  border-radius: 20px;
-  border: 1px solid #d9f99d;
+  border-radius: 12px;
+  border: 1px solid #e5e7eb;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
 }
 
@@ -383,7 +348,7 @@
   background: rgba(255, 255, 255, 0.9);
   border: 2px solid #e2e8f0;
   color: #64748b;
-  border-radius: 14px;
+  border-radius: 8px;
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
@@ -400,20 +365,20 @@
   align-items: center;
   gap: 8px;
   padding: 12px 28px;
-  background: linear-gradient(135deg, #111827 0%, #166534 55%, #facc15 100%);
+  background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
   border: none;
   color: white;
-  border-radius: 14px;
+  border-radius: 8px;
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.2s;
-  box-shadow: 0 14px 30px rgba(22, 101, 52, 0.24);
+  box-shadow: 0 10px 24px rgba(79, 70, 229, 0.25);
 }
 
 .btn-submit-zoho:hover:not(:disabled) {
   transform: translateY(-2px);
-  box-shadow: 0 18px 36px rgba(22, 101, 52, 0.3);
+  box-shadow: 0 14px 28px rgba(79, 70, 229, 0.32);
 }
 
 .btn-submit-zoho:disabled {

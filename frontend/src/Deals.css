@@ -1,0 +1,57 @@
+/* Deals Module Styles - extracted/enhanced from Leads.css */
+
+.status-badge {
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  text-transform: uppercase;
+}
+
+.status-badge.active {
+  background: linear-gradient(135deg, #10b981, #059669);
+  color: white;
+}
+
+.status-badge.inactive {
+  background: linear-gradient(135deg, #ef4444, #dc2626);
+  color: white;
+}
+
+.kanban-card.inactive-highlight {
+  border-left: 4px solid #ef4444;
+  opacity: 0.7;
+  background: rgba(239, 68, 68, 0.05);
+}
+
+.status-filter-dropdown {
+  min-width: 140px;
+}
+
+.reason-dropdown {
+  display: none;
+}
+
+.reason-dropdown.show {
+  display: block;
+}
+
+.date-input-group {
+  display: flex;
+  gap: 12px;
+}
+
+.date-input-group input {
+  flex: 1;
+}
+
+.overdue-badge {
+  background: #ef4444;
+  color: white;
+  padding: 2px 6px;
+  border-radius: 8px;
+  font-size: 0.75rem;
+}
+
+.stats-inactive {
+  border-left-color: #ef4444;

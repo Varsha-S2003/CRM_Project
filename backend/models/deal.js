@@ -1,5 +1,20 @@
 const mongoose = require("mongoose");
 
+const normalizeStageKey = (stage) => {
+  const value = String(stage || "").trim().toLowerCase().replace(/\s+/g, "_");
+  const map = {
+    closed_won: "won",
+    closed_lost: "lost",
+    proposal: "proposal_price_quote",
+    negotiation: "negotiate",
+    proposal_price_quote: "proposal_price_quote",
+  };
+  return map[value] || value;
+};
+
+const deriveStatusFromStage = (stage) =>
+  normalizeStageKey(stage) === "lost" ? "Inactive" : "Active";
+
 const dealSchema = new mongoose.Schema(
   {
     customerId: {
@@ -25,7 +40,10 @@ const dealSchema = new mongoose.Schema(
       type: String,
       enum: [
         "Qualification",
+        "Need Analysis",
+        "Value Proposition",
         "Proposal",
+        "Negotiation",
         "Closed Won",
         "Closed Lost",
         "qualification",
@@ -37,6 +55,17 @@ const dealSchema = new mongoose.Schema(
         "lost",
       ],
       default: "Qualification",
+    },
+    status: {
+      type: String,
+      enum: ["Active", "Inactive"],
+      default: "Active",
+      index: true,
+    },
+    reason: {
+      type: String,
+      trim: true,
+      default: "",
     },
     assignedTo: { 
       type: mongoose.Schema.Types.ObjectId, 
@@ -61,5 +90,21 @@ const dealSchema = new mongoose.Schema(
 // dealSchema.index({ assignedTo: 1 }); // Already has index: true
 dealSchema.index({ stage: 1 });
 dealSchema.index({ "timeline.changedAt": -1 });
+
+dealSchema.pre("validate", function enforceStatusReason() {
+  const normalizedStage = normalizeStageKey(this.stage);
+  this.status = deriveStatusFromStage(normalizedStage);
+
+  if (this.status === "Inactive") {
+    const reason = String(this.reason || "").trim();
+    if (!reason) {
+      this.invalidate("reason", "Reason is required when stage is Closed Lost");
+    } else {
+      this.reason = reason;
+    }
+  } else {
+    this.reason = "";
+  }
+});
 
 module.exports = mongoose.model("Deal", dealSchema);

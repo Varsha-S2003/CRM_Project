@@ -36,8 +36,16 @@ const normalizeStageForUi = (stage) => {
   return mapping[normalized] || normalized;
 };
 
+const normalizeDeal = (deal) => {
+  const stage = normalizeStageForUi(deal.stage);
+  const status = deal.status || (stage === "lost" ? "Inactive" : "Active");
+  const reason = status === "Inactive" ? String(deal.reason || "").trim() : "";
+  return { ...deal, stage, status, reason };
+};
+
 function Deals() {
   const [deals, setDeals] = useState([]);
+  const [dealStatusFilter, setDealStatusFilter] = useState("all");
   const [search, setSearch] = useState("");
   const [showModal, setShowModal] = useState(false);
   const [showCreateMenu, setShowCreateMenu] = useState(false);
@@ -55,6 +63,10 @@ function Deals() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [showNotifications, setShowNotifications] = useState(false);
   const [notificationsLoading, setNotificationsLoading] = useState(false);
+  const [draggedDealId, setDraggedDealId] = useState(null);
+  const [showLostReasonModal, setShowLostReasonModal] = useState(false);
+  const [lostReason, setLostReason] = useState("");
+  const [pendingStageChange, setPendingStageChange] = useState(null);
   const notificationRef = useRef(null);
   const createMenuRef = useRef(null);
   const [newDeal, setNewDeal] = useState({
@@ -114,11 +126,14 @@ function Deals() {
   useEffect(() => {
     const fetchDeals = async () => {
       try {
+        setLoading(true);
         const token = localStorage.getItem("token");
+        const params = dealStatusFilter === "all" ? {} : { status: dealStatusFilter };
         const res = await axios.get("http://localhost:5000/api/deals", {
           headers: { Authorization: `Bearer ${token}` },
+          params,
         });
-        setDeals((res.data || []).map((deal) => ({ ...deal, stage: normalizeStageForUi(deal.stage) })));
+        setDeals((res.data || []).map((deal) => normalizeDeal(deal)));
       } catch (err) {
         console.error(err);
       } finally {
@@ -127,7 +142,7 @@ function Deals() {
     };
 
     fetchDeals();
-  }, []);
+  }, [dealStatusFilter]);
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -307,7 +322,7 @@ function Deals() {
         { ...newDeal, amount: Number(newDeal.amount) || 0 },
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      setDeals((prev) => [res.data, ...prev]);
+      setDeals((prev) => [normalizeDeal(res.data), ...prev]);
       setShowModal(false);
     } catch (err) {
       console.error(err);
@@ -333,7 +348,7 @@ function Deals() {
         { deals: importRows },
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      setDeals((prev) => [...res.data.deals, ...prev]);
+      setDeals((prev) => [...(res.data.deals || []).map((deal) => normalizeDeal(deal)), ...prev]);
       setShowImportModal(false);
       setImportRows([]);
       setImportFileName("");
@@ -343,33 +358,77 @@ function Deals() {
     }
   };
 
-  const updateStage = async (dealId, stageId) => {
-    // Client-side validation
-    const currentDeal = deals.find(d => d._id === dealId);
-    if (currentDeal) {
-      const currentStage = currentDeal.stage;
-      if (currentStage !== stageId && 
-          (!allowedTransitions[currentStage] || !allowedTransitions[currentStage].includes(stageId))) {
-        alert(`Invalid stage transition: from "${currentStage.replace(/_/g, ' ')}" to "${stages.find(s => s.id === stageId)?.name || stageId}" not allowed`);
-        return;
-      }
-    }
-
+  const updateStage = async (dealId, stageId, reason = "") => {
     try {
       const token = localStorage.getItem("token");
       const res = await axios.put(
-        `http://localhost:5000/api/deals/${dealId}`,
-        { stage: stageId },
+        `http://localhost:5000/api/deals/${dealId}/stage`,
+        { stage: stageId, reason },
         { headers: { Authorization: `Bearer ${token}` } }
       );
+      const normalizedDeal = normalizeDeal(res.data);
       setDeals((prev) =>
-        prev.map((deal) => (deal._id === dealId ? res.data : deal))
+        prev.map((deal) => (deal._id === dealId ? normalizedDeal : deal))
       );
-      setSelectedDeal((prev) => (prev && prev._id === dealId ? res.data : prev));
+      setSelectedDeal((prev) => (prev && prev._id === dealId ? normalizedDeal : prev));
     } catch (err) {
       console.error(err);
       alert(err.response?.data?.message || err.message || "Failed to update deal stage");
     }
+  };
+
+  const requestStageChange = (dealId, stageId) => {
+    const currentDeal = deals.find((deal) => deal._id === dealId);
+    if (!currentDeal) return;
+
+    const currentStage = currentDeal.stage;
+    if (
+      currentStage !== stageId &&
+      (!allowedTransitions[currentStage] || !allowedTransitions[currentStage].includes(stageId))
+    ) {
+      alert(`Invalid stage transition: from "${currentStage.replace(/_/g, " ")}" to "${stages.find((s) => s.id === stageId)?.name || stageId}" not allowed`);
+      return;
+    }
+
+    if (stageId === "lost") {
+      if (selectedDeal && selectedDeal._id === dealId) {
+        setSelectedDeal(null);
+      }
+      setPendingStageChange({ dealId, stageId });
+      setLostReason(currentDeal.reason || "");
+      setShowLostReasonModal(true);
+      return;
+    }
+
+    updateStage(dealId, stageId, "");
+  };
+
+  const submitLostReason = async () => {
+    const reason = lostReason.trim();
+    if (!reason) {
+      alert("Reason is required when moving a deal to Closed Lost.");
+      return;
+    }
+    if (!pendingStageChange) return;
+
+    await updateStage(pendingStageChange.dealId, pendingStageChange.stageId, reason);
+    setPendingStageChange(null);
+    setLostReason("");
+    setShowLostReasonModal(false);
+  };
+
+  const handleDragStart = (event, deal) => {
+    if (deal.stage === "lost") {
+      event.preventDefault();
+      return;
+    }
+    setDraggedDealId(deal._id);
+  };
+
+  const handleStageDrop = (stageId) => {
+    if (!draggedDealId) return;
+    requestStageChange(draggedDealId, stageId);
+    setDraggedDealId(null);
   };
 
   const deleteDeal = async (dealId) => {
@@ -832,6 +891,29 @@ ET`;
                 }}
               />
             </div>
+            <div className="deal-status-filters">
+              <button
+                type="button"
+                className={`btn-filter ${dealStatusFilter === "all" ? "active-status-filter" : ""}`}
+                onClick={() => setDealStatusFilter("all")}
+              >
+                All Deals
+              </button>
+              <button
+                type="button"
+                className={`btn-filter ${dealStatusFilter === "Active" ? "active-status-filter" : ""}`}
+                onClick={() => setDealStatusFilter("Active")}
+              >
+                Active Deals
+              </button>
+              <button
+                type="button"
+                className={`btn-filter ${dealStatusFilter === "Inactive" ? "active-status-filter" : ""}`}
+                onClick={() => setDealStatusFilter("Inactive")}
+              >
+                Inactive Deals
+              </button>
+            </div>
             <div className="toolbar-actions">
               <div className="notification-bell" ref={notificationRef}>
                 <button 
@@ -892,7 +974,8 @@ ET`;
                               {notif.dealId && (
                                 <span className="deal-link" style={{cursor: 'pointer', color: '#3b82f6'}} onClick={(e) => {
                                   e.stopPropagation();
-                                  setSelectedDeal(notif.dealId);
+                                  const localDeal = deals.find((deal) => deal._id === notif.dealId?._id);
+                                  setSelectedDeal(localDeal || normalizeDeal(notif.dealId || {}));
                                   setShowNotifications(false);
                                 }}>
                                   Deal: {notif.dealId.name}
@@ -934,16 +1017,33 @@ ET`;
                   <span className="lead-count-zoho">{getDealsByStage(stage.id).length}</span>
                 </div>
                 <div className="column-content-zoho">
+                <div
+                  className="column-drop-zone"
+                  onDragOver={(event) => event.preventDefault()}
+                  onDrop={() => handleStageDrop(stage.id)}
+                >
                   {getDealsByStage(stage.id).map((deal) => (
                     <div
                       key={deal._id}
-                      className="kanban-card-zoho"
+                      className={`kanban-card-zoho ${deal.status === "Inactive" ? "kanban-card-inactive" : ""}`}
+                      draggable={deal.stage !== "lost"}
+                      onDragStart={(event) => handleDragStart(event, deal)}
+                      onDragEnd={() => setDraggedDealId(null)}
+                      title={deal.status === "Inactive" ? `Inactive due to: ${deal.reason || "Not provided"}` : ""}
                       onClick={() => setSelectedDeal(deal)}
                     >
                       <div className="card-top-row">
                         <h4>{deal.name}</h4>
                         <span className="status-badge-zoho">{deal.stage.replaceAll("_", " ")}</span>
                       </div>
+                      <div className="deal-status-row">
+                        <span className={`deal-status-pill ${deal.status === "Inactive" ? "inactive" : "active"}`}>
+                          {deal.status === "Inactive" ? "Inactive" : "Active"}
+                        </span>
+                      </div>
+                      {deal.status === "Inactive" && (
+                        <div className="deal-reason-text">Reason: {deal.reason || "Not provided"}</div>
+                      )}
                       <div className="card-company-zoho">{deal.company || "-"}</div>
                       <div className="card-detail">{deal.contact || "-"}</div>
                       <div className="card-detail">{deal.email || "-"}</div>
@@ -954,11 +1054,63 @@ ET`;
                     </div>
                   ))}
                 </div>
+                </div>
               </div>
             ))}
           </div>
           )}
         </div>
+
+        {showLostReasonModal && (
+          <div
+            className="modal-overlay-zoho"
+            onClick={() => {
+              setShowLostReasonModal(false);
+              setPendingStageChange(null);
+            }}
+          >
+            <div className="modal-box-zoho" onClick={(event) => event.stopPropagation()}>
+              <div className="modal-header-zoho">
+                <h2>Reason for Closed Lost</h2>
+                <button
+                  className="modal-close"
+                  onClick={() => {
+                    setShowLostReasonModal(false);
+                    setPendingStageChange(null);
+                  }}
+                >
+                  x
+                </button>
+              </div>
+              <div className="modal-form-zoho">
+                <div className="form-group">
+                  <label>Reason *</label>
+                  <textarea
+                    value={lostReason}
+                    onChange={(event) => setLostReason(event.target.value)}
+                    rows={4}
+                    placeholder="Add why this deal was lost (e.g., Budget Issue)"
+                  />
+                </div>
+                <div className="modal-actions">
+                  <button
+                    type="button"
+                    className="btn-cancel"
+                    onClick={() => {
+                      setShowLostReasonModal(false);
+                      setPendingStageChange(null);
+                    }}
+                  >
+                    Cancel
+                  </button>
+                  <button type="button" className="btn-submit" onClick={submitLostReason}>
+                    Save & Move
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {showExportModal && (
           <div className="modal-overlay-zoho" onClick={() => setShowExportModal(false)}>
@@ -1223,6 +1375,16 @@ ET`;
                   <span className="detail-label">Deal Value</span>
                   <span className="detail-value">${Number(selectedDeal.amount || 0).toLocaleString()}</span>
                 </div>
+                <div className="detail-row">
+                  <span className="detail-label">Status</span>
+                  <span className="detail-value">{selectedDeal.status || "Active"}</span>
+                </div>
+                {selectedDeal.status === "Inactive" && (
+                  <div className="detail-row">
+                    <span className="detail-label">Reason</span>
+                    <span className="detail-value">{selectedDeal.reason || "-"}</span>
+                  </div>
+                )}
               </div>
               <div className="status-section">
                 <h3>Change Stage</h3>
@@ -1245,7 +1407,7 @@ ET`;
                         }}
                         disabled={!allowedStages.has(stage.id)}
                         title={!allowedStages.has(stage.id) ? `Invalid transition from ${currentStage.replace(/_/g, " ")}` : ""}
-                        onClick={() => updateStage(selectedDeal._id, stage.id)}
+                        onClick={() => requestStageChange(selectedDeal._id, stage.id)}
                       >
                         {stage.name}
                       </button>

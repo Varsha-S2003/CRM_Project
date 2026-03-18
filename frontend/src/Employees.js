@@ -1,9 +1,13 @@
 import React, { useEffect, useState } from "react";
 import axios from "axios";
+import { useNavigate } from "react-router-dom";
 import Sidebar from "./Sidebar";
 import "./Employees.css";
 
 export default function Employees() {
+  const navigate = useNavigate();
+  const role = (localStorage.getItem("role") || "").toUpperCase();
+  const isAdmin = role === "ADMIN";
   const [employees, setEmployees] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -66,9 +70,17 @@ export default function Employees() {
                 <h2>Users</h2>
                 <p>Showing the employee accounts created from the admin panel.</p>
               </div>
-              <button type="button" className="employees-refresh-btn" onClick={fetchEmployees}>
-                Refresh
-              </button>
+              <div className="employees-actions">
+                {isAdmin && (
+                  <button
+                    type="button"
+                    className="employees-add-btn"
+                    onClick={() => navigate("/add-employee")}
+                  >
+                    Add Employee
+                  </button>
+                )}
+              </div>
             </div>
 
             {error && <div className="employees-message error">{error}</div>}
