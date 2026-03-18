@@ -34,11 +34,7 @@ function Sidebar() {
 
   const handleActivitiesToggle = (e) => {
     e.preventDefault();
-    const nextOpen = !activitiesOpen;
-    setActivitiesOpen(nextOpen);
-    if (!location.pathname.startsWith("/activities")) {
-      navigate("/activities");
-    }
+    setActivitiesOpen((prev) => !prev);
   };
 
   const isActive = (path) => location.pathname === path;
@@ -169,7 +165,7 @@ function Sidebar() {
             </a>
           )}
           {canSee(["ADMIN","MANAGER","EMPLOYEE"]) && (
-            <div className={`nav-group ${isActivitiesRoute ? "open" : ""}`}>
+            <div className={`nav-group ${activitiesOpen ? "open" : ""}`}>
               <button
                 type="button"
                 onClick={handleActivitiesToggle}
@@ -188,17 +184,6 @@ function Sidebar() {
                 </svg>
                 <span>Activities</span>
                 <span className="nav-item-parent-actions">
-                  <button
-                    type="button"
-                    className="nav-icon-btn"
-                    onClick={(e) => handleNav("/activities", e)}
-                    aria-label="Open activities"
-                  >
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <path d="M12 5v14"></path>
-                      <path d="M5 12h14"></path>
-                    </svg>
-                  </button>
                   <svg
                     className={`nav-chevron ${activitiesOpen ? "open" : ""}`}
                     width="16"

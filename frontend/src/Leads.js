@@ -4,7 +4,6 @@ import axios from "axios";
 import "./Leads.css";
 import Sidebar from "./Sidebar";
 import RecordActivityPanel from "./RecordActivityPanel";
-import ViewManager from "./components/ViewManager";
 import FilterBuilder from "./components/FilterBuilder";
 import { DEFAULT_COLUMNS, AVAILABLE_COLUMNS } from "./utils/viewsUtils";
 
@@ -1160,10 +1159,6 @@ ET`;
               />
             </div>
             <div className="views-toolbar">
-              <ViewManager 
-                currentViewId={currentViewId}
-                onViewSelect={loadView}
-              />
               <button 
                 className="btn-filter" 
                 onClick={() => setShowFilterModal(true)}
@@ -1510,12 +1505,14 @@ ET`;
                   </div>
                   <div className="form-row-zoho">
                     <div className="form-group">
-                      <label>Status</label>
+                      <label>Lead Stage *</label>
                       <select
                         value={newLead.status}
                         onChange={(e) => setNewLead({ ...newLead, status: e.target.value })}
+                        required
                       >
-                        {stages.map((stage) => (
+                        <option value="" disabled>Select lead stage</option>
+                        {stages.filter((stage) => stage.id !== "lost").map((stage) => (
                           <option key={stage.id} value={stage.id}>{stage.name}</option>
                         ))}
                       </select>

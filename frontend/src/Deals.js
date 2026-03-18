@@ -1254,12 +1254,14 @@ ET`;
                 </div>
                 <div className="form-row-zoho">
                   <div className="form-group">
-                    <label>Stage</label>
+                    <label>Deal Stage *</label>
                     <select
                       value={newDeal.stage}
                       onChange={(e) => setNewDeal((prev) => ({ ...prev, stage: e.target.value }))}
+                      required
                     >
-                      {stages.map((stage) => (
+                      <option value="" disabled>Select deal stage</option>
+                      {stages.filter((stage) => stage.id !== "lost").map((stage) => (
                         <option key={stage.id} value={stage.id}>
                           {stage.name}
                         </option>
