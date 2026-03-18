@@ -16,10 +16,6 @@ function Leads() {
   const [showCreateMenu, setShowCreateMenu] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
   const [showExportModal, setShowExportModal] = useState(false);
-  const [showConvertModal, setShowConvertModal] = useState(false);
-  const [showDupeModal, setShowDupeModal] = useState(false);
-  const [dupeContact, setDupeContact] = useState(null);
-  const [convertData, setConvertData] = useState({ createDeal: true, dealName: '', dealAmount: 0, handleDupe: 'create' });
   const [importFileName, setImportFileName] = useState("");
   const [importRows, setImportRows] = useState([]);  
 
@@ -521,6 +517,11 @@ function Leads() {
   };
 
   const handleUpdateStatus = async (leadId, newStatus) => {
+    if (newStatus === "converted") {
+      await handleConvertLead();
+      return;
+    }
+
     // Client-side validation (matches backend)
     if (selectedLead) {
       const currentStatus = selectedLead.status;
@@ -549,58 +550,49 @@ function Leads() {
     }
   };
 
-  const handleOpenConvertModal = () => {
-    if (selectedLead.isConverted) {
+  const handleConvertLead = async () => {
+    if (!selectedLead) return;
+
+    if (selectedLead.isConverted || selectedLead.status === "converted") {
       alert("This lead is already converted.");
       return;
     }
+
     if (!["qualified", "proposal"].includes(selectedLead.status)) {
-      alert("Lead must be Qualified or Proposal to convert.");
+      alert("Lead must be in Qualified or Proposal stage before conversion.");
       return;
     }
-    setConvertData({ createDeal: true, dealName: `${selectedLead.name || "Lead"} Deal`, dealAmount: 0, handleDupe: 'create' });
-    setShowConvertModal(true);
-  };
 
-  const checkLeadDupe = async (leadId) => {
-    try {
-      const token = localStorage.getItem("token");
-      const lead = leads.find(l => l._id === leadId);
-      if (!lead.email) {
-        return; // no dupe check needed
-      }
-      const res = await axios.get(`http://localhost:5000/api/contacts`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const dupe = res.data.find(c => c.email === lead.email && c._id !== lead.convertedContactId);
-      if (dupe) {
-        setDupeContact(dupe);
-        setShowDupeModal(true);
-        return false;
-      }
-      return true;
-    } catch (err) {
-      console.error(err);
-      return true; // proceed if check fails
+    if (!window.confirm("Convert this lead to a customer and create a deal?")) {
+      return;
     }
-  };
 
-  const handleConvertLead = async () => {
     try {
       const token = localStorage.getItem("token");
-      await axios.post(
+      const res = await axios.put(
         `http://localhost:5000/api/leads/${selectedLead._id}/convert`,
-        convertData,
-        { headers: `Bearer ${token}` }
+        {},
+        { headers: { Authorization: `Bearer ${token}` } }
       );
-      alert("Lead converted successfully!");
-      setShowConvertModal(false);
-      fetchLeads();
+
+      const convertedLead = res.data?.lead;
+      if (convertedLead?._id) {
+        setLeads((prev) => prev.map((lead) => (lead._id === convertedLead._id ? convertedLead : lead)));
+        setSelectedLead(convertedLead);
+      } else {
+        fetchLeads();
+      }
+
       fetchStats();
-      setSelectedLead(null);
+      alert("Lead converted successfully. Customer and deal were created.");
     } catch (err) {
       console.error(err);
-      alert(err.response?.data?.message || "Conversion failed");
+      const errorMessage =
+        err.response?.data?.message ||
+        (typeof err.response?.data === "string" ? err.response.data : "") ||
+        err.message ||
+        "Conversion failed";
+      alert(errorMessage);
     }
   };
 
@@ -1804,7 +1796,11 @@ ET`;
                 </div>
               </div>
               <div className="convert-section">
-                <button className="btn-convert-lead" onClick={handleOpenConvertModal}>
+                <button
+                  className="btn-convert-lead"
+                  onClick={handleConvertLead}
+                  disabled={selectedLead.isConverted || selectedLead.status === "converted"}
+                >
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <path d="M17 14V2h-5M15 2v14"></path>
                     <path d="M15 10h4v4h-4V10z"></path>
@@ -1812,7 +1808,7 @@ ET`;
                     <path d="M7 22H3v-4h4v4z"></path>
                     <path d="M15 22h4v-4h-4v4z"></path>
                   </svg>
-                  Convert Lead
+                  {selectedLead.isConverted || selectedLead.status === "converted" ? "Already Converted" : "Convert Lead"}
                 </button>
               </div>
 

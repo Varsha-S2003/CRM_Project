@@ -1,9 +1,11 @@
 const express = require("express");
 const router = express.Router();
+const mongoose = require("mongoose");
 const { verifyToken } = require("../middleware/authMiddleware");
 const { permit } = require("../middleware/authorize");
 const Lead = require("../models/lead");
 const Contact = require("../models/contact");
+const Customer = require("../models/customer");
 const Deal = require("../models/deal");
 
 const normalizeText = (value) => String(value || "").trim();
@@ -56,6 +58,21 @@ const normalizeLeadPayload = (payload = {}) => {
   if (!Object.values(normalized.address).some(Boolean)) delete normalized.address;
 
   return normalized;
+};
+
+const buildConversionName = (lead) => {
+  const fullName = [lead.firstName, lead.lastName]
+    .map((value) => String(value || "").trim())
+    .filter(Boolean)
+    .join(" ")
+    .trim();
+
+  return fullName || String(lead.name || "").trim() || "Unnamed Lead";
+};
+
+const normalizeEmailForStorage = (value) => {
+  const normalized = String(value || "").trim();
+  return normalized || undefined;
 };
 
 // Lead stage movement validation
@@ -252,6 +269,11 @@ router.put("/:id", verifyToken, permit("ADMIN", "MANAGER", "EMPLOYEE"), async (r
           message: `Invalid stage transition: "${currentStatus}" → "${normalizedNewStatus}" not allowed`
         });
       }
+
+      // Converting from status update must run full lead->customer->deal workflow.
+      if (normalizedNewStatus === "converted") {
+        return convertLeadToCustomerDeal(req, res, next);
+      }
       
       // Update
       lead.status = normalizedNewStatus;
@@ -268,72 +290,138 @@ router.put("/:id", verifyToken, permit("ADMIN", "MANAGER", "EMPLOYEE"), async (r
 });
 
 
-// POST /api/leads/:id/convert
-router.post("/:id/convert", verifyToken, async (req, res, next) => {
+const convertLeadToCustomerDeal = async (req, res, next) => {
+  const session = await mongoose.startSession();
+
   try {
     const leadId = req.params.id;
-    const { createDeal = true, dealName, dealAmount = 0, handleDupe = "create" } = req.body;
+    const requestedValue = req.body?.value;
+    const normalizedValue =
+      requestedValue === undefined || requestedValue === null || requestedValue === ""
+        ? null
+        : Number(requestedValue);
 
-    const lead = await Lead.findById(leadId);
-    if (!lead) return res.status(404).json({ message: "Lead not found" });
-    if (lead.isConverted) return res.status(400).json({ message: "Lead already converted" });
-
-    // Duplicate contact check by email
-    let existingContact = null;
-    if (lead.email) {
-      existingContact = await Contact.findOne({ email: lead.email });
+    if (normalizedValue !== null && !Number.isFinite(normalizedValue)) {
+      return res.status(400).json({ message: "Deal value must be a valid number" });
     }
 
-    let contact;
-    if (existingContact && handleDupe === "link") {
-      contact = existingContact;
-    } else {
-      const contactData = {
-        sourceLeadId: lead._id,
-        name: lead.name,
-        company: lead.company,
-        email: lead.email,
-        phone: lead.phone || lead.mobile,
-        source: lead.source || "Lead Conversion",
-        convertedAt: new Date(),
+    let responsePayload = null;
+
+    await session.withTransaction(async () => {
+      const lead = await Lead.findById(leadId).session(session);
+      if (!lead) {
+        throw Object.assign(new Error("Lead not found"), { statusCode: 404 });
+      }
+
+      if (lead.isConverted || String(lead.status || "").toLowerCase() === "converted") {
+        throw Object.assign(new Error("Lead already converted"), { statusCode: 400 });
+      }
+
+      const conversionName = buildConversionName(lead);
+      const conversionEmail = normalizeEmailForStorage(lead.email);
+
+      const customer = await Customer.create(
+        [
+          {
+            name: conversionName,
+            email: conversionEmail,
+            phone: lead.phone || lead.mobile,
+            company: lead.company,
+            leadId: lead._id,
+          },
+        ],
+        { session }
+      ).then((docs) => docs[0]);
+
+      const deal = await Deal.create(
+        [
+          {
+            customerId: customer._id,
+            sourceLeadId: lead._id,
+            name: `${conversionName} - Deal`,
+            company: lead.company,
+            contact: customer.name,
+            email: customer.email,
+            phone: customer.phone,
+            stage: "Qualification",
+            value: normalizedValue,
+            amount: normalizedValue || 0,
+            assignedTo: lead.assignedTo || req.user._id,
+          },
+        ],
+        { session }
+      ).then((docs) => docs[0]);
+
+      // Keep legacy contacts list in sync with customer conversion.
+      let contact = await Contact.findOne({ sourceLeadId: lead._id }).session(session);
+      if (!contact && customer.email) {
+        contact = await Contact.findOne({ email: customer.email }).session(session);
+      }
+
+      if (contact) {
+        contact.sourceLeadId = lead._id;
+        contact.sourceDealId = deal._id;
+        contact.name = customer.name;
+        contact.company = customer.company;
+        contact.email = customer.email;
+        contact.phone = customer.phone;
+        contact.source = lead.source || "Lead Conversion";
+        await contact.save({ session });
+      } else if (customer.email) {
+        contact = await Contact.create(
+          [
+            {
+              sourceLeadId: lead._id,
+              sourceDealId: deal._id,
+              name: customer.name,
+              company: customer.company,
+              email: normalizeEmailForStorage(customer.email),
+              phone: customer.phone,
+              source: lead.source || "Lead Conversion",
+              convertedAt: new Date(),
+            },
+          ],
+          { session }
+        ).then((docs) => docs[0]);
+      }
+
+      lead.status = "converted";
+      lead.isConverted = true;
+      lead.convertedCustomerId = customer._id;
+      lead.convertedContactId = contact?._id || null;
+      lead.convertedDealId = deal._id;
+      await lead.save({ session });
+
+      responsePayload = {
+        message: "Lead converted successfully",
+        lead,
+        customer,
+        deal,
       };
-      contact = await Contact.create(contactData);
-    }
-
-    // Optional deal creation
-    let dealId = null;
-    if (createDeal) {
-      const dealData = {
-        sourceLeadId: lead._id,
-        name: dealName || `${lead.name || "Lead"} - Deal`,
-        company: lead.company,
-        amount: dealAmount,
-        contact: contact.name,
-        email: contact.email,
-        phone: contact.phone,
-        stage: "qualification",
-      };
-      const newDeal = await Deal.create(dealData);
-      dealId = newDeal._id;
-    }
-
-    // Update lead
-    lead.status = "converted";
-    lead.isConverted = true;
-    lead.convertedContactId = contact._id;
-    lead.convertedDealId = dealId;
-    await lead.save();
-
-    res.json({
-      message: "Lead converted successfully",
-      lead: lead,
-      contact: contact._id,
-      deal: dealId || null,
     });
+
+    return res.json(responsePayload);
   } catch (err) {
-    next(err);
+    if (err?.code === 11000) {
+      return res.status(409).json({
+        message: "Duplicate data conflict while converting lead. Please verify email/contact uniqueness and try again.",
+      });
+    }
+    if (err.statusCode) {
+      return res.status(err.statusCode).json({ message: err.message });
+    }
+    console.error("Lead conversion error:", err);
+    return next(err);
+  } finally {
+    await session.endSession();
   }
-});
+};
+
+// PUT /api/leads/:id/convert
+router.put("/:id/convert", verifyToken, convertLeadToCustomerDeal);
+
+// Backward compatibility with existing clients.
+router.post("/:id/convert", verifyToken, convertLeadToCustomerDeal);
 
 // DELETE /api/leads/:id -- delete a lead (admin only)
 router.delete("/:id", verifyToken, permit("ADMIN"), async (req, res, next) => {

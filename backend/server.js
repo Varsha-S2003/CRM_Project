@@ -30,6 +30,9 @@ app.use("/api/deals", dealRoutes);
 const contactRoutes = require("./routes/contactRoutes");
 app.use("/api/contacts", contactRoutes);
 
+const customerRoutes = require("./routes/customerRoutes");
+app.use("/api/customers", customerRoutes);
+
 const activityRoutes = require("./routes/activityRoutes");
 app.use("/api/activities", activityRoutes);
 

@@ -13,7 +13,7 @@ export default function Customers() {
     const fetchCustomers = async () => {
       try {
         const token = localStorage.getItem("token");
-        const res = await axios.get("http://localhost:5000/api/contacts", {
+        const res = await axios.get("http://localhost:5000/api/customers", {
           headers: { Authorization: `Bearer ${token}` },
         });
         setCustomers(res.data);
@@ -52,8 +52,8 @@ export default function Customers() {
                     <th style={{ textAlign: "left", padding: "10px", borderBottom: "1px solid var(--theme-border)" }}>Company</th>
                     <th style={{ textAlign: "left", padding: "10px", borderBottom: "1px solid var(--theme-border)" }}>Email</th>
                     <th style={{ textAlign: "left", padding: "10px", borderBottom: "1px solid var(--theme-border)" }}>Phone</th>
-                    <th style={{ textAlign: "left", padding: "10px", borderBottom: "1px solid var(--theme-border)" }}>Source</th>
-                    <th style={{ textAlign: "left", padding: "10px", borderBottom: "1px solid var(--theme-border)" }}>Converted At</th>
+                    <th style={{ textAlign: "left", padding: "10px", borderBottom: "1px solid var(--theme-border)" }}>Lead Reference</th>
+                    <th style={{ textAlign: "left", padding: "10px", borderBottom: "1px solid var(--theme-border)" }}>Created At</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -67,9 +67,11 @@ export default function Customers() {
                       <td style={{ padding: "10px", borderBottom: "1px solid #efe8d8" }}>{customer.company || "-"}</td>
                       <td style={{ padding: "10px", borderBottom: "1px solid #efe8d8" }}>{customer.email || "-"}</td>
                       <td style={{ padding: "10px", borderBottom: "1px solid #efe8d8" }}>{customer.phone || "-"}</td>
-                      <td style={{ padding: "10px", borderBottom: "1px solid #efe8d8" }}>{customer.source || "-"}</td>
                       <td style={{ padding: "10px", borderBottom: "1px solid #efe8d8" }}>
-                        {customer.convertedAt ? new Date(customer.convertedAt).toLocaleString() : "-"}
+                        {customer.leadId?._id || customer.leadId || "-"}
+                      </td>
+                      <td style={{ padding: "10px", borderBottom: "1px solid #efe8d8" }}>
+                        {customer.createdAt ? new Date(customer.createdAt).toLocaleString() : "-"}
                       </td>
                     </tr>
                   ))}
@@ -99,14 +101,14 @@ export default function Customers() {
                     <span className="detail-value">{selectedCustomer.phone || "-"}</span>
                   </div>
                   <div className="detail-row">
-                    <span className="detail-label">Converted At</span>
+                    <span className="detail-label">Lead Reference</span>
                     <span className="detail-value">
-                      {selectedCustomer.convertedAt ? new Date(selectedCustomer.convertedAt).toLocaleString() : "-"}
+                      {selectedCustomer.leadId?._id || selectedCustomer.leadId || "-"}
                     </span>
                   </div>
                 </div>
                 <RecordActivityPanel
-                  recordType="Contact"
+                  recordType="Customer"
                   recordId={selectedCustomer._id}
                   recordName={selectedCustomer.name}
                 />

@@ -80,6 +80,11 @@ const userSchema = new mongoose.Schema({
     type: Date,
     default: null
   },
+  reportsTo: { 
+    type: mongoose.Schema.Types.ObjectId, 
+    ref: 'User',
+    default: null  // Top-level managers report to null
+  },
   settings: {
     type: userSettingsSchema,
     default: () => ({})
@@ -93,6 +98,13 @@ userSchema.pre('save', async function() {
   if (this.isNew && !this.employee_id && this.role !== 'ADMIN') {
     const count = await this.constructor.countDocuments({ role: { $ne: 'ADMIN' } });
     this.employee_id = `EMP-${String(count + 1).padStart(3, '0')}`;
+  }
+  // Ensure reportsTo doesn't create self-reference or admin hierarchy
+  if (this.reportsTo && String(this.reportsTo) === String(this._id)) {
+    this.reportsTo = null;
+  }
+  if (this.role === 'ADMIN') {
+    this.reportsTo = null;
   }
 });
 

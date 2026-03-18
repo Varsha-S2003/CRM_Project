@@ -3,6 +3,7 @@ import axios from "axios";
 import Sidebar from "./Sidebar";
 import "./Leads.css";
 import RecordActivityPanel from "./RecordActivityPanel";
+import { useCallback } from "react";
 
 const stages = [
   { id: "qualification", name: "Qualification", color: "#2563eb" },
@@ -24,6 +25,17 @@ const allowedTransitions = {
   "lost": []
 };
 
+const normalizeStageForUi = (stage) => {
+  const normalized = String(stage || "").toLowerCase().replace(/\s+/g, "_");
+  const mapping = {
+    proposal: "proposal_price_quote",
+    closed_won: "won",
+    closed_lost: "lost",
+  };
+
+  return mapping[normalized] || normalized;
+};
+
 function Deals() {
   const [deals, setDeals] = useState([]);
   const [search, setSearch] = useState("");
@@ -39,6 +51,11 @@ function Deals() {
   const [exportFieldScope, setExportFieldScope] = useState("custom");
   const [exportType, setExportType] = useState("csv");
   const [exportCharset, setExportCharset] = useState("utf-8");
+  const [notifications, setNotifications] = useState([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [notificationsLoading, setNotificationsLoading] = useState(false);
+  const notificationRef = useRef(null);
   const createMenuRef = useRef(null);
   const [newDeal, setNewDeal] = useState({
     name: "",
@@ -72,6 +89,28 @@ function Deals() {
     { key: "createdAt", label: "Created On", getValue: (deal) => formatDealDate(deal.createdAt) },
   ];
 
+  const fetchNotifications = useCallback(async () => {
+    try {
+      const token = localStorage.getItem("token");
+      setNotificationsLoading(true);
+      const res = await axios.get("http://localhost:5000/api/deals/notifications", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setNotifications(res.data.notifications || []);
+      setUnreadCount(res.data.unreadCount || 0);
+    } catch (err) {
+      console.error('Notifications fetch error:', err);
+    } finally {
+      setNotificationsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchNotifications();
+    const interval = setInterval(fetchNotifications, 30000);
+    return () => clearInterval(interval);
+  }, [fetchNotifications]);
+
   useEffect(() => {
     const fetchDeals = async () => {
       try {
@@ -79,7 +118,7 @@ function Deals() {
         const res = await axios.get("http://localhost:5000/api/deals", {
           headers: { Authorization: `Bearer ${token}` },
         });
-        setDeals(res.data);
+        setDeals((res.data || []).map((deal) => ({ ...deal, stage: normalizeStageForUi(deal.stage) })));
       } catch (err) {
         console.error(err);
       } finally {
@@ -92,6 +131,9 @@ function Deals() {
 
   useEffect(() => {
     const handleClickOutside = (event) => {
+      if (notificationRef.current && !notificationRef.current.contains(event.target)) {
+        setShowNotifications(false);
+      }
       if (createMenuRef.current && !createMenuRef.current.contains(event.target)) {
         setShowCreateMenu(false);
       }
@@ -791,6 +833,87 @@ ET`;
               />
             </div>
             <div className="toolbar-actions">
+              <div className="notification-bell" ref={notificationRef}>
+                <button 
+                  className="notification-btn" 
+                  onClick={() => setShowNotifications(prev => !prev)}
+                  title="Notifications"
+                >
+                  🔔
+                  {unreadCount > 0 && (
+                    <span className="notification-badge">{unreadCount > 99 ? '99+' : unreadCount}</span>
+                  )}
+                </button>
+                {showNotifications && (
+                  <div className="notification-dropdown">
+                    <div className="notification-header">
+                      <h4>Notifications ({unreadCount})</h4>
+                      <button onClick={async () => {
+                        if (notifications.some(n => !n.isRead)) {
+                          const unreadIds = notifications.filter(n => !n.isRead).map(n => n._id);
+                          try {
+                            const token = localStorage.getItem("token");
+                            await axios.patch(`http://localhost:5000/api/deals/notifications/${unreadIds.join(',')}/read`, {}, {
+                              headers: { Authorization: `Bearer ${token}` }
+                            });
+                            fetchNotifications();
+                          } catch (err) {
+                            console.error('Mark read error:', err);
+                          }
+                        }
+                      }}>Mark all read</button>
+                    </div>
+                    {notificationsLoading ? (
+                      <div>Loading...</div>
+                    ) : notifications.length === 0 ? (
+                      <div>No notifications</div>
+                    ) : (
+                      <div className="notification-list">
+                        {notifications.slice(0, 10).map((notif) => (
+                          <div 
+                            key={notif._id} 
+                            className={`notification-item ${notif.isRead ? 'read' : 'unread'}`}
+                            onClick={async () => {
+                              if (!notif.isRead) {
+                                try {
+                                  const token = localStorage.getItem("token");
+                                  await axios.patch(`http://localhost:5000/api/deals/notifications/${notif._id}/read`, {}, {
+                                    headers: { Authorization: `Bearer ${token}` }
+                                  });
+                                  fetchNotifications();
+                                } catch (err) {
+                                  console.error('Mark read error:', err);
+                                }
+                              }
+                            }}
+                          >
+                            <div className="notification-message">
+                              {notif.message}
+                              {notif.dealId && (
+                                <span className="deal-link" style={{cursor: 'pointer', color: '#3b82f6'}} onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSelectedDeal(notif.dealId);
+                                  setShowNotifications(false);
+                                }}>
+                                  Deal: {notif.dealId.name}
+                                </span>
+                              )}
+                            </div>
+                            <div className="notification-time">
+                              {new Date(notif.createdAt).toLocaleString()}
+                            </div>
+                          </div>
+                        ))}
+                        {notifications.length > 10 && (
+                          <div className="notification-footer">
+                            +{notifications.length - 10} more
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
               <button className="btn-filter" type="button" onClick={openExportModal}>Export</button>
             </div>
           </div>
@@ -1130,6 +1253,25 @@ ET`;
                   })()}
                 </div>
               </div>
+              {selectedDeal.timeline && selectedDeal.timeline.length > 0 && (
+                <div className="timeline-section">
+                  <h3>Activity Timeline</h3>
+                  <div className="timeline-list">
+                    {selectedDeal.timeline.slice().reverse().map((event, index) => (
+                      <div key={index} className="timeline-item">
+                        <div className="timeline-user">{event.userName || 'User'}</div>
+                        <div className="timeline-action">
+                          Stage changed from <span className="stage-old">{event.fromStage.replaceAll('_', ' ')}</span> 
+                          to <span className="stage-new">{event.toStage.replaceAll('_', ' ')}</span>
+                        </div>
+                        <div className="timeline-time">
+                          {new Date(event.changedAt).toLocaleString()}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
               <RecordActivityPanel
                 recordType="Deal"
                 recordId={selectedDeal._id}

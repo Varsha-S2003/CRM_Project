@@ -1,8 +1,23 @@
 const express = require("express");
 const router = express.Router();
 const { verifyToken } = require("../middleware/authMiddleware");
+const { permitDealAccess, getUserDealsFilter } = require("../middleware/dealAuth");
 const Deal = require("../models/deal");
 const Contact = require("../models/contact");
+const Notification = require("../models/notification");
+const User = require("../models/user");
+
+const normalizeDealStage = (stage) => {
+  const value = String(stage || "").trim();
+  const normalized = value.toLowerCase().replace(/\s+/g, "_");
+  const map = {
+    closed_won: "won",
+    closed_lost: "lost",
+    proposal: "proposal_price_quote",
+  };
+
+  return map[normalized] || normalized;
+};
 
 const syncDealContact = async (deal) => {
   const contactPayload = {
@@ -29,9 +44,18 @@ const syncDealContact = async (deal) => {
   await Contact.create(contactPayload);
 };
 
-router.get("/", verifyToken, async (req, res) => {
+router.get("/", verifyToken, permitDealAccess(), async (req, res) => {
   try {
-    const deals = await Deal.find().sort({ createdAt: -1 });
+    const filter = getUserDealsFilter(req.user);
+    // For managers, extend filter to include team
+    if (req.user.role.toUpperCase() === 'MANAGER') {
+      const teamIds = await require("../middleware/dealAuth").getTeamMembers(req.user._id);
+      filter.$or.push({ assignedTo: { $in: teamIds } });
+    }
+    
+    const deals = await Deal.find(filter)
+      .populate('assignedTo', 'name username role employee_id')
+      .sort({ createdAt: -1 });
     res.json(deals);
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -40,9 +64,12 @@ router.get("/", verifyToken, async (req, res) => {
 
 router.post("/", verifyToken, async (req, res) => {
   try {
-    const { sourceLeadId, name, company, amount, contact, email, phone, stage } = req.body;
+    const { sourceLeadId, name, company, amount, contact, email, phone, stage, assignedTo } = req.body;
     if (!name) {
       return res.status(400).json({ message: "Name required" });
+    }
+    if (!assignedTo) {
+      return res.status(400).json({ message: "assignedTo (user ID) required" });
     }
 
     let deal = null;
@@ -63,6 +90,7 @@ router.post("/", verifyToken, async (req, res) => {
       email,
       phone,
       stage: stage || "qualification",
+      assignedTo
     });
 
     await syncDealContact(deal);
@@ -89,6 +117,7 @@ router.post("/bulk", verifyToken, async (req, res) => {
         email: String(deal.email || "").trim(),
         phone: String(deal.phone || "").trim(),
         stage: deal.stage || "qualification",
+        assignedTo: req.user._id  // Bulk import assigns to current user
       }))
       .filter((deal) => deal.name);
 
@@ -109,8 +138,15 @@ router.post("/bulk", verifyToken, async (req, res) => {
   }
 });
 
-router.put("/:id", verifyToken, async (req, res) => {
+router.put("/:id", verifyToken, permitDealAccess(), async (req, res) => {
   try {
+    const { authorizeDealAccess } = require("../middleware/dealAuth");
+    
+    // Authorize first (req.deal populated by middleware)
+    if (!await authorizeDealAccess(req.user, req.deal)) {
+      return res.status(403).json({ message: "Forbidden - insufficient permissions for this deal" });
+    }
+
     // Stage transition validation
     const allowedTransitions = {
       "qualification": ["need_analysis", "lost"],
@@ -122,18 +158,22 @@ router.put("/:id", verifyToken, async (req, res) => {
       "lost": []
     };
 
+    let stageChanged = false;
+    let oldStage = req.deal.stage;
+    
     if (req.body.stage !== undefined) {
-      const currentDeal = await Deal.findById(req.params.id);
-      if (!currentDeal) {
-        return res.status(404).json({ message: "Deal not found" });
-      }
-      const currentStage = currentDeal.stage;
       const newStage = req.body.stage;
-      if (currentStage !== newStage && 
-          (!allowedTransitions[currentStage] || !allowedTransitions[currentStage].includes(newStage))) {
+      const currentStageKey = normalizeDealStage(oldStage);
+      const newStageKey = normalizeDealStage(newStage);
+
+      if (currentStageKey !== newStageKey && 
+          (!allowedTransitions[currentStageKey] || !allowedTransitions[currentStageKey].includes(newStageKey))) {
         return res.status(400).json({ 
-          message: `Invalid stage transition: from "${currentStage}" to "${newStage}" not allowed` 
+          message: `Invalid stage transition: from "${oldStage}" to "${newStage}" not allowed` 
         });
+      }
+      if (currentStageKey !== newStageKey) {
+        stageChanged = true;
       }
     }
 
@@ -142,31 +182,132 @@ router.put("/:id", verifyToken, async (req, res) => {
       updates.amount = Number(updates.amount) || 0;
     }
 
-    const deal = await Deal.findByIdAndUpdate(req.params.id, updates, {
+    const updatedDeal = await Deal.findByIdAndUpdate(req.params.id, updates, {
       new: true,
       runValidators: true,
     });
 
-    if (!deal) {
+    if (!updatedDeal) {
       return res.status(404).json({ message: "Deal not found" });
     }
 
-    await syncDealContact(deal);
+    // **STAGE CHANGE LOGIC**
+    if (stageChanged) {
+      // Add to timeline
+      updatedDeal.timeline.unshift({
+        fromStage: oldStage,
+        toStage: updates.stage,
+        changedBy: req.user._id,
+        changedAt: new Date(),
+        userName: req.user.name || req.user.username
+      });
+      await updatedDeal.save();
+      
+      // Create notification
+      const changerRole = req.user.role.toUpperCase();
+      let recipients = [];
+      
+      if (changerRole === 'EMPLOYEE') {
+        // Notify manager chain + admin
+        let manager = await User.findById(req.user.reportsTo).populate('reportsTo');
+        while (manager) {
+          recipients.push(manager._id);
+          manager = manager.reportsTo;
+        }
+      } else if (changerRole === 'MANAGER') {
+        // Notify upper managers + admin
+        let manager = await User.findById(req.user.reportsTo).populate('reportsTo');
+        while (manager) {
+          recipients.push(manager._id);
+          manager = manager.reportsTo;
+        }
+      }
+      // Always notify admins (find all ADMIN users)
+      const admins = await User.find({ role: 'ADMIN' });
+      recipients.push(...admins.map(a => a._id));
+      
+      if (recipients.length > 0) {
+        await Notification.insertMany(recipients.map(recipient => ({
+          dealId: updatedDeal._id,
+          message: `Deal "${updatedDeal.name}" moved from ${oldStage.replace(/_/g, ' ')} to ${updates.stage.replace(/_/g, ' ')} by ${req.user.name || req.user.username}`,
+          fromStage: oldStage,
+          toStage: updates.stage,
+          changedBy: req.user._id,
+          changedByName: req.user.name || req.user.username,
+          recipients: [recipient]
+        })));
+      }
+    }
 
-    res.json(deal);
+    await syncDealContact(updatedDeal);
+    res.json(updatedDeal);
   } catch (err) {
+    console.error('Deal update error:', err);
     res.status(500).json({ message: err.message });
   }
 });
 
-router.delete("/:id", verifyToken, async (req, res) => {
+router.delete("/:id", verifyToken, permitDealAccess(), async (req, res) => {
   try {
+    const { authorizeDealAccess } = require("../middleware/dealAuth");
+    
+    // Double-check authorization
+    if (!await authorizeDealAccess(req.user, req.deal)) {
+      return res.status(403).json({ message: "Forbidden - insufficient permissions for this deal" });
+    }
+
     const deal = await Deal.findByIdAndDelete(req.params.id);
     if (!deal) {
       return res.status(404).json({ message: "Deal not found" });
     }
     await Contact.deleteMany({ sourceDealId: deal._id });
     res.json({ message: "Deal deleted successfully" });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// Notification APIs
+router.get("/notifications", verifyToken, async (req, res) => {
+  try {
+    const notifications = await Notification.find({ 
+      recipients: req.user._id 
+    })
+      .populate('dealId', 'name stage amount company')
+      .populate('changedBy', 'name username')
+      .sort({ createdAt: -1 });
+
+    const unreadCount = notifications.filter(n => !n.isRead).length;
+
+    res.json({
+      notifications,
+      unreadCount,
+      hasUnread: unreadCount > 0
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+router.patch("/notifications/:ids/read", verifyToken, async (req, res) => {
+  try {
+    const ids = req.params.ids.split(',').map(id => id.trim());
+    if (ids.length === 0) {
+      return res.status(400).json({ message: "No notification IDs provided" });
+    }
+
+    const result = await Notification.updateMany(
+      { 
+        _id: { $in: ids },
+        recipients: req.user._id  // Only own notifications
+      },
+      { isRead: true }
+    );
+
+    res.json({
+      message: `${result.modifiedCount} notifications marked as read`,
+      modifiedCount: result.modifiedCount
+    });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
