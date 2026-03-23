@@ -110,6 +110,44 @@ const applyForecastFields = (dealPayload) => {
   return normalized;
 };
 
+const validateCreateDealInput = (payload) => {
+  const name = String(payload.name || "").trim();
+  const company = String(payload.company || "").trim();
+  const email = String(payload.email || "").trim();
+  const phone = String(payload.phone || "").trim();
+  const amount = Number(payload.amount);
+  const closingDate = payload.closingDate ? new Date(payload.closingDate) : null;
+
+  if (!name) {
+    return "Deal Name is required";
+  }
+
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return "Amount (Deal Value) is required and must be greater than 0";
+  }
+
+  if (!company) {
+    return "Company is required";
+  }
+
+  if (!email && !phone) {
+    return "At least one contact method is required (Email or Phone)";
+  }
+
+  if (!closingDate || Number.isNaN(closingDate.getTime())) {
+    return "Closing Date is required";
+  }
+
+  if (payload.probability !== undefined && payload.probability !== null && payload.probability !== "") {
+    const probability = Number(payload.probability);
+    if (!Number.isFinite(probability) || probability < 0 || probability > 100) {
+      return "Probability must be between 0 and 100";
+    }
+  }
+
+  return null;
+};
+
 const syncCustomerStatusFromLatestDeal = async (customerId) => {
   if (!customerId) return;
 
@@ -211,8 +249,17 @@ router.post("/", verifyToken, async (req, res) => {
       campaignSource,
       description,
     } = req.body;
-    if (!name) {
-      return res.status(400).json({ message: "Name required" });
+    const validationError = validateCreateDealInput({
+      name,
+      company,
+      email,
+      phone,
+      amount: amount ?? value,
+      closingDate,
+      probability,
+    });
+    if (validationError) {
+      return res.status(400).json({ message: validationError });
     }
     const effectiveAssignedTo = assignedTo || req.user._id;
 

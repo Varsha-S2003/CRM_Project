@@ -423,9 +423,40 @@ function Deals() {
   const submitNewDeal = async (e) => {
     e.preventDefault();
     try {
-      const token = localStorage.getItem("token");
+      const trimmedName = String(newDeal.name || "").trim();
+      const trimmedCompany = String(newDeal.company || "").trim();
+      const trimmedEmail = String(newDeal.email || "").trim();
+      const trimmedPhone = String(newDeal.phone || "").trim();
+      const amountValue = parseOptionalNumberInput(newDeal.amount);
+      const closingDateValue = String(newDeal.closingDate || "").trim();
       const probabilityValue = parseOptionalNumberInput(newDeal.probability);
-      const amountValue = parseOptionalNumberInput(newDeal.amount) ?? 0;
+
+      if (!trimmedName) {
+        alert("Deal Name is required");
+        return;
+      }
+      if (amountValue === null || amountValue <= 0) {
+        alert("Amount (Deal Value) is required and must be greater than 0");
+        return;
+      }
+      if (!trimmedCompany) {
+        alert("Company is required");
+        return;
+      }
+      if (!trimmedEmail && !trimmedPhone) {
+        alert("At least one contact method is required (Email or Phone)");
+        return;
+      }
+      if (!closingDateValue) {
+        alert("Closing Date is required");
+        return;
+      }
+      if (probabilityValue !== null && (probabilityValue < 0 || probabilityValue > 100)) {
+        alert("Probability must be between 0 and 100");
+        return;
+      }
+
+      const token = localStorage.getItem("token");
       const expectedRevenueValue =
         probabilityValue === null
           ? parseOptionalNumberInput(newDeal.expectedRevenue)
@@ -1316,13 +1347,14 @@ ET`;
                     />
                   </div>
                   <div className="form-group">
-                    <label>Company</label>
+                    <label>Company *</label>
                     <input
                       type="text"
                       name="company"
                       value={newDeal.company}
                       onChange={(e) => setNewDeal((prev) => ({ ...prev, company: e.target.value }))}
                       autoComplete="off"
+                      required
                     />
                   </div>
                 </div>
@@ -1350,7 +1382,12 @@ ET`;
                 </div>
                 <div className="form-row-zoho">
                   <div className="form-group">
-                    <label>Amount (Deal Value)</label>
+                    <small>Provide at least one contact method: Email or Phone.</small>
+                  </div>
+                </div>
+                <div className="form-row-zoho">
+                  <div className="form-group">
+                    <label>Amount (Deal Value) *</label>
                     <input
                       type="number"
                       name="amount"
@@ -1359,6 +1396,7 @@ ET`;
                       value={newDeal.amount}
                       onChange={(e) => setNewDeal((prev) => ({ ...prev, amount: e.target.value }))}
                       autoComplete="off"
+                      required
                     />
                   </div>
                   <div className="form-group">
@@ -1372,12 +1410,13 @@ ET`;
                     />
                   </div>
                   <div className="form-group">
-                    <label>Closing Date</label>
+                    <label>Closing Date *</label>
                     <input
                       type="date"
                       name="closingDate"
                       value={newDeal.closingDate}
                       onChange={(e) => setNewDeal((prev) => ({ ...prev, closingDate: e.target.value }))}
+                      required
                     />
                   </div>
                 </div>
