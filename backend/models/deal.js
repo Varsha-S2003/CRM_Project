@@ -15,6 +15,14 @@ const normalizeStageKey = (stage) => {
 const deriveStatusFromStage = (stage) =>
   normalizeStageKey(stage) === "lost" ? "Inactive" : "Active";
 
+const parseOptionalNumber = (value) => {
+  if (value === undefined || value === null || value === "") {
+    return null;
+  }
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : NaN;
+};
+
 const dealSchema = new mongoose.Schema(
   {
     customerId: {
@@ -36,6 +44,48 @@ const dealSchema = new mongoose.Schema(
     contact: { type: String, trim: true },
     email: { type: String, trim: true },
     phone: { type: String, trim: true },
+    closingDate: {
+      type: Date,
+      default: null,
+      index: true,
+    },
+    probability: {
+      type: Number,
+      min: 0,
+      max: 100,
+      default: null,
+    },
+    expectedRevenue: {
+      type: Number,
+      min: 0,
+      default: null,
+    },
+    nextStep: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    dealType: {
+      type: String,
+      enum: ["", "New Business", "Existing Business", "Renewal", "Upsell", "Other"],
+      default: "",
+      trim: true,
+    },
+    leadSource: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    campaignSource: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    description: {
+      type: String,
+      trim: true,
+      default: "",
+    },
     stage: {
       type: String,
       enum: [
@@ -94,6 +144,27 @@ dealSchema.index({ "timeline.changedAt": -1 });
 dealSchema.pre("validate", function enforceStatusReason() {
   const normalizedStage = normalizeStageKey(this.stage);
   this.status = deriveStatusFromStage(normalizedStage);
+
+  const parsedProbability = parseOptionalNumber(this.probability);
+  if (Number.isNaN(parsedProbability)) {
+    this.invalidate("probability", "Probability must be a valid number");
+  } else if (parsedProbability !== null) {
+    this.probability = parsedProbability;
+  } else {
+    this.probability = null;
+  }
+
+  const parsedExpectedRevenue = parseOptionalNumber(this.expectedRevenue);
+  if (Number.isNaN(parsedExpectedRevenue)) {
+    this.invalidate("expectedRevenue", "Expected Revenue must be a valid number");
+  }
+
+  if (this.probability !== null) {
+    const amount = Number(this.amount) || 0;
+    this.expectedRevenue = Number(((amount * this.probability) / 100).toFixed(2));
+  } else {
+    this.expectedRevenue = parsedExpectedRevenue;
+  }
 
   if (this.status === "Inactive") {
     const reason = String(this.reason || "").trim();

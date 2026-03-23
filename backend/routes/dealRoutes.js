@@ -49,6 +49,67 @@ const deriveStatusAndReason = ({ stage, reason, currentReason }) => {
   return { status, reason: "" };
 };
 
+const parseOptionalNumber = (value) => {
+  if (value === undefined || value === null || value === "") {
+    return null;
+  }
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : NaN;
+};
+
+const normalizeOptionalDate = (value) => {
+  if (value === undefined || value === null || value === "") {
+    return null;
+  }
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
+const normalizeDealBusinessFields = (payload) => {
+  const normalized = { ...payload };
+
+  if (!Object.prototype.hasOwnProperty.call(normalized, "amount") && Object.prototype.hasOwnProperty.call(normalized, "value")) {
+    normalized.amount = normalized.value;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(normalized, "amount")) {
+    normalized.amount = Number(normalized.amount) || 0;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(normalized, "probability")) {
+    const probability = parseOptionalNumber(normalized.probability);
+    normalized.probability = Number.isNaN(probability) ? null : probability;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(normalized, "expectedRevenue")) {
+    const expectedRevenue = parseOptionalNumber(normalized.expectedRevenue);
+    normalized.expectedRevenue = Number.isNaN(expectedRevenue) ? null : expectedRevenue;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(normalized, "closingDate")) {
+    normalized.closingDate = normalizeOptionalDate(normalized.closingDate);
+  }
+
+  ["nextStep", "dealType", "leadSource", "campaignSource", "description"].forEach((field) => {
+    if (Object.prototype.hasOwnProperty.call(normalized, field)) {
+      normalized[field] = String(normalized[field] || "").trim();
+    }
+  });
+
+  return normalized;
+};
+
+const applyForecastFields = (dealPayload) => {
+  const normalized = { ...dealPayload };
+  if (normalized.probability === null || normalized.probability === undefined) {
+    return normalized;
+  }
+
+  const amount = Number(normalized.amount) || 0;
+  normalized.expectedRevenue = Number(((amount * normalized.probability) / 100).toFixed(2));
+  return normalized;
+};
+
 const syncCustomerStatusFromLatestDeal = async (customerId) => {
   if (!customerId) return;
 
@@ -72,15 +133,19 @@ const syncCustomerStatusFromLatestDeal = async (customerId) => {
 };
 
 const syncDealContact = async (deal) => {
+  const normalizedEmail = String(deal.email || "").trim().toLowerCase();
   const contactPayload = {
     sourceDealId: deal._id,
     name: deal.contact || deal.name,
     company: deal.company || "",
-    email: deal.email || "",
     phone: deal.phone || "",
     source: "Deal",
     convertedAt: deal.createdAt || new Date(),
   };
+
+  if (normalizedEmail) {
+    contactPayload.email = normalizedEmail;
+  }
 
   let contact = await Contact.findOne({ sourceDealId: deal._id });
   if (!contact && deal.sourceLeadId) {
@@ -125,13 +190,31 @@ router.get("/", verifyToken, permitDealAccess(), async (req, res) => {
 
 router.post("/", verifyToken, async (req, res) => {
   try {
-    const { sourceLeadId, name, company, amount, contact, email, phone, stage, reason, assignedTo } = req.body;
+    const {
+      sourceLeadId,
+      name,
+      company,
+      amount,
+      value,
+      contact,
+      email,
+      phone,
+      stage,
+      reason,
+      assignedTo,
+      closingDate,
+      probability,
+      expectedRevenue,
+      nextStep,
+      dealType,
+      leadSource,
+      campaignSource,
+      description,
+    } = req.body;
     if (!name) {
       return res.status(400).json({ message: "Name required" });
     }
-    if (!assignedTo) {
-      return res.status(400).json({ message: "assignedTo (user ID) required" });
-    }
+    const effectiveAssignedTo = assignedTo || req.user._id;
 
     let deal = null;
     if (sourceLeadId) {
@@ -148,19 +231,27 @@ router.post("/", verifyToken, async (req, res) => {
       return res.status(400).json({ message: derived.error });
     }
 
-    deal = await Deal.create({
+    deal = await Deal.create(applyForecastFields(normalizeDealBusinessFields({
       sourceLeadId: sourceLeadId || null,
       name,
       company,
-      amount: Number(amount) || 0,
+      amount: amount ?? value,
       contact,
       email,
       phone,
+      closingDate,
+      probability,
+      expectedRevenue,
+      nextStep,
+      dealType,
+      leadSource,
+      campaignSource,
+      description,
       stage: finalStage,
       status: derived.status,
       reason: derived.reason,
-      assignedTo
-    });
+      assignedTo: effectiveAssignedTo,
+    })));
 
     await syncDealContact(deal);
     await syncCustomerStatusFromLatestDeal(deal.customerId);
@@ -179,17 +270,27 @@ router.post("/bulk", verifyToken, async (req, res) => {
     }
 
     const normalizedDeals = deals
-      .map((deal) => ({
-        name: String(deal.name || "").trim(),
-        company: String(deal.company || "").trim(),
-        amount: Number(deal.amount) || 0,
-        contact: String(deal.contact || "").trim(),
-        email: String(deal.email || "").trim(),
-        phone: String(deal.phone || "").trim(),
-        stage: deal.stage || "qualification",
-        reason: String(deal.reason || "").trim(),
-        assignedTo: req.user._id  // Bulk import assigns to current user
-      }))
+      .map((deal) =>
+        applyForecastFields(normalizeDealBusinessFields({
+          name: String(deal.name || "").trim(),
+          company: String(deal.company || "").trim(),
+          amount: deal.amount,
+          contact: String(deal.contact || "").trim(),
+          email: String(deal.email || "").trim(),
+          phone: String(deal.phone || "").trim(),
+          closingDate: deal.closingDate,
+          probability: deal.probability,
+          expectedRevenue: deal.expectedRevenue,
+          nextStep: String(deal.nextStep || "").trim(),
+          dealType: String(deal.dealType || "").trim(),
+          leadSource: String(deal.leadSource || "").trim(),
+          campaignSource: String(deal.campaignSource || "").trim(),
+          description: String(deal.description || "").trim(),
+          stage: deal.stage || "qualification",
+          reason: String(deal.reason || "").trim(),
+          assignedTo: req.user._id, // Bulk import assigns to current user
+        }))
+      )
       .filter((deal) => deal.name);
 
     if (normalizedDeals.length === 0) {
@@ -258,11 +359,22 @@ const updateDealHandler = async (req, res) => {
       }
     }
 
-    const updates = { ...req.body };
+    const updates = normalizeDealBusinessFields({ ...req.body });
     delete updates.status;
 
-    if (Object.prototype.hasOwnProperty.call(updates, "amount")) {
-      updates.amount = Number(updates.amount) || 0;
+    const amountForForecast = Object.prototype.hasOwnProperty.call(updates, "amount")
+      ? Number(updates.amount) || 0
+      : Number(req.deal.amount) || 0;
+    const probabilityForForecast = Object.prototype.hasOwnProperty.call(updates, "probability")
+      ? updates.probability
+      : parseOptionalNumber(req.deal.probability);
+
+    if (Object.prototype.hasOwnProperty.call(updates, "amount") || Object.prototype.hasOwnProperty.call(updates, "probability")) {
+      if (probabilityForForecast !== null && !Number.isNaN(probabilityForForecast)) {
+        updates.expectedRevenue = Number(((amountForForecast * probabilityForForecast) / 100).toFixed(2));
+      } else if (!Object.prototype.hasOwnProperty.call(updates, "expectedRevenue")) {
+        updates.expectedRevenue = null;
+      }
     }
 
     const derived = deriveStatusAndReason({

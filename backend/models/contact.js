@@ -27,4 +27,12 @@ const contactSchema = new mongoose.Schema(
   }
 );
 
+contactSchema.pre("validate", function normalizeContactEmail() {
+  const email = String(this.email || "").trim().toLowerCase();
+  this.email = email || undefined;
+});
+
+// Allow unique emails while permitting contacts that have no email.
+contactSchema.index({ email: 1 }, { unique: true, sparse: true });
+
 module.exports = mongoose.model("Contact", contactSchema);

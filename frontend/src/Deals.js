@@ -15,6 +15,8 @@ const stages = [
   { id: "lost", name: "Lost", color: "#ef4444" },
 ];
 
+const dealTypeOptions = ["", "New Business", "Existing Business", "Renewal", "Upsell", "Other"];
+
 const allowedTransitions = {
   "qualification": ["need_analysis", "lost"],
   "need_analysis": ["value_proposition", "qualification", "lost"],
@@ -40,7 +42,37 @@ const normalizeDeal = (deal) => {
   const stage = normalizeStageForUi(deal.stage);
   const status = deal.status || (stage === "lost" ? "Inactive" : "Active");
   const reason = status === "Inactive" ? String(deal.reason || "").trim() : "";
-  return { ...deal, stage, status, reason };
+  const probability =
+    deal.probability === undefined || deal.probability === null || deal.probability === ""
+      ? null
+      : Number(deal.probability);
+  const amount = Number(deal.amount || 0);
+  const expectedRevenue =
+    probability === null || Number.isNaN(probability)
+      ? null
+      : Number((deal.expectedRevenue ?? (amount * probability) / 100).toFixed(2));
+  return {
+    ...deal,
+    stage,
+    status,
+    reason,
+    probability: probability === null || Number.isNaN(probability) ? null : probability,
+    expectedRevenue,
+    closingDate: deal.closingDate ? new Date(deal.closingDate).toISOString().slice(0, 10) : "",
+    nextStep: String(deal.nextStep || "").trim(),
+    dealType: String(deal.dealType || "").trim(),
+    leadSource: String(deal.leadSource || "").trim(),
+    campaignSource: String(deal.campaignSource || "").trim(),
+    description: String(deal.description || "").trim(),
+  };
+};
+
+const parseOptionalNumberInput = (value) => {
+  if (value === undefined || value === null || value === "") {
+    return null;
+  }
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : null;
 };
 
 function Deals() {
@@ -76,13 +108,38 @@ function Deals() {
     contact: "",
     email: "",
     phone: "",
+    closingDate: "",
+    probability: "",
+    expectedRevenue: "",
+    nextStep: "",
+    dealType: "",
+    leadSource: "",
+    campaignSource: "",
+    description: "",
     stage: "qualification",
   });
   const exportViews = [{ id: "all", name: "All Deals" }, ...stages.map((stage) => ({ id: stage.id, name: `${stage.name} Deals` }))];
   const exportFieldPresets = {
-    custom: ["name", "company", "amount", "contact", "email", "phone", "stage"],
-    basic: ["name", "company", "amount", "stage"],
-    all: ["name", "company", "amount", "contact", "email", "phone", "stage", "createdAt"],
+    custom: ["name", "company", "amount", "contact", "email", "phone", "stage", "closingDate", "probability", "expectedRevenue"],
+    basic: ["name", "company", "amount", "stage", "closingDate"],
+    all: [
+      "name",
+      "company",
+      "amount",
+      "contact",
+      "email",
+      "phone",
+      "stage",
+      "closingDate",
+      "probability",
+      "expectedRevenue",
+      "nextStep",
+      "dealType",
+      "leadSource",
+      "campaignSource",
+      "description",
+      "createdAt",
+    ],
   };
   const formatDealDate = (value) => {
     if (!value) return "-";
@@ -98,6 +155,21 @@ function Deals() {
     { key: "email", label: "Email", getValue: (deal) => deal.email || "-" },
     { key: "phone", label: "Phone", getValue: (deal) => deal.phone || "-" },
     { key: "stage", label: "Stage", getValue: (deal) => (deal.stage || "-").replaceAll("_", " ") },
+    { key: "closingDate", label: "Closing Date", getValue: (deal) => deal.closingDate || "-" },
+    { key: "probability", label: "Probability (%)", getValue: (deal) => (deal.probability ?? "-") },
+    {
+      key: "expectedRevenue",
+      label: "Expected Revenue",
+      getValue: (deal) =>
+        deal.expectedRevenue === null || deal.expectedRevenue === undefined
+          ? "-"
+          : Number(deal.expectedRevenue).toLocaleString(),
+    },
+    { key: "nextStep", label: "Next Step", getValue: (deal) => deal.nextStep || "-" },
+    { key: "dealType", label: "Deal Type", getValue: (deal) => deal.dealType || "-" },
+    { key: "leadSource", label: "Lead Source", getValue: (deal) => deal.leadSource || "-" },
+    { key: "campaignSource", label: "Campaign Source", getValue: (deal) => deal.campaignSource || "-" },
+    { key: "description", label: "Description", getValue: (deal) => deal.description || "-" },
     { key: "createdAt", label: "Created On", getValue: (deal) => formatDealDate(deal.createdAt) },
   ];
 
@@ -162,7 +234,17 @@ function Deals() {
     const term = search.trim().toLowerCase();
     if (!term) return deals;
     return deals.filter((deal) =>
-      [deal.name, deal.company, deal.contact, deal.email, deal.phone]
+      [
+        deal.name,
+        deal.company,
+        deal.contact,
+        deal.email,
+        deal.phone,
+        deal.nextStep,
+        deal.dealType,
+        deal.leadSource,
+        deal.campaignSource,
+      ]
         .filter(Boolean)
         .some((value) => value.toLowerCase().includes(term))
     );
@@ -187,6 +269,15 @@ function Deals() {
 
   const getDealsByStage = (stageId) => filteredDeals.filter((deal) => deal.stage === stageId);
 
+  const computedExpectedRevenue = useMemo(() => {
+    const amount = parseOptionalNumberInput(newDeal.amount);
+    const probability = parseOptionalNumberInput(newDeal.probability);
+    if (amount === null || probability === null) {
+      return "";
+    }
+    return Number(((amount * probability) / 100).toFixed(2)).toString();
+  }, [newDeal.amount, newDeal.probability]);
+
   // Get stages that have deals matching the search
   const getStagesWithDeals = () => {
     if (!search.trim()) return stages;
@@ -201,6 +292,14 @@ function Deals() {
       contact: "",
       email: "",
       phone: "",
+      closingDate: "",
+      probability: "",
+      expectedRevenue: "",
+      nextStep: "",
+      dealType: "",
+      leadSource: "",
+      campaignSource: "",
+      description: "",
       stage: "qualification",
     });
     setShowModal(true);
@@ -272,6 +371,14 @@ function Deals() {
       contact: row.contact || row.contactperson || row.customer || "",
       email: row.email || "",
       phone: row.phone || row.mobile || "",
+      closingDate: row.closingdate || "",
+      probability: row.probability || "",
+      expectedRevenue: row.expectedrevenue || "",
+      nextStep: row.nextstep || "",
+      dealType: row.dealtype || "",
+      leadSource: row.leadsource || row.source || "",
+      campaignSource: row.campaignsource || row.campaign || "",
+      description: row.description || "",
       stage: validStages.has(rawStage) ? rawStage : "qualification",
     };
   };
@@ -317,9 +424,21 @@ function Deals() {
     e.preventDefault();
     try {
       const token = localStorage.getItem("token");
+      const probabilityValue = parseOptionalNumberInput(newDeal.probability);
+      const amountValue = parseOptionalNumberInput(newDeal.amount) ?? 0;
+      const expectedRevenueValue =
+        probabilityValue === null
+          ? parseOptionalNumberInput(newDeal.expectedRevenue)
+          : Number(((amountValue * probabilityValue) / 100).toFixed(2));
       const res = await axios.post(
         "http://localhost:5000/api/deals",
-        { ...newDeal, amount: Number(newDeal.amount) || 0 },
+        {
+          ...newDeal,
+          amount: amountValue,
+          probability: probabilityValue,
+          expectedRevenue: expectedRevenueValue,
+          closingDate: newDeal.closingDate || null,
+        },
         { headers: { Authorization: `Bearer ${token}` } }
       );
       setDeals((prev) => [normalizeDeal(res.data), ...prev]);
@@ -1231,11 +1350,12 @@ ET`;
                 </div>
                 <div className="form-row-zoho">
                   <div className="form-group">
-                    <label>Deal Value</label>
+                    <label>Amount (Deal Value)</label>
                     <input
                       type="number"
                       name="amount"
                       min="0"
+                      placeholder="Enter amount, e.g. 100000"
                       value={newDeal.amount}
                       onChange={(e) => setNewDeal((prev) => ({ ...prev, amount: e.target.value }))}
                       autoComplete="off"
@@ -1249,6 +1369,42 @@ ET`;
                       value={newDeal.phone}
                       onChange={(e) => setNewDeal((prev) => ({ ...prev, phone: e.target.value }))}
                       autoComplete="off"
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Closing Date</label>
+                    <input
+                      type="date"
+                      name="closingDate"
+                      value={newDeal.closingDate}
+                      onChange={(e) => setNewDeal((prev) => ({ ...prev, closingDate: e.target.value }))}
+                    />
+                  </div>
+                </div>
+                <div className="form-row-zoho">
+                  <div className="form-group">
+                    <label>Probability (%)</label>
+                    <input
+                      type="number"
+                      name="probability"
+                      min="0"
+                      max="100"
+                      value={newDeal.probability}
+                      onChange={(e) => setNewDeal((prev) => ({ ...prev, probability: e.target.value }))}
+                      autoComplete="off"
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Expected Revenue</label>
+                    <input
+                      type="number"
+                      name="expectedRevenue"
+                      step="0.01"
+                      min="0"
+                      value={newDeal.probability === "" ? newDeal.expectedRevenue : computedExpectedRevenue}
+                      onChange={(e) => setNewDeal((prev) => ({ ...prev, expectedRevenue: e.target.value }))}
+                      autoComplete="off"
+                      disabled={newDeal.probability !== ""}
                     />
                   </div>
                 </div>
@@ -1267,6 +1423,64 @@ ET`;
                         </option>
                       ))}
                     </select>
+                  </div>
+                  <div className="form-group">
+                    <label>Deal Type</label>
+                    <select
+                      value={newDeal.dealType}
+                      onChange={(e) => setNewDeal((prev) => ({ ...prev, dealType: e.target.value }))}
+                    >
+                      {dealTypeOptions.map((typeOption) => (
+                        <option key={typeOption || "blank"} value={typeOption}>
+                          {typeOption || "Select deal type"}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                <div className="form-row-zoho">
+                  <div className="form-group">
+                    <label>Lead Source</label>
+                    <input
+                      type="text"
+                      name="leadSource"
+                      value={newDeal.leadSource}
+                      onChange={(e) => setNewDeal((prev) => ({ ...prev, leadSource: e.target.value }))}
+                      autoComplete="off"
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Campaign Source</label>
+                    <input
+                      type="text"
+                      name="campaignSource"
+                      value={newDeal.campaignSource}
+                      onChange={(e) => setNewDeal((prev) => ({ ...prev, campaignSource: e.target.value }))}
+                      autoComplete="off"
+                    />
+                  </div>
+                </div>
+                <div className="form-row-zoho">
+                  <div className="form-group">
+                    <label>Next Step</label>
+                    <input
+                      type="text"
+                      name="nextStep"
+                      value={newDeal.nextStep}
+                      onChange={(e) => setNewDeal((prev) => ({ ...prev, nextStep: e.target.value }))}
+                      autoComplete="off"
+                    />
+                  </div>
+                </div>
+                <div className="form-row-zoho">
+                  <div className="form-group">
+                    <label>Description</label>
+                    <textarea
+                      name="description"
+                      rows={3}
+                      value={newDeal.description}
+                      onChange={(e) => setNewDeal((prev) => ({ ...prev, description: e.target.value }))}
+                    />
                   </div>
                 </div>
                 <div className="modal-actions">
@@ -1291,7 +1505,7 @@ ET`;
                 <div className="form-section">
                   <h3>Upload CSV File</h3>
                   <p className="import-helper-text">
-                    Supported headers: `name`, `dealName`, `company`, `amount`, `contact`, `email`, `phone`, `stage`.
+                    Supported headers: name, dealName, company, amount, contact, email, phone, stage, closingDate, probability, expectedRevenue, nextStep, dealType, leadSource, campaignSource, description.
                   </p>
                   <input
                     type="file"
@@ -1317,6 +1531,8 @@ ET`;
                             <th>Company</th>
                             <th>Amount</th>
                             <th>Stage</th>
+                            <th>Closing Date</th>
+                            <th>Probability</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -1326,6 +1542,8 @@ ET`;
                               <td>{deal.company || "-"}</td>
                               <td>${Number(deal.amount || 0).toLocaleString()}</td>
                               <td>{deal.stage}</td>
+                              <td>{deal.closingDate || "-"}</td>
+                              <td>{deal.probability || "-"}</td>
                             </tr>
                           ))}
                         </tbody>
@@ -1376,6 +1594,42 @@ ET`;
                 <div className="detail-row">
                   <span className="detail-label">Deal Value</span>
                   <span className="detail-value">${Number(selectedDeal.amount || 0).toLocaleString()}</span>
+                </div>
+                <div className="detail-row">
+                  <span className="detail-label">Closing Date</span>
+                  <span className="detail-value">{selectedDeal.closingDate || "-"}</span>
+                </div>
+                <div className="detail-row">
+                  <span className="detail-label">Probability</span>
+                  <span className="detail-value">{selectedDeal.probability === null ? "-" : `${selectedDeal.probability}%`}</span>
+                </div>
+                <div className="detail-row">
+                  <span className="detail-label">Expected Revenue</span>
+                  <span className="detail-value">
+                    {selectedDeal.expectedRevenue === null || selectedDeal.expectedRevenue === undefined
+                      ? "-"
+                      : `$${Number(selectedDeal.expectedRevenue).toLocaleString()}`}
+                  </span>
+                </div>
+                <div className="detail-row">
+                  <span className="detail-label">Deal Type</span>
+                  <span className="detail-value">{selectedDeal.dealType || "-"}</span>
+                </div>
+                <div className="detail-row">
+                  <span className="detail-label">Lead Source</span>
+                  <span className="detail-value">{selectedDeal.leadSource || "-"}</span>
+                </div>
+                <div className="detail-row">
+                  <span className="detail-label">Campaign Source</span>
+                  <span className="detail-value">{selectedDeal.campaignSource || "-"}</span>
+                </div>
+                <div className="detail-row">
+                  <span className="detail-label">Next Step</span>
+                  <span className="detail-value">{selectedDeal.nextStep || "-"}</span>
+                </div>
+                <div className="detail-row">
+                  <span className="detail-label">Description</span>
+                  <span className="detail-value">{selectedDeal.description || "-"}</span>
                 </div>
                 <div className="detail-row">
                   <span className="detail-label">Status</span>
