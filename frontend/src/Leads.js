@@ -5,9 +5,10 @@ import "./Leads.css";
 import Sidebar from "./Sidebar";
 import RecordActivityPanel from "./RecordActivityPanel";
 import FilterBuilder from "./components/FilterBuilder";
-import { DEFAULT_COLUMNS, AVAILABLE_COLUMNS } from "./utils/viewsUtils";
+import { DEFAULT_COLUMNS } from "./utils/viewsUtils";
 
 function Leads() {
+  const ALL_LEADS_VIEW_ID = "__all_leads__";
   const [leads, setLeads] = useState([]);
   const [stats, setStats] = useState(null);
   const [search, setSearch] = useState("");
@@ -22,6 +23,7 @@ function Leads() {
   const [views, setViews] = useState([]);
   const [currentViewId, setCurrentViewId] = useState(null);
   const [filters, setFilters] = useState({});
+  const [showViewDropdown, setShowViewDropdown] = useState(false);
 
   const [sortConfig, setSortConfig] = useState({ createdAt: -1 });
   const [showFilterModal, setShowFilterModal] = useState(false);
@@ -34,6 +36,7 @@ function Leads() {
   const [exportType, setExportType] = useState("csv");
   const [exportCharset, setExportCharset] = useState("utf-8");
   const createMenuRef = useRef(null);
+  const viewDropdownRef = useRef(null);
   const fileInputRef = useRef(null);
   const [newLead, setNewLead] = useState({
     salutation: "",
@@ -61,7 +64,6 @@ function Leads() {
   });
   // compute role flags for UI
   const role = localStorage.getItem("role")?.toUpperCase();
-  const userId = localStorage.getItem("userId");
   const isAdmin = role === "ADMIN";
   const isManager = role === "MANAGER";
 
@@ -75,34 +77,32 @@ function Leads() {
         headers: { Authorization: `Bearer ${token}` },
       });
       setViews(res.data);
-      
-      // Auto-select "All Leads" or first view
-      if (res.data.length > 0) {
-        const allLeadsView = res.data.find(v => v.name === "All Leads") || res.data[0];
-        setCurrentViewId(allLeadsView._id);
-        setFilters(allLeadsView.filters || {});
 
-        setSortConfig(allLeadsView.sort || { createdAt: -1 });
-      }
+      setCurrentViewId((prev) => {
+        if (prev && (prev === ALL_LEADS_VIEW_ID || res.data.some((view) => view._id === prev))) {
+          return prev;
+        }
+        return ALL_LEADS_VIEW_ID;
+      });
     } catch (err) {
       console.error("Failed to fetch views:", err);
     }
-  }, []);
+  }, [ALL_LEADS_VIEW_ID]);
 
-  const fetchFilteredLeads = useCallback(async () => {
+  const fetchFilteredLeads = useCallback(async (nextFilters = filters, nextSort = sortConfig) => {
     try {
       const token = localStorage.getItem("token");
-      const endpoint = role === "EMPLOYEE" ? "/api/leads/my/filter" : "/api/leads/all/filter";
+      const viewMode = role === "EMPLOYEE" ? "my" : "all";
       
       const payload = {
-        filters,
-        sort: sortConfig,
-
+        filters: nextFilters,
+        sort: nextSort,
+        viewMode,
         limit: 100,
         skip: 0
       };
 
-      const res = await axios.post(`http://localhost:5000${endpoint}`, payload, {
+      const res = await axios.post("http://localhost:5000/api/leads/filter", payload, {
         headers: { Authorization: `Bearer ${token}` },
       });
       setLeads(res.data);
@@ -113,27 +113,38 @@ function Leads() {
 
   // Load view and refresh leads
   const loadView = useCallback((viewId) => {
+    if (viewId === ALL_LEADS_VIEW_ID) {
+      const nextFilters = {};
+      const nextSort = { createdAt: -1 };
+      setCurrentViewId(ALL_LEADS_VIEW_ID);
+      setFilters(nextFilters);
+      setSortConfig(nextSort);
+      fetchFilteredLeads(nextFilters, nextSort);
+      return;
+    }
+
     const view = views.find(v => v._id === viewId);
     if (view) {
       setCurrentViewId(viewId);
-      setFilters(view.filters || {});
-
-      setSortConfig(view.sort || { createdAt: -1 });
-      fetchFilteredLeads();
+      const nextFilters = view.filters || {};
+      const nextSort = view.sort || { createdAt: -1 };
+      setFilters(nextFilters);
+      setSortConfig(nextSort);
+      fetchFilteredLeads(nextFilters, nextSort);
     }
-  }, [views, fetchFilteredLeads]);
+  }, [views, fetchFilteredLeads, ALL_LEADS_VIEW_ID]);
 
   // Update current filters/columns/sort
   const updateFilters = (newFilters) => {
     setFilters(newFilters);
-    fetchFilteredLeads();
+    fetchFilteredLeads(newFilters, sortConfig);
   };
 
 
 
   const updateSort = (sort) => {
     setSortConfig(sort);
-    fetchFilteredLeads();
+    fetchFilteredLeads(filters, sort);
   };
 
   useEffect(() => {
@@ -273,6 +284,9 @@ function Leads() {
       if (createMenuRef.current && !createMenuRef.current.contains(event.target)) {
         setShowCreateMenu(false);
       }
+      if (viewDropdownRef.current && !viewDropdownRef.current.contains(event.target)) {
+        setShowViewDropdown(false);
+      }
     };
 
     document.addEventListener("mousedown", handleClickOutside);
@@ -322,6 +336,120 @@ function Leads() {
     setExportCharset("utf-8");
     setShowExportModal(true);
   };
+
+  const saveView = async ({ mode = "update" } = {}) => {
+    try {
+      const token = localStorage.getItem("token");
+      const activeView = views.find((view) => view._id === currentViewId);
+      const shouldCreate = mode === "create" || !activeView;
+
+      let name = activeView?.name || "My View";
+      if (shouldCreate) {
+        const promptedName = window.prompt("Enter a view name", name);
+        if (!promptedName) return;
+        name = promptedName.trim();
+        if (!name) return;
+        if (name.toLowerCase() === "all leads") {
+          window.alert('The name "All Leads" is reserved. Use a different view name.');
+          return;
+        }
+      }
+
+      const payload = {
+        name,
+        filters,
+        sort: sortConfig,
+        columns: DEFAULT_COLUMNS,
+        visibility: activeView?.visibility || "private",
+      };
+
+      let res;
+      if (shouldCreate) {
+        res = await axios.post("http://localhost:5000/api/leads/views", payload, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+      } else {
+        res = await axios.put(`http://localhost:5000/api/leads/views/${activeView._id}`, payload, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+      }
+
+      if (res.data?._id) {
+        setViews((prev) => {
+          if (shouldCreate) {
+            const withoutDuplicate = prev.filter((view) => view._id !== res.data._id);
+            return [res.data, ...withoutDuplicate];
+          }
+          return prev.map((view) => (view._id === res.data._id ? res.data : view));
+        });
+        setCurrentViewId(res.data._id);
+      }
+
+      window.alert(shouldCreate ? "View saved." : "View updated.");
+    } catch (err) {
+      console.error("Failed to save view:", err);
+      alert(err.response?.data?.message || "Failed to save view");
+    }
+  };
+
+  const deleteView = async (viewId = currentViewId) => {
+    const activeView = views.find((view) => view._id === viewId);
+    if (!activeView) {
+      window.alert("Select a saved view to delete.");
+      return;
+    }
+
+    const confirmed = window.confirm(`Delete saved view "${activeView.name}"?`);
+    if (!confirmed) return;
+
+    try {
+      const token = localStorage.getItem("token");
+      await axios.delete(`http://localhost:5000/api/leads/views/${activeView._id}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      setViews((prev) => prev.filter((view) => view._id !== activeView._id));
+      loadView(ALL_LEADS_VIEW_ID);
+      setShowViewDropdown(false);
+      window.alert("View deleted.");
+    } catch (err) {
+      console.error("Failed to delete view:", err);
+      alert(err.response?.data?.message || "Failed to delete view");
+    }
+  };
+
+  const formatFilterChipValue = (key, value) => {
+    if (key === "conditions" && Array.isArray(value)) {
+      if (value.length === 0) return "No conditions";
+
+      return value
+        .map((condition) => {
+          if (!condition || typeof condition !== "object") return String(condition);
+
+          const field = condition.field || "field";
+          const operator = condition.operator || "operator";
+          const conditionValue =
+            condition.operator === "between"
+              ? [condition.from, condition.to].filter(Boolean).join(" to ")
+              : condition.value;
+
+          return `${field} ${operator} ${conditionValue || ""}`.trim();
+        })
+        .join(", ");
+    }
+
+    if (value && typeof value === "object") {
+      return JSON.stringify(value);
+    }
+
+    return String(value);
+  };
+
+  const visibleSavedViews = views.filter((view) => view.name !== "All Leads");
+  const activeViewName =
+    currentViewId === ALL_LEADS_VIEW_ID
+      ? "All Leads"
+      : visibleSavedViews.find((view) => view._id === currentViewId)?.name || "All Leads";
 
   const normalizeHeader = (value) =>
     String(value || "")
@@ -1146,30 +1274,123 @@ ET`;
 
           {/* Views & Filters Toolbar */}
           <div className="leads-toolbar-zoho">
-            <div className="search-box-zoho">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <circle cx="11" cy="11" r="8"></circle>
-                <path d="m21 21-4.35-4.35"></path>
-              </svg>
-              <input
-                type="text"
-                placeholder="Search leads by name, email, company..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-              />
-            </div>
-            <div className="views-toolbar">
-              <button 
-                className="btn-filter" 
-                onClick={() => setShowFilterModal(true)}
-                title="Advanced Filters"
-              >
-                Filters
-              </button>
+            <div className="leads-view-toolbar-card">
+              <div className="lead-toolbar-inner">
+                <div className="search-box-zoho">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <circle cx="11" cy="11" r="8"></circle>
+                    <path d="m21 21-4.35-4.35"></path>
+                  </svg>
+                  <input
+                    type="text"
+                    placeholder="Search leads by name, email, company..."
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                  />
+                </div>
 
-              <button className="btn-filter" onClick={handleOpenExportModal}>
-                Export
-              </button>
+                <div className="views-toolbar">
+                  <div className="lead-view-select-wrap" ref={viewDropdownRef}>
+                    <button
+                      type="button"
+                      className="lead-view-select-button"
+                      onClick={() => setShowViewDropdown((prev) => !prev)}
+                      aria-haspopup="menu"
+                      aria-expanded={showViewDropdown}
+                    >
+                      <span>{activeViewName}</span>
+                      <span className={`lead-view-select-caret ${showViewDropdown ? "open" : ""}`}>{"\u2304"}</span>
+                    </button>
+
+                    {showViewDropdown && (
+                      <div className="lead-view-dropdown-menu" role="menu" aria-label="Lead views">
+                        <button
+                          type="button"
+                          className={`lead-view-dropdown-item ${currentViewId === ALL_LEADS_VIEW_ID ? "active" : ""}`}
+                          onClick={() => {
+                            loadView(ALL_LEADS_VIEW_ID);
+                            setShowViewDropdown(false);
+                          }}
+                        >
+                          <span>All Leads</span>
+                        </button>
+
+                        {visibleSavedViews.map((view) => (
+                          <div
+                            key={view._id}
+                            className={`lead-view-dropdown-item ${currentViewId === view._id ? "active" : ""}`}
+                            role="menuitem"
+                          >
+                            <button
+                              type="button"
+                              className="lead-view-dropdown-name"
+                              onClick={() => {
+                                loadView(view._id);
+                                setShowViewDropdown(false);
+                              }}
+                            >
+                              {view.name}
+                            </button>
+                            <button
+                              type="button"
+                              className="lead-view-dropdown-delete"
+                              title={`Delete ${view.name}`}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                deleteView(view._id);
+                              }}
+                            >
+                              {"\u{1F5D1}"}
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    <select
+                      className="lead-view-select"
+                      style={{ display: "none" }}
+                      value={currentViewId || ALL_LEADS_VIEW_ID}
+                      onChange={(e) => loadView(e.target.value)}
+                      aria-label="Lead views"
+                    >
+                      <option value={ALL_LEADS_VIEW_ID}>All Leads</option>
+                      {views
+                        .filter((view) => view.name !== "All Leads")
+                        .map((view) => (
+                        <option key={view._id} value={view._id}>
+                          {`${view.name} 🗑`}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <button
+                    type="button"
+                    className="lead-toolbar-pill-button"
+                    onClick={() => setShowFilterModal(true)}
+                    title="Advanced Filters"
+                  >
+                    Filters
+                  </button>
+
+                  <button
+                    type="button"
+                    className="lead-toolbar-pill-button"
+                    onClick={() => saveView({ mode: "update" })}
+                  >
+                    Save View
+                  </button>
+
+                  <button
+                    type="button"
+                    className="lead-toolbar-pill-button"
+                    onClick={handleOpenExportModal}
+                  >
+                    Export
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -1180,10 +1401,12 @@ ET`;
           {/* Active Filter Chips */}
           {Object.keys(filters).length > 0 && (
             <div className="filter-chips">
-              {Object.entries(filters).map(([key, value]) => (
+              {Object.entries(filters)
+                .filter(([key]) => key !== "logic")
+                .map(([key, value]) => (
                 <span key={key} className="filter-chip">
-                  {key}: {value}
-                  <button onClick={() => updateFilters({})}>×</button>
+                  {key}: {formatFilterChipValue(key, value)}
+                  <button type="button" onClick={() => updateFilters({})}>x</button>
                 </span>
               ))}
             </div>
@@ -1315,6 +1538,37 @@ ET`;
                   <button type="button" className="btn-cancel" onClick={() => setShowExportModal(false)}>Cancel</button>
                   <button type="button" className="btn-submit" onClick={handleExportLeads}>Export</button>
                 </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {showFilterModal && (
+          <div className="modal-overlay-zoho" onClick={() => setShowFilterModal(false)}>
+            <div className="modal-box-zoho filter-modal-box" onClick={(e) => e.stopPropagation()}>
+              <div className="modal-header-zoho">
+                <h2>Filters</h2>
+                <button className="modal-close" onClick={() => setShowFilterModal(false)}>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                  </svg>
+                </button>
+              </div>
+              <div className="modal-form-zoho">
+                <FilterBuilder
+                  filters={filters}
+                  onChange={setFilters}
+                  onApply={(nextFilters) => {
+                    setFilters(nextFilters);
+                    fetchFilteredLeads(nextFilters, sortConfig);
+                    setShowFilterModal(false);
+                  }}
+                  onClear={() => {
+                    updateFilters({});
+                    setShowFilterModal(false);
+                  }}
+                />
               </div>
             </div>
           </div>

@@ -1,8 +1,13 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 
 const FilterBuilder = ({ filters, onChange, onApply, onClear }) => {
   const [conditions, setConditions] = useState(filters?.conditions || []);
   const [logic, setLogic] = useState(filters?.logic || 'AND');
+
+  useEffect(() => {
+    setConditions(filters?.conditions || []);
+    setLogic(filters?.logic || 'AND');
+  }, [filters]);
   
   const fields = [
     { value: 'status', label: 'Status' },
@@ -43,8 +48,9 @@ const FilterBuilder = ({ filters, onChange, onApply, onClear }) => {
   }, []);
 
   const handleApply = () => {
-    onChange({ conditions, logic });
-    onApply && onApply();
+    const nextFilters = { conditions, logic };
+    onChange(nextFilters);
+    onApply && onApply(nextFilters);
   };
 
   const statusOptions = ['new', 'contacted', 'qualified', 'proposal', 'converted', 'lost'];
@@ -141,7 +147,7 @@ const FilterBuilder = ({ filters, onChange, onApply, onClear }) => {
           </select>
           <span>of the following:</span>
         </div>
-        <button className="btn-add-condition" onClick={addCondition}>
+        <button type="button" className="btn-add-condition" onClick={addCondition}>
           + Add Condition
         </button>
       </div>
@@ -171,7 +177,8 @@ const FilterBuilder = ({ filters, onChange, onApply, onClear }) => {
             
             {renderValueInput(condition, index)}
             
-            <button 
+            <button
+              type="button"
               className="btn-remove-condition" 
               onClick={() => removeCondition(index)}
               title="Remove condition"
@@ -184,10 +191,10 @@ const FilterBuilder = ({ filters, onChange, onApply, onClear }) => {
       
       {conditions.length > 0 && (
         <div className="filter-actions">
-          <button className="btn-clear" onClick={onClear}>
+          <button type="button" className="btn-clear" onClick={onClear}>
             Clear All
           </button>
-          <button className="btn-apply" onClick={handleApply}>
+          <button type="button" className="btn-apply" onClick={handleApply}>
             Apply Filters
           </button>
         </div>

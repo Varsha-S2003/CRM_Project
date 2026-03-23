@@ -628,7 +628,7 @@ router.get("/my", verifyToken, permit("EMPLOYEE"), async (req, res, next) => {
 // Views API for saved views system
 router.get("/views", verifyToken, async (req, res, next) => {
   try {
-    const { userId: reqUserId } = req.user;
+    const reqUserId = req.user._id;
     
     const views = await View.find({
       $or: [
