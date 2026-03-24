@@ -25,10 +25,15 @@ const leadSchema = new mongoose.Schema(
     annualRevenue: { type: Number, min: 0, default: null },
     employeeCount: { type: Number, min: 0, default: null },
     source: { type: String, trim: true },
+    score: { type: Number, default: 0 },
+    emailOpened: { type: Number, default: 0 },
+    websiteVisits: { type: Number, default: 0 },
+    formSubmissions: { type: Number, default: 0 },
+    lastActivityDate: { type: Date, default: null },
     rating: {
       type: String,
       enum: ["hot", "warm", "cold", ""],
-      default: "",
+      default: "cold",
     },
     customFields: {
       type: mongoose.Schema.Types.Mixed,

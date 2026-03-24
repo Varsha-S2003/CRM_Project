@@ -610,6 +610,20 @@
   border: 1px solid #e5e7eb;
 }
 
+.merge-select-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #64748b;
+}
+
+.merge-select-check input {
+  accent-color: #4f46e5;
+}
+
 .kanban-card-inactive {
   background: #fff5f5;
   border-color: #fecaca;
@@ -727,6 +741,44 @@
   flex-direction: column;
   gap: 4px;
   margin-bottom: 10px;
+}
+
+.lead-score-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.lead-score-pill {
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  background: #eef2ff;
+  color: #4338ca;
+}
+
+.lead-rating-pill {
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.lead-rating-pill.hot {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.lead-rating-pill.warm {
+  background: #fef3c7;
+  color: #b45309;
+}
+
+.lead-rating-pill.cold {
+  background: #dbeafe;
+  color: #1d4ed8;
 }
 
 .card-detail {
@@ -895,6 +947,17 @@
   cursor: pointer;
 }
 
+.form-group .form-input-error {
+  border-color: #dc2626;
+  box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.12);
+}
+
+.form-error-text {
+  font-size: 12px;
+  color: #dc2626;
+  line-height: 1.2;
+}
+
 .modal-actions {
   display: flex;
   justify-content: flex-end;
@@ -946,6 +1009,105 @@
 
 .filter-modal-box {
   max-width: 840px;
+}
+
+.merge-modal-box {
+  max-width: 640px;
+}
+
+.merge-helper-text {
+  font-size: 13px;
+  color: #475569;
+  margin-bottom: 12px;
+}
+
+.merge-empty-text {
+  font-size: 13px;
+  color: #64748b;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 12px;
+}
+
+.merge-lead-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 300px;
+  overflow-y: auto;
+  margin-bottom: 14px;
+}
+
+.merge-lead-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid #dbe4f1;
+  border-radius: 10px;
+  background: #fbfdff;
+}
+
+.merge-lead-row input {
+  margin-top: 3px;
+  accent-color: #4f46e5;
+}
+
+.merge-lead-content {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.merge-lead-content strong {
+  font-size: 13px;
+  color: #0f172a;
+}
+
+.merge-lead-content span {
+  font-size: 12px;
+  color: #64748b;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.merge-delete-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  font-size: 12px;
+  color: #475569;
+}
+
+.merge-delete-toggle input {
+  accent-color: #4f46e5;
+}
+
+.duplicate-dialog-box {
+  max-width: 560px;
+}
+
+.duplicate-dialog-content {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.duplicate-dialog-message {
+  font-size: 15px;
+  font-weight: 600;
+  color: #0f172a;
+  margin: 0;
+}
+
+.duplicate-dialog-subtext {
+  font-size: 13px;
+  color: #64748b;
+  margin: 0;
 }
 
 .filter-builder {
