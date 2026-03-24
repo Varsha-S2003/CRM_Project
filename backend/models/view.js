@@ -24,6 +24,12 @@ const viewSchema = new mongoose.Schema({
     type: Object,
     default: { createdAt: -1 }
   },
+  module: {
+    type: String,
+    enum: ['lead', 'deal'],
+    default: 'lead',
+    index: true
+  },
   visibility: {
     type: String,
     enum: ['private', 'shared'],
@@ -34,8 +40,8 @@ const viewSchema = new mongoose.Schema({
 });
 
 // Compound indexes for performance
-viewSchema.index({ userId: 1, visibility: 1 });
-viewSchema.index({ userId: 1, name: 1 });
+viewSchema.index({ userId: 1, visibility: 1, module: 1 });
+viewSchema.index({ userId: 1, name: 1, module: 1 });
 
 module.exports = mongoose.model('View', viewSchema);
 

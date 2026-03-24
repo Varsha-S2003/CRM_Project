@@ -631,9 +631,19 @@ router.get("/views", verifyToken, async (req, res, next) => {
     const reqUserId = req.user._id;
     
     const views = await View.find({
-      $or: [
-        { userId: reqUserId, visibility: 'private' },
-        { visibility: 'shared' }
+      $and: [
+        {
+          $or: [
+            { userId: reqUserId, visibility: 'private' },
+            { visibility: 'shared' }
+          ]
+        },
+        {
+          $or: [
+            { module: 'lead' },
+            { module: { $exists: false } }
+          ]
+        }
       ]
     }).sort({ createdAt: -1 }).lean();
     
@@ -647,7 +657,8 @@ router.post("/views", verifyToken, async (req, res, next) => {
   try {
     const viewData = {
       ...req.body,
-      userId: req.user._id
+      userId: req.user._id,
+      module: 'lead'
     };
     
     // Validation
@@ -667,12 +678,16 @@ router.post("/views", verifyToken, async (req, res, next) => {
 
 router.put("/views/:id", verifyToken, async (req, res, next) => {
   try {
-    const view = await View.findOne({ _id: req.params.id, userId: req.user._id });
+    const view = await View.findOne({
+      _id: req.params.id,
+      userId: req.user._id,
+      $or: [{ module: 'lead' }, { module: { $exists: false } }]
+    });
     if (!view) {
       return res.status(404).json({ message: 'View not found or access denied' });
     }
     
-    const updateData = req.body;
+    const updateData = { ...req.body, module: 'lead' };
     Object.assign(view, updateData);
     await view.save();
     
@@ -686,7 +701,8 @@ router.delete("/views/:id", verifyToken, async (req, res, next) => {
   try {
     const view = await View.findOneAndDelete({ 
       _id: req.params.id, 
-      userId: req.user._id 
+      userId: req.user._id,
+      $or: [{ module: 'lead' }, { module: { $exists: false } }]
     });
     
     if (!view) {
@@ -710,6 +726,7 @@ router.post("/views/seed-defaults", verifyToken, async (req, res, next) => {
         filters: {},
         columns: ['name', 'company', 'email', 'phone', 'status', 'source'],
         sort: { createdAt: -1 },
+        module: 'lead',
         visibility: 'shared'
       },
       {
@@ -717,6 +734,7 @@ router.post("/views/seed-defaults", verifyToken, async (req, res, next) => {
         filters: { conditions: [{ field: 'owner', operator: 'equals', value: true }], logic: 'AND' },
         columns: ['name', 'company', 'status', 'source'],
         sort: { updatedAt: -1 },
+        module: 'lead',
         visibility: 'private'
       },
       {
@@ -727,11 +745,15 @@ router.post("/views/seed-defaults", verifyToken, async (req, res, next) => {
         },
         columns: ['name', 'email', 'status', 'createdAt'],
         sort: { createdAt: -1 },
+        module: 'lead',
         visibility: 'shared'
       }
     ];
 
-    const existingViews = await View.find({ userId });
+    const existingViews = await View.find({
+      userId,
+      $or: [{ module: 'lead' }, { module: { $exists: false } }]
+    });
     if (existingViews.length === 0) {
       const seededViews = await View.insertMany(
         defaultViews.map(v => ({ ...v, userId }))

@@ -2,8 +2,15 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import axios from "axios";
 import Sidebar from "./Sidebar";
 import "./Leads.css";
+import "./Deals.css";
 import RecordActivityPanel from "./RecordActivityPanel";
 import { useCallback } from "react";
+import DealFilterBuilder from "./components/DealFilterBuilder";
+
+const ALL_DEALS_VIEW_ID = "__all_deals__";
+const ACTIVE_DEALS_VIEW_ID = "__active_deals__";
+const INACTIVE_DEALS_VIEW_ID = "__inactive_deals__";
+const DEAL_DEFAULT_COLUMNS = ["name", "company", "amount", "contact", "stage", "closingDate"];
 
 const stages = [
   { id: "qualification", name: "Qualification", color: "#2563eb" },
@@ -14,6 +21,16 @@ const stages = [
   { id: "won", name: "Won", color: "#10b981" },
   { id: "lost", name: "Lost", color: "#ef4444" },
 ];
+
+const DEFAULT_PROBABILITY_BY_STAGE = {
+  qualification: "15",
+  need_analysis: "35",
+  value_proposition: "55",
+  proposal_price_quote: "60",
+  negotiate: "80",
+  won: "100",
+  lost: "0",
+};
 
 const dealTypeOptions = ["", "New Business", "Existing Business", "Renewal", "Upsell", "Other"];
 
@@ -77,15 +94,22 @@ const parseOptionalNumberInput = (value) => {
 
 function Deals() {
   const [deals, setDeals] = useState([]);
+  const [views, setViews] = useState([]);
+  const [currentViewId, setCurrentViewId] = useState(null);
   const [dealStatusFilter, setDealStatusFilter] = useState("all");
+  const [filters, setFilters] = useState({});
   const [search, setSearch] = useState("");
   const [showModal, setShowModal] = useState(false);
   const [showCreateMenu, setShowCreateMenu] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
   const [showExportModal, setShowExportModal] = useState(false);
+  const [showFilterModal, setShowFilterModal] = useState(false);
+  const [showViewDropdown, setShowViewDropdown] = useState(false);
   const [importFileName, setImportFileName] = useState("");
   const [importRows, setImportRows] = useState([]);
   const [selectedDeal, setSelectedDeal] = useState(null);
+  const [isEditingSelectedDeal, setIsEditingSelectedDeal] = useState(false);
+  const [editDealForm, setEditDealForm] = useState(null);
   const [loading, setLoading] = useState(true);
   const [exportView, setExportView] = useState("all");
   const [exportFieldScope, setExportFieldScope] = useState("custom");
@@ -101,6 +125,7 @@ function Deals() {
   const [pendingStageChange, setPendingStageChange] = useState(null);
   const notificationRef = useRef(null);
   const createMenuRef = useRef(null);
+  const viewDropdownRef = useRef(null);
   const [newDeal, setNewDeal] = useState({
     name: "",
     company: "",
@@ -109,7 +134,7 @@ function Deals() {
     email: "",
     phone: "",
     closingDate: "",
-    probability: "",
+    probability: DEFAULT_PROBABILITY_BY_STAGE.qualification,
     expectedRevenue: "",
     nextStep: "",
     dealType: "",
@@ -153,7 +178,7 @@ function Deals() {
     { key: "amount", label: "Amount", getValue: (deal) => Number(deal.amount || 0).toLocaleString() },
     { key: "contact", label: "Contact", getValue: (deal) => deal.contact || "-" },
     { key: "email", label: "Email", getValue: (deal) => deal.email || "-" },
-    { key: "phone", label: "Phone", getValue: (deal) => deal.phone || "-" },
+    { key: "phone", label: "Alternative Contact", getValue: (deal) => deal.phone || "-" },
     { key: "stage", label: "Stage", getValue: (deal) => (deal.stage || "-").replaceAll("_", " ") },
     { key: "closingDate", label: "Closing Date", getValue: (deal) => deal.closingDate || "-" },
     { key: "probability", label: "Probability (%)", getValue: (deal) => (deal.probability ?? "-") },
@@ -173,62 +198,123 @@ function Deals() {
     { key: "createdAt", label: "Created On", getValue: (deal) => formatDealDate(deal.createdAt) },
   ];
 
-  const fetchNotifications = useCallback(async () => {
+  const fetchViews = useCallback(async () => {
     try {
       const token = localStorage.getItem("token");
-      setNotificationsLoading(true);
-      const res = await axios.get("http://localhost:5000/api/deals/notifications", {
+      const res = await axios.get("http://localhost:5000/api/deals/views", {
         headers: { Authorization: `Bearer ${token}` },
       });
-      setNotifications(res.data.notifications || []);
-      setUnreadCount(res.data.unreadCount || 0);
+      setViews(res.data);
+      setCurrentViewId((prev) => {
+        if (
+          prev &&
+          (
+            prev === ALL_DEALS_VIEW_ID ||
+            prev === ACTIVE_DEALS_VIEW_ID ||
+            prev === INACTIVE_DEALS_VIEW_ID ||
+            res.data.some((view) => view._id === prev)
+          )
+        ) {
+          return prev;
+        }
+        return ALL_DEALS_VIEW_ID;
+      });
     } catch (err) {
-      console.error('Notifications fetch error:', err);
-    } finally {
-      setNotificationsLoading(false);
+      console.error("Failed to fetch deal views:", err);
     }
   }, []);
 
-  useEffect(() => {
-    fetchNotifications();
-    const interval = setInterval(fetchNotifications, 30000);
-    return () => clearInterval(interval);
-  }, [fetchNotifications]);
+  const fetchNotifications = useCallback(() => {
+    setNotifications((prev) => prev);
+    setUnreadCount((prev) => prev);
+    setShowNotifications((prev) => prev);
+    setNotificationsLoading((prev) => prev);
+  }, []);
 
   useEffect(() => {
-    const fetchDeals = async () => {
-      try {
-        setLoading(true);
-        const token = localStorage.getItem("token");
-        const params = dealStatusFilter === "all" ? {} : { status: dealStatusFilter };
-        const res = await axios.get("http://localhost:5000/api/deals", {
-          headers: { Authorization: `Bearer ${token}` },
-          params,
-        });
+    fetchViews();
+  }, [fetchViews]);
+
+  const fetchDeals = useCallback(async (nextFilters = filters, nextStatus = dealStatusFilter) => {
+    try {
+      setLoading(true);
+      const token = localStorage.getItem("token");
+      const hasAdvancedFilters = Array.isArray(nextFilters?.conditions) && nextFilters.conditions.length > 0;
+
+      if (hasAdvancedFilters) {
+        const res = await axios.post(
+          "http://localhost:5000/api/deals/filter",
+          {
+            filters: nextFilters,
+            sort: { createdAt: -1 },
+            limit: 100,
+            skip: 0,
+            status: nextStatus === "all" ? undefined : nextStatus,
+          },
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          }
+        );
         setDeals((res.data || []).map((deal) => normalizeDeal(deal)));
-      } catch (err) {
-        console.error(err);
-      } finally {
-        setLoading(false);
+        return;
       }
-    };
 
+      const params = nextStatus === "all" ? {} : { status: nextStatus };
+      const res = await axios.get("http://localhost:5000/api/deals", {
+        headers: { Authorization: `Bearer ${token}` },
+        params,
+      });
+      setDeals((res.data || []).map((deal) => normalizeDeal(deal)));
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  }, [dealStatusFilter, filters]);
+
+  useEffect(() => {
     fetchDeals();
-  }, [dealStatusFilter]);
+  }, [fetchDeals]);
 
   useEffect(() => {
     const handleClickOutside = (event) => {
-      if (notificationRef.current && !notificationRef.current.contains(event.target)) {
-        setShowNotifications(false);
-      }
       if (createMenuRef.current && !createMenuRef.current.contains(event.target)) {
         setShowCreateMenu(false);
+      }
+      if (viewDropdownRef.current && !viewDropdownRef.current.contains(event.target)) {
+        setShowViewDropdown(false);
       }
     };
 
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
+
+  useEffect(() => {
+    if (!selectedDeal) {
+      setIsEditingSelectedDeal(false);
+      setEditDealForm(null);
+      return;
+    }
+
+    setEditDealForm({
+      name: selectedDeal.name || "",
+      company: selectedDeal.company || "",
+      contact: selectedDeal.contact || "",
+      email: selectedDeal.email || "",
+      phone: selectedDeal.phone || "",
+      amount: selectedDeal.amount ?? "",
+      closingDate: selectedDeal.closingDate || "",
+      probability: selectedDeal.probability ?? "",
+      expectedRevenue: selectedDeal.expectedRevenue ?? "",
+      nextStep: selectedDeal.nextStep || "",
+      dealType: selectedDeal.dealType || "",
+      leadSource: selectedDeal.leadSource || "",
+      campaignSource: selectedDeal.campaignSource || "",
+      description: selectedDeal.description || "",
+    });
+    setIsEditingSelectedDeal(false);
+  }, [selectedDeal]);
 
   const filteredDeals = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -293,7 +379,7 @@ function Deals() {
       email: "",
       phone: "",
       closingDate: "",
-      probability: "",
+      probability: DEFAULT_PROBABILITY_BY_STAGE.qualification,
       expectedRevenue: "",
       nextStep: "",
       dealType: "",
@@ -425,8 +511,8 @@ function Deals() {
     try {
       const trimmedName = String(newDeal.name || "").trim();
       const trimmedCompany = String(newDeal.company || "").trim();
+      const trimmedContact = String(newDeal.contact || "").trim();
       const trimmedEmail = String(newDeal.email || "").trim();
-      const trimmedPhone = String(newDeal.phone || "").trim();
       const amountValue = parseOptionalNumberInput(newDeal.amount);
       const closingDateValue = String(newDeal.closingDate || "").trim();
       const probabilityValue = parseOptionalNumberInput(newDeal.probability);
@@ -443,8 +529,12 @@ function Deals() {
         alert("Company is required");
         return;
       }
-      if (!trimmedEmail && !trimmedPhone) {
-        alert("At least one contact method is required (Email or Phone)");
+      if (!trimmedContact) {
+        alert("Contact Person is required");
+        return;
+      }
+      if (!trimmedEmail) {
+        alert("Email is required");
         return;
       }
       if (!closingDateValue) {
@@ -604,6 +694,243 @@ function Deals() {
     const allowedFields = new Set(exportFieldPresets[exportFieldScope] || exportFieldPresets.custom);
     return exportFields.filter((field) => allowedFields.has(field.key));
   };
+
+  const formatFilterChipValue = (key, value) => {
+    if (key === "conditions" && Array.isArray(value)) {
+      if (value.length === 0) return "No conditions";
+
+      return value
+        .map((condition) => {
+          if (!condition || typeof condition !== "object") return String(condition);
+
+          const field = condition.field || "field";
+          const operator = condition.operator || "operator";
+          const conditionValue =
+            condition.operator === "between"
+              ? [condition.from, condition.to].filter(Boolean).join(" to ")
+              : condition.value;
+
+          return `${field} ${operator} ${conditionValue || ""}`.trim();
+        })
+        .join(", ");
+    }
+
+    if (value && typeof value === "object") {
+      return JSON.stringify(value);
+    }
+
+    return String(value);
+  };
+
+  const loadView = useCallback((viewId) => {
+    if (viewId === ALL_DEALS_VIEW_ID) {
+      const nextFilters = {};
+      setCurrentViewId(ALL_DEALS_VIEW_ID);
+      setDealStatusFilter("all");
+      setShowViewDropdown(false);
+      setFilters(nextFilters);
+      fetchDeals(nextFilters, "all");
+      return;
+    }
+
+    if (viewId === ACTIVE_DEALS_VIEW_ID) {
+      const nextFilters = {};
+      setCurrentViewId(ACTIVE_DEALS_VIEW_ID);
+      setDealStatusFilter("Active");
+      setShowViewDropdown(false);
+      setFilters(nextFilters);
+      fetchDeals(nextFilters, "Active");
+      return;
+    }
+
+    if (viewId === INACTIVE_DEALS_VIEW_ID) {
+      const nextFilters = {};
+      setCurrentViewId(INACTIVE_DEALS_VIEW_ID);
+      setDealStatusFilter("Inactive");
+      setShowViewDropdown(false);
+      setFilters(nextFilters);
+      fetchDeals(nextFilters, "Inactive");
+      return;
+    }
+
+    const view = views.find((item) => item._id === viewId);
+    if (view) {
+      const nextFilters = view.filters || {};
+      setCurrentViewId(viewId);
+      setDealStatusFilter("all");
+      setShowViewDropdown(false);
+      setFilters(nextFilters);
+      fetchDeals(nextFilters, "all");
+    }
+  }, [fetchDeals, views]);
+
+  const saveView = async ({ mode = "update" } = {}) => {
+    try {
+      const token = localStorage.getItem("token");
+      const activeView = views.find((view) => view._id === currentViewId);
+      const shouldCreate = mode === "create" || !activeView;
+
+      let name = activeView?.name || "My Deals View";
+      if (shouldCreate) {
+        const promptedName = window.prompt("Enter a view name", name);
+        if (!promptedName) return;
+        name = promptedName.trim();
+        if (!name) return;
+        if (name.toLowerCase() === "all deals") {
+          window.alert('The name "All Deals" is reserved. Use a different view name.');
+          return;
+        }
+      }
+
+      const payload = {
+        name,
+        filters,
+        sort: { createdAt: -1 },
+        columns: DEAL_DEFAULT_COLUMNS,
+        visibility: activeView?.visibility || "private",
+      };
+
+      const res = shouldCreate
+        ? await axios.post("http://localhost:5000/api/deals/views", payload, {
+            headers: { Authorization: `Bearer ${token}` },
+          })
+        : await axios.put(`http://localhost:5000/api/deals/views/${activeView._id}`, payload, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+
+      if (res.data?._id) {
+        setViews((prev) => {
+          if (shouldCreate) {
+            const withoutDuplicate = prev.filter((view) => view._id !== res.data._id);
+            return [res.data, ...withoutDuplicate];
+          }
+          return prev.map((view) => (view._id === res.data._id ? res.data : view));
+        });
+        setCurrentViewId(res.data._id);
+      }
+
+      window.alert(shouldCreate ? "View saved." : "View updated.");
+    } catch (err) {
+      console.error("Failed to save deal view:", err);
+      window.alert(err.response?.data?.message || "Failed to save view");
+    }
+  };
+
+  const saveEditedDeal = async () => {
+    if (!selectedDeal || !editDealForm) return;
+
+    const trimmedName = String(editDealForm.name || "").trim();
+    const trimmedCompany = String(editDealForm.company || "").trim();
+    const trimmedContact = String(editDealForm.contact || "").trim();
+    const trimmedEmail = String(editDealForm.email || "").trim();
+    const amountValue = parseOptionalNumberInput(editDealForm.amount);
+    const closingDateValue = String(editDealForm.closingDate || "").trim();
+    const probabilityValue = parseOptionalNumberInput(editDealForm.probability);
+    const expectedRevenueValue = parseOptionalNumberInput(editDealForm.expectedRevenue);
+
+    if (!trimmedName) {
+      alert("Deal Name is required");
+      return;
+    }
+    if (!trimmedCompany) {
+      alert("Company is required");
+      return;
+    }
+    if (!trimmedContact) {
+      alert("Contact Person is required");
+      return;
+    }
+    if (!trimmedEmail) {
+      alert("Email is required");
+      return;
+    }
+    if (amountValue === null || amountValue <= 0) {
+      alert("Amount (Deal Value) is required and must be greater than 0");
+      return;
+    }
+    if (!closingDateValue) {
+      alert("Closing Date is required");
+      return;
+    }
+    if (probabilityValue !== null && (probabilityValue < 0 || probabilityValue > 100)) {
+      alert("Probability must be between 0 and 100");
+      return;
+    }
+
+    try {
+      const token = localStorage.getItem("token");
+      const payload = {
+        name: trimmedName,
+        company: trimmedCompany,
+        contact: trimmedContact,
+        email: trimmedEmail,
+        phone: String(editDealForm.phone || "").trim(),
+        amount: amountValue,
+        closingDate: closingDateValue,
+        probability: probabilityValue,
+        expectedRevenue: probabilityValue === null ? expectedRevenueValue : undefined,
+        nextStep: String(editDealForm.nextStep || "").trim(),
+        dealType: String(editDealForm.dealType || "").trim(),
+        leadSource: String(editDealForm.leadSource || "").trim(),
+        campaignSource: String(editDealForm.campaignSource || "").trim(),
+        description: String(editDealForm.description || "").trim(),
+      };
+
+      const res = await axios.put(`http://localhost:5000/api/deals/${selectedDeal._id}`, payload, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      const normalized = normalizeDeal(res.data);
+      setDeals((prev) => prev.map((deal) => (deal._id === normalized._id ? normalized : deal)));
+      setSelectedDeal(normalized);
+      setIsEditingSelectedDeal(false);
+    } catch (err) {
+      console.error(err);
+      alert(err.response?.data?.message || "Failed to update deal");
+    }
+  };
+
+  const deleteView = async (viewId = currentViewId) => {
+    const activeView = views.find((view) => view._id === viewId);
+    if (!activeView) {
+      window.alert("Select a saved view to delete.");
+      return;
+    }
+
+    const confirmed = window.confirm(`Delete saved view "${activeView.name}"?`);
+    if (!confirmed) return;
+
+    try {
+      const token = localStorage.getItem("token");
+      await axios.delete(`http://localhost:5000/api/deals/views/${activeView._id}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      setViews((prev) => prev.filter((view) => view._id !== activeView._id));
+      loadView(ALL_DEALS_VIEW_ID);
+      setShowViewDropdown(false);
+      window.alert("View deleted.");
+    } catch (err) {
+      console.error("Failed to delete deal view:", err);
+      window.alert(err.response?.data?.message || "Failed to delete view");
+    }
+  };
+
+  const visibleSavedViews = views.filter((view) => view.name !== "All Deals");
+  const activeViewName =
+    currentViewId === ACTIVE_DEALS_VIEW_ID
+      ? "Active Deals"
+      : currentViewId === INACTIVE_DEALS_VIEW_ID
+        ? "Inactive Deals"
+        : currentViewId === ALL_DEALS_VIEW_ID
+          ? "All Deals"
+          : visibleSavedViews.find((view) => view._id === currentViewId)?.name || "All Deals";
+
+  useEffect(() => {
+    if (currentViewId === ALL_DEALS_VIEW_ID && dealStatusFilter === "all" && Object.keys(filters).length > 0) {
+      setFilters({});
+    }
+  }, [currentViewId, dealStatusFilter, filters]);
 
   const sanitizeFileName = (value) =>
     String(value || "deals-export")
@@ -1024,7 +1351,7 @@ ET`;
           </div>
 
           <div className="leads-toolbar-zoho">
-            <div className="search-box-zoho">
+            <div className="search-box-zoho deal-search-box">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <circle cx="11" cy="11" r="8"></circle>
                 <path d="m21 21-4.35-4.35"></path>
@@ -1041,31 +1368,102 @@ ET`;
                 }}
               />
             </div>
-            <div className="deal-status-filters">
-              <button
-                type="button"
-                className={`btn-filter ${dealStatusFilter === "all" ? "active-status-filter" : ""}`}
-                onClick={() => setDealStatusFilter("all")}
-              >
-                All Deals
-              </button>
-              <button
-                type="button"
-                className={`btn-filter ${dealStatusFilter === "Active" ? "active-status-filter" : ""}`}
-                onClick={() => setDealStatusFilter("Active")}
-              >
-                Active Deals
-              </button>
-              <button
-                type="button"
-                className={`btn-filter ${dealStatusFilter === "Inactive" ? "active-status-filter" : ""}`}
-                onClick={() => setDealStatusFilter("Inactive")}
-              >
-                Inactive Deals
-              </button>
-            </div>
-            <div className="toolbar-actions">
-              <div className="notification-bell" ref={notificationRef}>
+            <div className="toolbar-actions deal-toolbar-actions">
+              <div className="views-toolbar deal-views-toolbar">
+                <div className="lead-view-select-wrap" ref={viewDropdownRef}>
+                  <button
+                    type="button"
+                    className="lead-view-select-button"
+                    onClick={() => setShowViewDropdown((prev) => !prev)}
+                    aria-haspopup="menu"
+                    aria-expanded={showViewDropdown}
+                  >
+                    <span>{activeViewName}</span>
+                    <span className={`lead-view-select-caret ${showViewDropdown ? "open" : ""}`}>{"\u2304"}</span>
+                  </button>
+
+                  {showViewDropdown && (
+                    <div className="lead-view-dropdown-menu" role="menu" aria-label="Deal views">
+                      <button
+                        type="button"
+                        className={`lead-view-dropdown-item ${currentViewId === ALL_DEALS_VIEW_ID ? "active" : ""}`}
+                        onClick={() => {
+                          loadView(ALL_DEALS_VIEW_ID);
+                          setShowViewDropdown(false);
+                        }}
+                      >
+                        <span>All Deals</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        className={`lead-view-dropdown-item ${currentViewId === ACTIVE_DEALS_VIEW_ID ? "active" : ""}`}
+                        onClick={() => loadView(ACTIVE_DEALS_VIEW_ID)}
+                      >
+                        <span>Active Deals</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        className={`lead-view-dropdown-item ${currentViewId === INACTIVE_DEALS_VIEW_ID ? "active" : ""}`}
+                        onClick={() => loadView(INACTIVE_DEALS_VIEW_ID)}
+                      >
+                        <span>Inactive Deals</span>
+                      </button>
+
+                      {visibleSavedViews.map((view) => (
+                        <div
+                          key={view._id}
+                          className={`lead-view-dropdown-item ${currentViewId === view._id ? "active" : ""}`}
+                          role="menuitem"
+                        >
+                          <button
+                            type="button"
+                            className="lead-view-dropdown-name"
+                            onClick={() => {
+                              loadView(view._id);
+                              setShowViewDropdown(false);
+                            }}
+                          >
+                            {view.name}
+                          </button>
+                          <button
+                            type="button"
+                            className="lead-view-dropdown-delete"
+                            title={`Delete ${view.name}`}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              deleteView(view._id);
+                            }}
+                          >
+                            {"\u{1F5D1}"}
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  <select
+                    className="lead-view-select"
+                    style={{ display: "none" }}
+                    value={currentViewId || ALL_DEALS_VIEW_ID}
+                    onChange={(e) => loadView(e.target.value)}
+                    aria-label="Deal views"
+                  >
+                    <option value={ALL_DEALS_VIEW_ID}>All Deals</option>
+                    <option value={ACTIVE_DEALS_VIEW_ID}>Active Deals</option>
+                    <option value={INACTIVE_DEALS_VIEW_ID}>Inactive Deals</option>
+                    {views
+                      .filter((view) => view.name !== "All Deals")
+                      .map((view) => (
+                        <option key={view._id} value={view._id}>
+                          {view.name}
+                        </option>
+                      ))}
+                  </select>
+                </div>
+              </div>
+              {false && <div className="notification-bell" ref={notificationRef}>
                 <button 
                   className="notification-btn" 
                   onClick={() => setShowNotifications(prev => !prev)}
@@ -1146,13 +1544,35 @@ ET`;
                     )}
                   </div>
                 )}
-              </div>
+              </div>}
+              <button className="btn-filter" type="button" onClick={() => setShowFilterModal(true)}>Filters</button>
+              <button className="btn-filter" type="button" onClick={() => saveView({ mode: "update" })}>Save View</button>
               <button className="btn-filter" type="button" onClick={openExportModal}>Export</button>
             </div>
           </div>
         </div>
 
         <div className="leads-scroll-content">
+          {Object.keys(filters).length > 0 && (
+            <div className="filter-chips">
+              {Object.entries(filters)
+                .filter(([key]) => key !== "logic")
+                .map(([key, value]) => (
+                  <span key={key} className="filter-chip">
+                    {key}: {formatFilterChipValue(key, value)}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFilters({});
+                        fetchDeals({});
+                      }}
+                    >
+                      x
+                    </button>
+                  </span>
+                ))}
+            </div>
+          )}
           {loading ? (
             <p className="dashboard-subtitle">Loading deals...</p>
           ) : (
@@ -1326,6 +1746,33 @@ ET`;
           </div>
         )}
 
+        {showFilterModal && (
+          <div className="modal-overlay-zoho" onClick={() => setShowFilterModal(false)}>
+            <div className="modal-box-zoho filter-modal-box" onClick={(e) => e.stopPropagation()}>
+              <div className="modal-header-zoho">
+                <h2>Filters</h2>
+                <button className="modal-close" onClick={() => setShowFilterModal(false)}>x</button>
+              </div>
+              <div className="modal-form-zoho">
+                <DealFilterBuilder
+                  filters={filters}
+                  onChange={setFilters}
+                  onApply={(nextFilters) => {
+                    setFilters(nextFilters);
+                    fetchDeals(nextFilters);
+                    setShowFilterModal(false);
+                  }}
+                  onClear={() => {
+                    setFilters({});
+                    fetchDeals({});
+                    setShowFilterModal(false);
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+        )}
+
         {showModal && (
           <div className="modal-overlay-zoho" onClick={() => setShowModal(false)}>
             <div className="modal-box-zoho" onClick={(e) => e.stopPropagation()}>
@@ -1360,29 +1807,26 @@ ET`;
                 </div>
                 <div className="form-row-zoho">
                   <div className="form-group">
-                    <label>Contact Person</label>
+                    <label>Contact Person *</label>
                     <input
                       type="text"
                       name="contact"
                       value={newDeal.contact}
                       onChange={(e) => setNewDeal((prev) => ({ ...prev, contact: e.target.value }))}
                       autoComplete="off"
+                      required
                     />
                   </div>
                   <div className="form-group">
-                    <label>Email</label>
+                    <label>Email *</label>
                     <input
                       type="email"
                       name="email"
                       value={newDeal.email}
                       onChange={(e) => setNewDeal((prev) => ({ ...prev, email: e.target.value }))}
                       autoComplete="off"
+                      required
                     />
-                  </div>
-                </div>
-                <div className="form-row-zoho">
-                  <div className="form-group">
-                    <small>Provide at least one contact method: Email or Phone.</small>
                   </div>
                 </div>
                 <div className="form-row-zoho">
@@ -1400,7 +1844,7 @@ ET`;
                     />
                   </div>
                   <div className="form-group">
-                    <label>Phone</label>
+                    <label>Alternative Contact</label>
                     <input
                       type="tel"
                       name="phone"
@@ -1452,7 +1896,13 @@ ET`;
                     <label>Deal Stage *</label>
                     <select
                       value={newDeal.stage}
-                      onChange={(e) => setNewDeal((prev) => ({ ...prev, stage: e.target.value }))}
+                      onChange={(e) =>
+                        setNewDeal((prev) => ({
+                          ...prev,
+                          stage: e.target.value,
+                          probability: DEFAULT_PROBABILITY_BY_STAGE[e.target.value] ?? prev.probability,
+                        }))
+                      }
                       required
                     >
                       <option value="" disabled>Select deal stage</option>
@@ -1614,61 +2064,220 @@ ET`;
                 <button className="modal-close" onClick={() => setSelectedDeal(null)}>x</button>
               </div>
               <div className="lead-details-view">
+                <div className="deal-detail-actions">
+                  {!isEditingSelectedDeal ? (
+                    <button type="button" className="lead-toolbar-pill-button" onClick={() => setIsEditingSelectedDeal(true)}>
+                      Edit
+                    </button>
+                  ) : (
+                    <>
+                      <button type="button" className="lead-toolbar-pill-button" onClick={saveEditedDeal}>
+                        Save
+                      </button>
+                      <button
+                        type="button"
+                        className="lead-toolbar-pill-button"
+                        onClick={() => {
+                          setIsEditingSelectedDeal(false);
+                          setEditDealForm({
+                            name: selectedDeal.name || "",
+                            company: selectedDeal.company || "",
+                            contact: selectedDeal.contact || "",
+                            email: selectedDeal.email || "",
+                            phone: selectedDeal.phone || "",
+                            amount: selectedDeal.amount ?? "",
+                            closingDate: selectedDeal.closingDate || "",
+                            probability: selectedDeal.probability ?? "",
+                            expectedRevenue: selectedDeal.expectedRevenue ?? "",
+                            nextStep: selectedDeal.nextStep || "",
+                            dealType: selectedDeal.dealType || "",
+                            leadSource: selectedDeal.leadSource || "",
+                            campaignSource: selectedDeal.campaignSource || "",
+                            description: selectedDeal.description || "",
+                          });
+                        }}
+                      >
+                        Cancel
+                      </button>
+                    </>
+                  )}
+                </div>
                 <div className="detail-row">
                   <span className="detail-label">Company</span>
-                  <span className="detail-value">{selectedDeal.company || "-"}</span>
+                  {isEditingSelectedDeal ? (
+                    <input
+                      className="deal-detail-input"
+                      value={editDealForm?.company || ""}
+                      onChange={(e) => setEditDealForm((prev) => ({ ...prev, company: e.target.value }))}
+                    />
+                  ) : (
+                    <span className="detail-value">{selectedDeal.company || "-"}</span>
+                  )}
                 </div>
                 <div className="detail-row">
                   <span className="detail-label">Contact</span>
-                  <span className="detail-value">{selectedDeal.contact || "-"}</span>
+                  {isEditingSelectedDeal ? (
+                    <input
+                      className="deal-detail-input"
+                      value={editDealForm?.contact || ""}
+                      onChange={(e) => setEditDealForm((prev) => ({ ...prev, contact: e.target.value }))}
+                    />
+                  ) : (
+                    <span className="detail-value">{selectedDeal.contact || "-"}</span>
+                  )}
                 </div>
                 <div className="detail-row">
                   <span className="detail-label">Email</span>
-                  <span className="detail-value">{selectedDeal.email || "-"}</span>
+                  {isEditingSelectedDeal ? (
+                    <input
+                      type="email"
+                      className="deal-detail-input"
+                      value={editDealForm?.email || ""}
+                      onChange={(e) => setEditDealForm((prev) => ({ ...prev, email: e.target.value }))}
+                    />
+                  ) : (
+                    <span className="detail-value">{selectedDeal.email || "-"}</span>
+                  )}
                 </div>
                 <div className="detail-row">
-                  <span className="detail-label">Phone</span>
-                  <span className="detail-value">{selectedDeal.phone || "-"}</span>
+                  <span className="detail-label">Alternative Contact</span>
+                  {isEditingSelectedDeal ? (
+                    <input
+                      className="deal-detail-input"
+                      value={editDealForm?.phone || ""}
+                      onChange={(e) => setEditDealForm((prev) => ({ ...prev, phone: e.target.value }))}
+                    />
+                  ) : (
+                    <span className="detail-value">{selectedDeal.phone || "-"}</span>
+                  )}
                 </div>
                 <div className="detail-row">
                   <span className="detail-label">Deal Value</span>
-                  <span className="detail-value">${Number(selectedDeal.amount || 0).toLocaleString()}</span>
+                  {isEditingSelectedDeal ? (
+                    <input
+                      type="number"
+                      className="deal-detail-input"
+                      value={editDealForm?.amount ?? ""}
+                      onChange={(e) => setEditDealForm((prev) => ({ ...prev, amount: e.target.value }))}
+                    />
+                  ) : (
+                    <span className="detail-value">${Number(selectedDeal.amount || 0).toLocaleString()}</span>
+                  )}
                 </div>
                 <div className="detail-row">
                   <span className="detail-label">Closing Date</span>
-                  <span className="detail-value">{selectedDeal.closingDate || "-"}</span>
+                  {isEditingSelectedDeal ? (
+                    <input
+                      type="date"
+                      className="deal-detail-input"
+                      value={editDealForm?.closingDate || ""}
+                      onChange={(e) => setEditDealForm((prev) => ({ ...prev, closingDate: e.target.value }))}
+                    />
+                  ) : (
+                    <span className="detail-value">{selectedDeal.closingDate || "-"}</span>
+                  )}
                 </div>
                 <div className="detail-row">
                   <span className="detail-label">Probability</span>
-                  <span className="detail-value">{selectedDeal.probability === null ? "-" : `${selectedDeal.probability}%`}</span>
+                  {isEditingSelectedDeal ? (
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      className="deal-detail-input"
+                      value={editDealForm?.probability ?? ""}
+                      onChange={(e) => setEditDealForm((prev) => ({ ...prev, probability: e.target.value }))}
+                    />
+                  ) : (
+                    <span className="detail-value">{selectedDeal.probability === null ? "-" : `${selectedDeal.probability}%`}</span>
+                  )}
                 </div>
                 <div className="detail-row">
                   <span className="detail-label">Expected Revenue</span>
-                  <span className="detail-value">
-                    {selectedDeal.expectedRevenue === null || selectedDeal.expectedRevenue === undefined
-                      ? "-"
-                      : `$${Number(selectedDeal.expectedRevenue).toLocaleString()}`}
-                  </span>
+                  {isEditingSelectedDeal ? (
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      className="deal-detail-input"
+                      value={editDealForm?.expectedRevenue ?? ""}
+                      onChange={(e) => setEditDealForm((prev) => ({ ...prev, expectedRevenue: e.target.value }))}
+                      disabled={editDealForm?.probability !== "" && editDealForm?.probability !== null}
+                    />
+                  ) : (
+                    <span className="detail-value">
+                      {selectedDeal.expectedRevenue === null || selectedDeal.expectedRevenue === undefined
+                        ? "-"
+                        : `$${Number(selectedDeal.expectedRevenue).toLocaleString()}`}
+                    </span>
+                  )}
                 </div>
                 <div className="detail-row">
                   <span className="detail-label">Deal Type</span>
-                  <span className="detail-value">{selectedDeal.dealType || "-"}</span>
+                  {isEditingSelectedDeal ? (
+                    <select
+                      className="deal-detail-input"
+                      value={editDealForm?.dealType || ""}
+                      onChange={(e) => setEditDealForm((prev) => ({ ...prev, dealType: e.target.value }))}
+                    >
+                      {dealTypeOptions.map((typeOption) => (
+                        <option key={typeOption || "blank"} value={typeOption}>
+                          {typeOption || "Select deal type"}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <span className="detail-value">{selectedDeal.dealType || "-"}</span>
+                  )}
                 </div>
                 <div className="detail-row">
                   <span className="detail-label">Lead Source</span>
-                  <span className="detail-value">{selectedDeal.leadSource || "-"}</span>
+                  {isEditingSelectedDeal ? (
+                    <input
+                      className="deal-detail-input"
+                      value={editDealForm?.leadSource || ""}
+                      onChange={(e) => setEditDealForm((prev) => ({ ...prev, leadSource: e.target.value }))}
+                    />
+                  ) : (
+                    <span className="detail-value">{selectedDeal.leadSource || "-"}</span>
+                  )}
                 </div>
                 <div className="detail-row">
                   <span className="detail-label">Campaign Source</span>
-                  <span className="detail-value">{selectedDeal.campaignSource || "-"}</span>
+                  {isEditingSelectedDeal ? (
+                    <input
+                      className="deal-detail-input"
+                      value={editDealForm?.campaignSource || ""}
+                      onChange={(e) => setEditDealForm((prev) => ({ ...prev, campaignSource: e.target.value }))}
+                    />
+                  ) : (
+                    <span className="detail-value">{selectedDeal.campaignSource || "-"}</span>
+                  )}
                 </div>
                 <div className="detail-row">
                   <span className="detail-label">Next Step</span>
-                  <span className="detail-value">{selectedDeal.nextStep || "-"}</span>
+                  {isEditingSelectedDeal ? (
+                    <input
+                      className="deal-detail-input"
+                      value={editDealForm?.nextStep || ""}
+                      onChange={(e) => setEditDealForm((prev) => ({ ...prev, nextStep: e.target.value }))}
+                    />
+                  ) : (
+                    <span className="detail-value">{selectedDeal.nextStep || "-"}</span>
+                  )}
                 </div>
                 <div className="detail-row">
                   <span className="detail-label">Description</span>
-                  <span className="detail-value">{selectedDeal.description || "-"}</span>
+                  {isEditingSelectedDeal ? (
+                    <textarea
+                      rows={3}
+                      className="deal-detail-input deal-detail-textarea"
+                      value={editDealForm?.description || ""}
+                      onChange={(e) => setEditDealForm((prev) => ({ ...prev, description: e.target.value }))}
+                    />
+                  ) : (
+                    <span className="detail-value">{selectedDeal.description || "-"}</span>
+                  )}
                 </div>
                 <div className="detail-row">
                   <span className="detail-label">Status</span>

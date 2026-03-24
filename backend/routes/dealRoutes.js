@@ -1,12 +1,13 @@
 const express = require("express");
 const router = express.Router();
 const { verifyToken } = require("../middleware/authMiddleware");
-const { permitDealAccess, getUserDealsFilter } = require("../middleware/dealAuth");
+const { permitDealAccess, getUserDealsFilter, getTeamMembers } = require("../middleware/dealAuth");
 const Deal = require("../models/deal");
 const Customer = require("../models/customer");
 const Contact = require("../models/contact");
 const Notification = require("../models/notification");
 const User = require("../models/user");
+const DealView = require("../models/dealView");
 
 const normalizeDealStage = (stage) => {
   const value = String(stage || "").trim();
@@ -21,8 +22,38 @@ const normalizeDealStage = (stage) => {
   return map[normalized] || normalized;
 };
 
+const getStageFilterValues = (stage) => {
+  const normalized = normalizeDealStage(stage);
+  const legacyMap = {
+    qualification: "Qualification",
+    need_analysis: "Need Analysis",
+    value_proposition: "Value Proposition",
+    proposal_price_quote: "Proposal",
+    negotiate: "Negotiation",
+    won: "Closed Won",
+    lost: "Closed Lost",
+  };
+
+  return Array.from(new Set([normalized, legacyMap[normalized]].filter(Boolean)));
+};
+
 const getStatusFromStage = (stage) =>
   normalizeDealStage(stage) === "lost" ? "Inactive" : "Active";
+
+const getDefaultProbabilityForStage = (stage) => {
+  const normalizedStage = normalizeDealStage(stage);
+  const probabilityMap = {
+    qualification: 15,
+    need_analysis: 35,
+    value_proposition: 55,
+    proposal_price_quote: 60,
+    negotiate: 80,
+    won: 100,
+    lost: 0,
+  };
+
+  return probabilityMap[normalizedStage] ?? null;
+};
 
 const allowedTransitions = {
   qualification: ["need_analysis", "lost"],
@@ -81,6 +112,16 @@ const normalizeDealBusinessFields = (payload) => {
     normalized.probability = Number.isNaN(probability) ? null : probability;
   }
 
+  if (
+    (!Object.prototype.hasOwnProperty.call(normalized, "probability") ||
+      normalized.probability === null ||
+      normalized.probability === undefined ||
+      normalized.probability === "") &&
+    Object.prototype.hasOwnProperty.call(normalized, "stage")
+  ) {
+    normalized.probability = getDefaultProbabilityForStage(normalized.stage);
+  }
+
   if (Object.prototype.hasOwnProperty.call(normalized, "expectedRevenue")) {
     const expectedRevenue = parseOptionalNumber(normalized.expectedRevenue);
     normalized.expectedRevenue = Number.isNaN(expectedRevenue) ? null : expectedRevenue;
@@ -113,8 +154,8 @@ const applyForecastFields = (dealPayload) => {
 const validateCreateDealInput = (payload) => {
   const name = String(payload.name || "").trim();
   const company = String(payload.company || "").trim();
+  const contact = String(payload.contact || "").trim();
   const email = String(payload.email || "").trim();
-  const phone = String(payload.phone || "").trim();
   const amount = Number(payload.amount);
   const closingDate = payload.closingDate ? new Date(payload.closingDate) : null;
 
@@ -130,8 +171,12 @@ const validateCreateDealInput = (payload) => {
     return "Company is required";
   }
 
-  if (!email && !phone) {
-    return "At least one contact method is required (Email or Phone)";
+  if (!contact) {
+    return "Contact Person is required";
+  }
+
+  if (!email) {
+    return "Email is required";
   }
 
   if (!closingDate || Number.isNaN(closingDate.getTime())) {
@@ -199,6 +244,189 @@ const syncDealContact = async (deal) => {
   await Contact.create(contactPayload);
 };
 
+const buildAdvancedDealFilter = (filters, user) => {
+  if (!filters || !Array.isArray(filters.conditions) || filters.conditions.length === 0) {
+    return {};
+  }
+
+  const processCondition = (condition) => {
+    const query = {};
+
+    switch (condition.field) {
+      case "owner":
+        query.assignedTo = user._id;
+        break;
+      case "stage":
+        if (condition.operator === "equals") {
+          query.stage = { $in: getStageFilterValues(condition.value) };
+        } else if (condition.operator === "in") {
+          const values = Array.isArray(condition.value) ? condition.value : [condition.value];
+          query.stage = { $in: values.flatMap((value) => getStageFilterValues(value)) };
+        }
+        break;
+      case "status":
+        if (condition.operator === "equals") {
+          query.status = condition.value;
+        } else if (condition.operator === "in") {
+          query.status = { $in: Array.isArray(condition.value) ? condition.value : [condition.value] };
+        }
+        break;
+      case "createdAt":
+      case "updatedAt": {
+        query[condition.field] = {};
+        if (condition.operator === "after" && condition.value) {
+          query[condition.field].$gte = new Date(condition.value);
+        } else if (condition.operator === "before" && condition.value) {
+          const endDate = new Date(condition.value);
+          endDate.setHours(23, 59, 59, 999);
+          query[condition.field].$lte = endDate;
+        } else if (condition.operator === "between" && condition.from && condition.to) {
+          query[condition.field].$gte = new Date(condition.from);
+          const endDate = new Date(condition.to);
+          endDate.setHours(23, 59, 59, 999);
+          query[condition.field].$lte = endDate;
+        }
+        break;
+      }
+      default:
+        if (condition.operator === "equals") {
+          query[condition.field] = condition.value;
+        } else if (condition.operator === "contains") {
+          query[condition.field] = { $regex: condition.value, $options: "i" };
+        } else if (condition.operator === "in") {
+          query[condition.field] = { $in: Array.isArray(condition.value) ? condition.value : [condition.value] };
+        }
+        break;
+    }
+
+    return query;
+  };
+
+  const conditions = filters.conditions
+    .map(processCondition)
+    .filter((condition) => Object.keys(condition).length > 0);
+
+  if (conditions.length === 0) {
+    return {};
+  }
+
+  return filters.logic === "OR" ? { $or: conditions } : { $and: conditions };
+};
+
+router.post("/filter", verifyToken, async (req, res) => {
+  try {
+    const { filters, sort = { createdAt: -1 }, limit = 100, skip = 0, status } = req.body;
+    const baseConditions = [];
+    let accessFilter = getUserDealsFilter(req.user);
+
+    if (req.user.role.toUpperCase() === "MANAGER") {
+      const teamIds = await getTeamMembers(req.user._id);
+      accessFilter = { $or: [{ assignedTo: req.user._id }, { assignedTo: { $in: teamIds } }] };
+    }
+
+    if (Object.keys(accessFilter).length > 0) {
+      baseConditions.push(accessFilter);
+    }
+
+    if (status && ["Active", "Inactive"].includes(String(status).trim())) {
+      baseConditions.push({ status: String(status).trim() });
+    }
+
+    const advancedFilter = buildAdvancedDealFilter(filters, req.user);
+    if (Object.keys(advancedFilter).length > 0) {
+      baseConditions.push(advancedFilter);
+    }
+
+    const finalFilter =
+      baseConditions.length === 0 ? {} : baseConditions.length === 1 ? baseConditions[0] : { $and: baseConditions };
+
+    const deals = await Deal.find(finalFilter)
+      .populate("assignedTo", "name username role employee_id")
+      .sort(sort)
+      .limit(limit)
+      .skip(skip);
+
+    res.json(deals);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+router.get("/views", verifyToken, async (req, res) => {
+  try {
+    const reqUserId = req.user._id;
+
+    const views = await DealView.find({
+      $or: [
+        { userId: reqUserId, visibility: "private" },
+        { visibility: "shared" },
+      ],
+    })
+      .sort({ createdAt: -1 })
+      .lean();
+
+    res.json(views);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+router.post("/views", verifyToken, async (req, res) => {
+  try {
+    const viewData = { ...req.body, userId: req.user._id };
+
+    if (!viewData.name) {
+      return res.status(400).json({ message: "View name required" });
+    }
+
+    if (!["private", "shared"].includes(viewData.visibility)) {
+      viewData.visibility = "private";
+    }
+
+    const view = await DealView.create(viewData);
+    res.status(201).json(view);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+router.put("/views/:id", verifyToken, async (req, res) => {
+  try {
+    const view = await DealView.findOne({
+      _id: req.params.id,
+      userId: req.user._id,
+    });
+
+    if (!view) {
+      return res.status(404).json({ message: "View not found or access denied" });
+    }
+
+    Object.assign(view, req.body);
+    await view.save();
+
+    res.json(view);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+router.delete("/views/:id", verifyToken, async (req, res) => {
+  try {
+    const view = await DealView.findOneAndDelete({
+      _id: req.params.id,
+      userId: req.user._id,
+    });
+
+    if (!view) {
+      return res.status(404).json({ message: "View not found or access denied" });
+    }
+
+    res.json({ message: "View deleted successfully" });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
 router.get("/", verifyToken, permitDealAccess(), async (req, res) => {
   try {
     const filter = getUserDealsFilter(req.user);
@@ -213,7 +441,7 @@ router.get("/", verifyToken, permitDealAccess(), async (req, res) => {
 
     // For managers, extend filter to include team
     if (req.user.role.toUpperCase() === 'MANAGER') {
-      const teamIds = await require("../middleware/dealAuth").getTeamMembers(req.user._id);
+      const teamIds = await getTeamMembers(req.user._id);
       filter.$or.push({ assignedTo: { $in: teamIds } });
     }
     
@@ -252,6 +480,7 @@ router.post("/", verifyToken, async (req, res) => {
     const validationError = validateCreateDealInput({
       name,
       company,
+      contact,
       email,
       phone,
       amount: amount ?? value,

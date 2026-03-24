@@ -1,4 +1,5 @@
-import { useState, useEffect } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import axios from "axios";
 import {
   AreaChart,
   Area,
@@ -29,6 +30,11 @@ function Dashboard() {
         : "User";
   const employee_id = localStorage.getItem("employee_id") || "";
   const [stats, setStats] = useState(null);
+  const [notifications, setNotifications] = useState([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [notificationsLoading, setNotificationsLoading] = useState(false);
+  const notificationRef = useRef(null);
 
   // Make role check case-insensitive
   const userRole = role ? role.toUpperCase() : "";
@@ -45,6 +51,39 @@ function Dashboard() {
         .catch((err) => console.error(err));
     }
   }, [isAdmin]);
+
+  const fetchNotifications = useCallback(async () => {
+    try {
+      const token = localStorage.getItem("token");
+      setNotificationsLoading(true);
+      const res = await axios.get("http://localhost:5000/api/deals/notifications", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setNotifications(res.data.notifications || []);
+      setUnreadCount(res.data.unreadCount || 0);
+    } catch (err) {
+      console.error("Dashboard notifications fetch error:", err);
+    } finally {
+      setNotificationsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchNotifications();
+    const interval = setInterval(fetchNotifications, 30000);
+    return () => clearInterval(interval);
+  }, [fetchNotifications]);
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (notificationRef.current && !notificationRef.current.contains(event.target)) {
+        setShowNotifications(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   // prepare data arrays for charts once stats are available
   const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun"];
@@ -112,6 +151,97 @@ function Dashboard() {
                 Welcome back, {username} 
                 {employee_id && <span className="employee-id"> (ID: {employee_id})</span>}
               </p>
+            </div>
+            <div className="dashboard-header-actions">
+              <div className="dashboard-notification-bell" ref={notificationRef}>
+                <button
+                  type="button"
+                  className="dashboard-notification-btn"
+                  onClick={() => setShowNotifications((prev) => !prev)}
+                  title="Notifications"
+                >
+                  {"\u{1F514}"}
+                  {unreadCount > 0 && (
+                    <span className="dashboard-notification-badge">{unreadCount > 99 ? "99+" : unreadCount}</span>
+                  )}
+                </button>
+                {showNotifications && (
+                  <div className="dashboard-notification-dropdown">
+                    <div className="dashboard-notification-header">
+                      <h4>Notifications ({unreadCount})</h4>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          if (notifications.some((item) => !item.isRead)) {
+                            const unreadIds = notifications.filter((item) => !item.isRead).map((item) => item._id);
+                            try {
+                              const token = localStorage.getItem("token");
+                              await axios.patch(
+                                `http://localhost:5000/api/deals/notifications/${unreadIds.join(",")}/read`,
+                                {},
+                                { headers: { Authorization: `Bearer ${token}` } }
+                              );
+                              fetchNotifications();
+                            } catch (err) {
+                              console.error("Dashboard mark-all-read error:", err);
+                            }
+                          }
+                        }}
+                      >
+                        Mark all read
+                      </button>
+                    </div>
+                    {notificationsLoading ? (
+                      <div className="dashboard-notification-empty">Loading...</div>
+                    ) : notifications.length === 0 ? (
+                      <div className="dashboard-notification-empty">No notifications</div>
+                    ) : (
+                      <div className="dashboard-notification-list">
+                        {notifications.slice(0, 10).map((notif) => (
+                          <div
+                            key={notif._id}
+                            className={`dashboard-notification-item ${notif.isRead ? "read" : "unread"}`}
+                            onClick={async () => {
+                              if (!notif.isRead) {
+                                try {
+                                  const token = localStorage.getItem("token");
+                                  await axios.patch(
+                                    `http://localhost:5000/api/deals/notifications/${notif._id}/read`,
+                                    {},
+                                    { headers: { Authorization: `Bearer ${token}` } }
+                                  );
+                                  fetchNotifications();
+                                } catch (err) {
+                                  console.error("Dashboard mark-read error:", err);
+                                }
+                              }
+                            }}
+                          >
+                            <div className="dashboard-notification-message">
+                              {notif.message}
+                              {notif.dealId?.name && (
+                                <button
+                                  type="button"
+                                  className="dashboard-notification-link"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    window.location.href = "/deals";
+                                  }}
+                                >
+                                  Deal: {notif.dealId.name}
+                                </button>
+                              )}
+                            </div>
+                            <div className="dashboard-notification-time">
+                              {new Date(notif.createdAt).toLocaleString()}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 

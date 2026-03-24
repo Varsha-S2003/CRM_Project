@@ -97,5 +97,5 @@ function getUserDealsFilter(reqUser) {
   return { $or: [{ assignedTo: reqUser._id }] }; // Placeholder, extend in route
 }
 
-module.exports = { authorizeDealAccess, permitDealAccess, getUserDealsFilter };
+module.exports = { authorizeDealAccess, permitDealAccess, getUserDealsFilter, getTeamMembers };
 
