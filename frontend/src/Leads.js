@@ -16,8 +16,20 @@ function Leads() {
   const [showCreateMenu, setShowCreateMenu] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
   const [showExportModal, setShowExportModal] = useState(false);
+  const [showMergeModal, setShowMergeModal] = useState(false);
+  const [duplicateDialog, setDuplicateDialog] = useState({
+    isOpen: false,
+    message: "",
+    sourceLeadId: "",
+    duplicateLead: null,
+    canOpenMerge: false,
+    draftLeadData: null,
+  });
   const [importFileName, setImportFileName] = useState("");
   const [importRows, setImportRows] = useState([]);  
+  const [mergeLeadIds, setMergeLeadIds] = useState([]);
+  const [mergePrimaryLeadId, setMergePrimaryLeadId] = useState("");
+  const [deleteMergedLeads, setDeleteMergedLeads] = useState(true);
 
   // 👇 SAVED VIEWS STATE 👇
   const [views, setViews] = useState([]);
@@ -31,6 +43,8 @@ function Leads() {
   // 👆 SAVED VIEWS STATE 👆
 
   const [selectedLead, setSelectedLead] = useState(null);
+  const [isEditingLead, setIsEditingLead] = useState(false);
+  const [editLeadForm, setEditLeadForm] = useState(null);
   const [exportView, setExportView] = useState("all");
   const [exportFieldScope, setExportFieldScope] = useState("custom");
   const [exportType, setExportType] = useState("csv");
@@ -53,7 +67,6 @@ function Leads() {
     annualRevenue: "",
     employeeCount: "",
     source: "",
-    rating: "",
     status: "new",
     notes: "",
     street: "",
@@ -62,6 +75,7 @@ function Leads() {
     postalCode: "",
     country: "",
   });
+  const [newLeadErrors, setNewLeadErrors] = useState({});
   // compute role flags for UI
   const role = localStorage.getItem("role")?.toUpperCase();
   const isAdmin = role === "ADMIN";
@@ -142,11 +156,6 @@ function Leads() {
 
 
 
-  const updateSort = (sort) => {
-    setSortConfig(sort);
-    fetchFilteredLeads(filters, sort);
-  };
-
   useEffect(() => {
     if (role) {
       fetchViews();
@@ -189,12 +198,11 @@ function Leads() {
   const salutations = ["Mr.", "Mrs.", "Ms.", "Dr.", "Prof."];
   const sources = ["Website", "Referral", "Social Media", "Email Campaign", "Cold Call", "Trade Show", "Other"];
   const industries = ["Technology", "Manufacturing", "Finance", "Healthcare", "Retail", "Education", "Real Estate", "Other"];
-  const ratings = ["hot", "warm", "cold"];
   const exportViews = [{ id: "all", name: "All Leads" }, ...stages.map((stage) => ({ id: stage.id, name: `${stage.name} Leads` }))];
   const exportFieldPresets = {
     custom: ["name", "email", "phone", "company", "source", "status"],
-    basic: ["name", "title", "email", "company", "status"],
-    all: ["name", "title", "email", "secondaryEmail", "phone", "mobile", "company", "website", "industry", "annualRevenue", "employeeCount", "source", "rating", "status", "city", "state", "country", "assignedTo", "createdAt"],
+    basic: ["name", "title", "email", "company", "score", "rating", "status"],
+    all: ["name", "title", "email", "secondaryEmail", "phone", "mobile", "company", "website", "industry", "annualRevenue", "employeeCount", "source", "score", "rating", "status", "city", "state", "country", "assignedTo", "createdAt"],
   };
   const exportFields = [
     { key: "name", label: "Lead Name", getValue: (lead) => lead.name || "-" },
@@ -209,6 +217,7 @@ function Leads() {
     { key: "annualRevenue", label: "Annual Revenue", getValue: (lead) => lead.annualRevenue || "-" },
     { key: "employeeCount", label: "Employee Count", getValue: (lead) => lead.employeeCount || "-" },
     { key: "source", label: "Source", getValue: (lead) => lead.source || "-" },
+    { key: "score", label: "Score", getValue: (lead) => Number(lead.score) || 0 },
     { key: "rating", label: "Rating", getValue: (lead) => lead.rating || "-" },
     { key: "status", label: "Status", getValue: (lead) => lead.status || "-" },
     { key: "city", label: "City", getValue: (lead) => lead.address?.city || "-" },
@@ -309,7 +318,6 @@ function Leads() {
       annualRevenue: "",
       employeeCount: "",
       source: "",
-      rating: "",
       status: "new",
       notes: "",
       street: "",
@@ -318,8 +326,75 @@ function Leads() {
       postalCode: "",
       country: "",
     });
+    setNewLeadErrors({});
     setShowModal(true);
     setShowCreateMenu(false);
+  };
+
+  const setNewLeadField = (field, value) => {
+    setNewLead((prev) => ({ ...prev, [field]: value }));
+    setNewLeadErrors((prev) => {
+      if (!prev[field]) return prev;
+      const next = { ...prev };
+      delete next[field];
+      return next;
+    });
+  };
+
+  const validateNewLeadForm = (lead) => {
+    const errors = {};
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const phoneRegex = /^[+]?[-()\s0-9]{7,20}$/;
+
+    if (!String(lead.firstName || "").trim()) {
+      errors.firstName = "First name is required";
+    }
+
+    if (!String(lead.lastName || "").trim()) {
+      errors.lastName = "Last name is required";
+    }
+
+    if (!String(lead.email || "").trim()) {
+      errors.email = "Email is required";
+    } else if (!emailRegex.test(String(lead.email || "").trim())) {
+      errors.email = "Enter a valid email address";
+    }
+
+    if (String(lead.secondaryEmail || "").trim() && !emailRegex.test(String(lead.secondaryEmail || "").trim())) {
+      errors.secondaryEmail = "Enter a valid secondary email";
+    }
+
+    if (String(lead.phone || "").trim() && !phoneRegex.test(String(lead.phone || "").trim())) {
+      errors.phone = "Enter a valid phone number";
+    }
+
+    if (String(lead.mobile || "").trim() && !phoneRegex.test(String(lead.mobile || "").trim())) {
+      errors.mobile = "Enter a valid mobile number";
+    }
+
+    if (String(lead.website || "").trim()) {
+      try {
+        const url = new URL(String(lead.website || "").trim());
+        if (!["http:", "https:"].includes(url.protocol)) {
+          errors.website = "Website must start with http:// or https://";
+        }
+      } catch {
+        errors.website = "Enter a valid website URL";
+      }
+    }
+
+    if (String(lead.annualRevenue || "").trim() && Number(lead.annualRevenue) < 0) {
+      errors.annualRevenue = "Annual revenue cannot be negative";
+    }
+
+    if (String(lead.employeeCount || "").trim()) {
+      const count = Number(lead.employeeCount);
+      if (!Number.isInteger(count) || count < 0) {
+        errors.employeeCount = "Employee count must be a non-negative whole number";
+      }
+    }
+
+    return errors;
   };
 
   const handleOpenImportModal = () => {
@@ -496,8 +571,6 @@ function Leads() {
     const fullName = row.name || `${firstName} ${lastName}`.trim();
     const rawStatus = String(row.status || "new").trim().toLowerCase();
     const validStatuses = new Set(stages.map((stage) => stage.id));
-    const rawRating = String(row.rating || "").trim().toLowerCase();
-    const validRatings = new Set(ratings);
 
     return {
       salutation: row.salutation || "",
@@ -515,8 +588,11 @@ function Leads() {
       annualRevenue: row.annualrevenue || "",
       employeeCount: row.employeecount || row.noofemployees || "",
       source: row.source || "",
-      rating: validRatings.has(rawRating) ? rawRating : "",
       status: validStatuses.has(rawStatus) ? rawStatus : "new",
+      emailOpened: row.emailopened || 0,
+      websiteVisits: row.websitevisits || 0,
+      formSubmissions: row.formsubmissions || 0,
+      lastActivityDate: row.lastactivitydate || "",
       notes: row.notes || row.note || "",
       address: {
         street: row.street || "",
@@ -567,6 +643,18 @@ function Leads() {
 
   const submitNewLead = async (e) => {
     e.preventDefault();
+    let leadData = null;
+
+    const validationErrors = validateNewLeadForm(newLead);
+    if (Object.keys(validationErrors).length > 0) {
+      setNewLeadErrors(validationErrors);
+      const firstError = Object.values(validationErrors)[0];
+      if (firstError) {
+        alert(firstError);
+      }
+      return;
+    }
+
     try {
       const token = localStorage.getItem("token");
       const fullName = [newLead.firstName.trim(), newLead.lastName.trim()].filter(Boolean).join(' ').trim();
@@ -575,7 +663,7 @@ function Leads() {
         return;
       }
 
-      const leadData = {
+      leadData = {
         salutation: newLead.salutation,
         firstName: newLead.firstName,
         lastName: newLead.lastName,
@@ -590,7 +678,6 @@ function Leads() {
         annualRevenue: newLead.annualRevenue,
         employeeCount: newLead.employeeCount,
         source: newLead.source,
-        rating: newLead.rating,
         status: newLead.status,
         notes: newLead.notes,
         address: {
@@ -611,6 +698,12 @@ function Leads() {
       fetchLeads();
     } catch (err) {
       console.error(err);
+      const handled = handleDuplicateConflict(err, {
+        sourceLeadId: "",
+        fallbackMessage: "Duplicate lead detected",
+        draftLeadData: leadData,
+      });
+      if (handled) return;
       alert(err.response?.data?.message || "Failed to add lead");
     }
   };
@@ -641,6 +734,108 @@ function Leads() {
 
   const handleViewLead = (lead) => {
     setSelectedLead(lead);
+  };
+
+  const buildEditLeadForm = (lead) => ({
+    salutation: lead?.salutation || "",
+    firstName: lead?.firstName || "",
+    lastName: lead?.lastName || "",
+    title: lead?.title || "",
+    email: lead?.email || "",
+    secondaryEmail: lead?.secondaryEmail || "",
+    phone: lead?.phone || "",
+    mobile: lead?.mobile || "",
+    company: lead?.company || "",
+    website: lead?.website || "",
+    industry: lead?.industry || "",
+    annualRevenue: lead?.annualRevenue ?? "",
+    employeeCount: lead?.employeeCount ?? "",
+    source: lead?.source || "",
+    notes: lead?.notes || "",
+    street: lead?.address?.street || "",
+    city: lead?.address?.city || "",
+    state: lead?.address?.state || "",
+    postalCode: lead?.address?.postalCode || "",
+    country: lead?.address?.country || "",
+  });
+
+  useEffect(() => {
+    if (!selectedLead) {
+      setIsEditingLead(false);
+      setEditLeadForm(null);
+      return;
+    }
+
+    setIsEditingLead(false);
+    setEditLeadForm(buildEditLeadForm(selectedLead));
+  }, [selectedLead]);
+
+  const handleEditLeadFieldChange = (field, value) => {
+    setEditLeadForm((prev) => ({ ...(prev || {}), [field]: value }));
+  };
+
+  const handleSaveLeadDetails = async () => {
+    if (!selectedLead || !editLeadForm) return;
+
+    const fullName = [editLeadForm.firstName?.trim(), editLeadForm.lastName?.trim()]
+      .filter(Boolean)
+      .join(" ")
+      .trim();
+
+    if (!fullName) {
+      alert("First name or last name required");
+      return;
+    }
+
+    try {
+      const token = localStorage.getItem("token");
+      const payload = {
+        salutation: editLeadForm.salutation,
+        firstName: editLeadForm.firstName,
+        lastName: editLeadForm.lastName,
+        title: editLeadForm.title,
+        email: editLeadForm.email,
+        secondaryEmail: editLeadForm.secondaryEmail,
+        phone: editLeadForm.phone,
+        mobile: editLeadForm.mobile,
+        company: editLeadForm.company,
+        website: editLeadForm.website,
+        industry: editLeadForm.industry,
+        annualRevenue: editLeadForm.annualRevenue,
+        employeeCount: editLeadForm.employeeCount,
+        source: editLeadForm.source,
+        notes: editLeadForm.notes,
+        address: {
+          street: editLeadForm.street,
+          city: editLeadForm.city,
+          state: editLeadForm.state,
+          postalCode: editLeadForm.postalCode,
+          country: editLeadForm.country,
+        },
+      };
+
+      const res = await axios.put(
+        `http://localhost:5000/api/leads/${selectedLead._id}`,
+        payload,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      const updatedLead = res.data;
+      setLeads((prev) => prev.map((lead) => (lead._id === updatedLead._id ? updatedLead : lead)));
+      setSelectedLead(updatedLead);
+      setIsEditingLead(false);
+      fetchLeads();
+      fetchStats();
+      alert("Lead details updated successfully.");
+    } catch (err) {
+      console.error(err);
+      const handled = handleDuplicateConflict(err, {
+        sourceLeadId: selectedLead?._id,
+        fallbackMessage: "Duplicate lead detected",
+      });
+      if (handled) return;
+      alert(err.response?.data?.message || "Failed to update lead details");
+    }
   };
 
   const handleUpdateStatus = async (leadId, newStatus) => {
@@ -756,6 +951,232 @@ function Leads() {
     } catch (err) {
       console.error(err);
       alert("Failed to delete lead");
+    }
+  };
+
+  useEffect(() => {
+    setMergeLeadIds((prev) => prev.filter((leadId) => leads.some((lead) => lead._id === leadId)));
+  }, [leads]);
+
+  useEffect(() => {
+    if (!mergeLeadIds.length) {
+      setMergePrimaryLeadId("");
+      return;
+    }
+
+    if (!mergeLeadIds.includes(mergePrimaryLeadId)) {
+      setMergePrimaryLeadId(mergeLeadIds[0]);
+    }
+  }, [mergeLeadIds, mergePrimaryLeadId]);
+
+  const openMergeFlow = ({ sourceLeadId, duplicateLead }) => {
+    const duplicateLeadId = duplicateLead?._id;
+    if (!sourceLeadId || !duplicateLeadId || sourceLeadId === duplicateLeadId) {
+      return false;
+    }
+
+    const ids = [sourceLeadId, duplicateLeadId].filter(
+      (leadId, index, allIds) => allIds.indexOf(leadId) === index
+    );
+
+    if (ids.length < 2) {
+      return false;
+    }
+
+    if (duplicateLead?._id) {
+      setLeads((prev) => {
+        if (prev.some((lead) => lead._id === duplicateLead._id)) {
+          return prev;
+        }
+        return [duplicateLead, ...prev];
+      });
+    }
+
+    setMergeLeadIds(ids);
+    setMergePrimaryLeadId(sourceLeadId);
+    setDeleteMergedLeads(true);
+    setShowMergeModal(true);
+    return true;
+  };
+
+  const closeMergeModal = () => {
+    setMergeLeadIds([]);
+    setMergePrimaryLeadId("");
+    setDeleteMergedLeads(true);
+    setShowMergeModal(false);
+  };
+
+  const handleDuplicateConflict = (err, { sourceLeadId = "", fallbackMessage, draftLeadData = null }) => {
+    const statusCode = err.response?.status;
+    const duplicateLead = err.response?.data?.duplicateLead;
+    const duplicateMessage = err.response?.data?.message || fallbackMessage;
+
+    if (statusCode !== 409 || !duplicateLead?._id) {
+      return false;
+    }
+
+    const canOpenMerge = Boolean(sourceLeadId) && sourceLeadId !== duplicateLead._id;
+
+    setDuplicateDialog({
+      isOpen: true,
+      message: duplicateMessage,
+      sourceLeadId,
+      duplicateLead,
+      canOpenMerge,
+      draftLeadData,
+    });
+
+    return true;
+  };
+
+  const closeDuplicateDialog = () => {
+    setDuplicateDialog({
+      isOpen: false,
+      message: "",
+      sourceLeadId: "",
+      duplicateLead: null,
+      canOpenMerge: false,
+      draftLeadData: null,
+    });
+  };
+
+  const buildNonEmptyLeadUpdates = (payload = {}) => {
+    const nonEmpty = {};
+    const fields = [
+      "salutation",
+      "firstName",
+      "lastName",
+      "title",
+      "email",
+      "secondaryEmail",
+      "phone",
+      "mobile",
+      "company",
+      "website",
+      "industry",
+      "annualRevenue",
+      "employeeCount",
+      "source",
+      "notes",
+    ];
+
+    fields.forEach((field) => {
+      const value = payload[field];
+      if (value !== undefined && value !== null && String(value).trim() !== "") {
+        nonEmpty[field] = value;
+      }
+    });
+
+    if (payload.address && typeof payload.address === "object") {
+      const address = {};
+      ["street", "city", "state", "postalCode", "country"].forEach((key) => {
+        const value = payload.address[key];
+        if (value !== undefined && value !== null && String(value).trim() !== "") {
+          address[key] = value;
+        }
+      });
+      if (Object.keys(address).length > 0) {
+        nonEmpty.address = address;
+      }
+    }
+
+    return nonEmpty;
+  };
+
+  const handleOpenMergeFromDuplicateDialog = async () => {
+    if (duplicateDialog.canOpenMerge && duplicateDialog.sourceLeadId && duplicateDialog.duplicateLead?._id) {
+      openMergeFlow({
+        sourceLeadId: duplicateDialog.sourceLeadId,
+        duplicateLead: duplicateDialog.duplicateLead,
+      });
+      closeDuplicateDialog();
+      return;
+    }
+
+    if (duplicateDialog.duplicateLead?._id && duplicateDialog.draftLeadData) {
+      try {
+        const token = localStorage.getItem("token");
+        const updatePayload = buildNonEmptyLeadUpdates(duplicateDialog.draftLeadData);
+        const res = await axios.put(
+          `http://localhost:5000/api/leads/${duplicateDialog.duplicateLead._id}`,
+          updatePayload,
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+
+        const updatedLead = res.data;
+        setLeads((prev) => {
+          const hasLead = prev.some((lead) => lead._id === updatedLead._id);
+          if (!hasLead) return [updatedLead, ...prev];
+          return prev.map((lead) => (lead._id === updatedLead._id ? updatedLead : lead));
+        });
+        setShowModal(false);
+        setSelectedLead(updatedLead);
+        fetchLeads();
+        fetchStats();
+        closeDuplicateDialog();
+        alert("Existing duplicate lead updated using your entered data.");
+        return;
+      } catch (err) {
+        console.error(err);
+        alert(err.response?.data?.message || "Failed to merge entered data into existing lead.");
+        return;
+      }
+    }
+
+    if (duplicateDialog.duplicateLead?._id) {
+      const duplicateRecord = leads.find((lead) => lead._id === duplicateDialog.duplicateLead._id) || duplicateDialog.duplicateLead;
+      setShowModal(false);
+      setSelectedLead(duplicateRecord);
+    }
+
+    closeDuplicateDialog();
+  };
+
+  const handleMergeLeads = async () => {
+    if (mergeLeadIds.length < 2) {
+      alert("Select at least 2 leads to merge.");
+      return;
+    }
+
+    if (!mergePrimaryLeadId) {
+      alert("Select a primary lead.");
+      return;
+    }
+
+    const secondaryLeadIds = mergeLeadIds.filter((leadId) => leadId !== mergePrimaryLeadId);
+    if (!secondaryLeadIds.length) {
+      alert("Select at least one secondary lead to merge.");
+      return;
+    }
+
+    try {
+      const token = localStorage.getItem("token");
+      const res = await axios.post(
+        "http://localhost:5000/api/leads/merge",
+        {
+          primaryLeadId: mergePrimaryLeadId,
+          mergeLeadIds: secondaryLeadIds,
+          deleteMerged: deleteMergedLeads,
+        },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      const primary = res.data?.primaryLead;
+      if (primary?._id) {
+        setLeads((prev) => {
+          const withoutMerged = prev.filter((lead) => !secondaryLeadIds.includes(lead._id));
+          const replaced = withoutMerged.map((lead) => (lead._id === primary._id ? primary : lead));
+          return replaced.some((lead) => lead._id === primary._id) ? replaced : [primary, ...replaced];
+        });
+      }
+
+      fetchLeads();
+      fetchStats();
+      closeMergeModal();
+      alert(res.data?.message || "Leads merged successfully.");
+    } catch (err) {
+      console.error(err);
+      alert(err.response?.data?.message || "Failed to merge leads.");
     }
   };
 
@@ -1434,6 +1855,12 @@ ET`;
                         <h4>{lead.name}</h4>
                         <span className={`status-badge-zoho ${lead.status}`}>{lead.status}</span>
                       </div>
+                      <div className="lead-score-row">
+                        <span className="lead-score-pill">Score: {Number(lead.score) || 0}</span>
+                        <span className={`lead-rating-pill ${(lead.rating || "cold").toLowerCase()}`}>
+                          {(lead.rating || "cold").toUpperCase()}
+                        </span>
+                      </div>
                       {lead.company && (
                         <div className="card-company-zoho">
                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -1574,6 +2001,112 @@ ET`;
           </div>
         )}
 
+        {duplicateDialog.isOpen && (
+          <div className="modal-overlay-zoho" onClick={closeDuplicateDialog}>
+            <div className="modal-box-zoho duplicate-dialog-box" onClick={(e) => e.stopPropagation()}>
+              <div className="modal-header-zoho">
+                <h2>Duplicate Lead Detected</h2>
+                <button className="modal-close" onClick={closeDuplicateDialog}>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                  </svg>
+                </button>
+              </div>
+
+              <div className="modal-form-zoho duplicate-dialog-content">
+                <p className="duplicate-dialog-message">{duplicateDialog.message}</p>
+                <p className="duplicate-dialog-subtext">
+                  {duplicateDialog.canOpenMerge
+                    ? "You can open Merge and combine current lead with the duplicate record."
+                    : "Current lead is not saved yet. We can apply your entered non-empty fields to the existing duplicate lead."}
+                </p>
+
+                <div className="modal-actions">
+                  <button type="button" className="btn-cancel" onClick={closeDuplicateDialog}>
+                    Cancel
+                  </button>
+                  <button type="button" className="btn-submit" onClick={handleOpenMergeFromDuplicateDialog}>
+                    {duplicateDialog.canOpenMerge ? "Open Merge" : "Merge Into Existing"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {showMergeModal && (isAdmin || isManager) && (
+          <div className="modal-overlay-zoho" onClick={closeMergeModal}>
+            <div className="modal-box-zoho merge-modal-box" onClick={(e) => e.stopPropagation()}>
+              <div className="modal-header-zoho">
+                <h2>Merge Leads</h2>
+                <button className="modal-close" onClick={closeMergeModal}>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                  </svg>
+                </button>
+              </div>
+
+              <div className="modal-form-zoho">
+                <p className="merge-helper-text">
+                  Duplicate detected. Choose the primary lead record to keep and merge into.
+                </p>
+
+                {mergeLeadIds.length < 2 ? (
+                  <p className="merge-empty-text">No duplicate lead pair available for merging right now.</p>
+                ) : (
+                  <>
+                    <div className="merge-lead-list">
+                      {mergeLeadIds
+                        .map((leadId) => leads.find((lead) => lead._id === leadId))
+                        .filter(Boolean)
+                        .map((lead) => (
+                          <label key={lead._id} className="merge-lead-row">
+                            <input
+                              type="radio"
+                              name="merge-primary"
+                              checked={mergePrimaryLeadId === lead._id}
+                              onChange={() => setMergePrimaryLeadId(lead._id)}
+                            />
+                            <div className="merge-lead-content">
+                              <strong>{lead.name || "Unnamed Lead"}</strong>
+                              <span>{lead.company || "No company"}</span>
+                              <span>{lead.email || "No email"}</span>
+                            </div>
+                          </label>
+                        ))}
+                    </div>
+
+                    <label className="merge-delete-toggle">
+                      <input
+                        type="checkbox"
+                        checked={deleteMergedLeads}
+                        onChange={(e) => setDeleteMergedLeads(e.target.checked)}
+                      />
+                      <span>Delete merged duplicate records (recommended)</span>
+                    </label>
+                  </>
+                )}
+
+                <div className="modal-actions">
+                  <button type="button" className="btn-cancel" onClick={closeMergeModal}>
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-submit"
+                    disabled={mergeLeadIds.length < 2 || !mergePrimaryLeadId}
+                    onClick={handleMergeLeads}
+                  >
+                    Merge Selected Leads
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Add Lead Modal */}
         {showModal && (
           <div className="modal-overlay-zoho" onClick={() => setShowModal(false)}>
@@ -1609,9 +2142,11 @@ ET`;
                         type="text"
                         placeholder="Enter first name"
                         value={newLead.firstName}
-                        onChange={(e) => setNewLead({ ...newLead, firstName: e.target.value })}
+                        onChange={(e) => setNewLeadField("firstName", e.target.value)}
+                        className={newLeadErrors.firstName ? "form-input-error" : ""}
                         required
                       />
+                      {newLeadErrors.firstName && <span className="form-error-text">{newLeadErrors.firstName}</span>}
                     </div>
                     <div className="form-group">
                       <label>Last Name *</label>
@@ -1619,9 +2154,11 @@ ET`;
                         type="text"
                         placeholder="Enter last name"
                         value={newLead.lastName}
-                        onChange={(e) => setNewLead({ ...newLead, lastName: e.target.value })}
+                        onChange={(e) => setNewLeadField("lastName", e.target.value)}
+                        className={newLeadErrors.lastName ? "form-input-error" : ""}
                         required
                       />
+                      {newLeadErrors.lastName && <span className="form-error-text">{newLeadErrors.lastName}</span>}
                     </div>
                   </div>
                   <div className="form-row-zoho">
@@ -1640,9 +2177,11 @@ ET`;
                         type="email"
                         placeholder="Enter email address"
                         value={newLead.email}
-                        onChange={(e) => setNewLead({ ...newLead, email: e.target.value })}
+                        onChange={(e) => setNewLeadField("email", e.target.value)}
+                        className={newLeadErrors.email ? "form-input-error" : ""}
                         required
                       />
+                      {newLeadErrors.email && <span className="form-error-text">{newLeadErrors.email}</span>}
                     </div>
                   </div>
                   <div className="form-row-zoho">
@@ -1652,8 +2191,10 @@ ET`;
                         type="email"
                         placeholder="Enter secondary email"
                         value={newLead.secondaryEmail}
-                        onChange={(e) => setNewLead({ ...newLead, secondaryEmail: e.target.value })}
+                        onChange={(e) => setNewLeadField("secondaryEmail", e.target.value)}
+                        className={newLeadErrors.secondaryEmail ? "form-input-error" : ""}
                       />
+                      {newLeadErrors.secondaryEmail && <span className="form-error-text">{newLeadErrors.secondaryEmail}</span>}
                     </div>
                     <div className="form-group">
                       <label>Phone</label>
@@ -1661,8 +2202,10 @@ ET`;
                         type="tel"
                         placeholder="Enter phone number"
                         value={newLead.phone}
-                        onChange={(e) => setNewLead({ ...newLead, phone: e.target.value })}
+                        onChange={(e) => setNewLeadField("phone", e.target.value)}
+                        className={newLeadErrors.phone ? "form-input-error" : ""}
                       />
+                      {newLeadErrors.phone && <span className="form-error-text">{newLeadErrors.phone}</span>}
                     </div>
                     <div className="form-group">
                       <label>Mobile</label>
@@ -1670,8 +2213,10 @@ ET`;
                         type="tel"
                         placeholder="Enter mobile number"
                         value={newLead.mobile}
-                        onChange={(e) => setNewLead({ ...newLead, mobile: e.target.value })}
+                        onChange={(e) => setNewLeadField("mobile", e.target.value)}
+                        className={newLeadErrors.mobile ? "form-input-error" : ""}
                       />
+                      {newLeadErrors.mobile && <span className="form-error-text">{newLeadErrors.mobile}</span>}
                     </div>
                   </div>
                 </div>
@@ -1693,8 +2238,10 @@ ET`;
                         type="url"
                         placeholder="https://example.com"
                         value={newLead.website}
-                        onChange={(e) => setNewLead({ ...newLead, website: e.target.value })}
+                        onChange={(e) => setNewLeadField("website", e.target.value)}
+                        className={newLeadErrors.website ? "form-input-error" : ""}
                       />
+                      {newLeadErrors.website && <span className="form-error-text">{newLeadErrors.website}</span>}
                     </div>
                     <div className="form-group">
                       <label>Lead Source</label>
@@ -1729,8 +2276,10 @@ ET`;
                         min="0"
                         placeholder="Enter annual revenue"
                         value={newLead.annualRevenue}
-                        onChange={(e) => setNewLead({ ...newLead, annualRevenue: e.target.value })}
+                        onChange={(e) => setNewLeadField("annualRevenue", e.target.value)}
+                        className={newLeadErrors.annualRevenue ? "form-input-error" : ""}
                       />
+                      {newLeadErrors.annualRevenue && <span className="form-error-text">{newLeadErrors.annualRevenue}</span>}
                     </div>
                   </div>
                   <div className="form-row-zoho">
@@ -1741,35 +2290,24 @@ ET`;
                         min="0"
                         placeholder="Enter employee count"
                         value={newLead.employeeCount}
-                        onChange={(e) => setNewLead({ ...newLead, employeeCount: e.target.value })}
+                        onChange={(e) => setNewLeadField("employeeCount", e.target.value)}
+                        className={newLeadErrors.employeeCount ? "form-input-error" : ""}
                       />
+                      {newLeadErrors.employeeCount && <span className="form-error-text">{newLeadErrors.employeeCount}</span>}
+                    </div>
+                    <div className="form-group">
+                      <label>Score</label>
+                      <input type="text" value="0" readOnly />
                     </div>
                     <div className="form-group">
                       <label>Rating</label>
-                      <select
-                        value={newLead.rating}
-                        onChange={(e) => setNewLead({ ...newLead, rating: e.target.value })}
-                      >
-                        <option value="">Select rating</option>
-                        {ratings.map((rating) => (
-                          <option key={rating} value={rating}>{rating}</option>
-                        ))}
-                      </select>
+                      <input type="text" value="COLD" readOnly />
                     </div>
                   </div>
                   <div className="form-row-zoho">
                     <div className="form-group">
-                      <label>Lead Stage *</label>
-                      <select
-                        value={newLead.status}
-                        onChange={(e) => setNewLead({ ...newLead, status: e.target.value })}
-                        required
-                      >
-                        <option value="" disabled>Select lead stage</option>
-                        {stages.filter((stage) => stage.id !== "lost").map((stage) => (
-                          <option key={stage.id} value={stage.id}>{stage.name}</option>
-                        ))}
-                      </select>
+                      <label>Lead Stage</label>
+                      <input type="text" value="New" readOnly />
                     </div>
                     <div className="form-group">
                       <label>Notes</label>
@@ -1859,7 +2397,7 @@ ET`;
                 <div className="form-section">
                   <h3>Upload CSV File</h3>
                   <p className="import-helper-text">
-                    Supported headers: `name`, `salutation`, `firstName`, `lastName`, `title`, `email`, `secondaryEmail`, `phone`, `mobile`, `company`, `website`, `industry`, `annualRevenue`, `employeeCount`, `source`, `rating`, `status`, `notes`, `street`, `city`, `state`, `postalCode`, `country`.
+                    Supported headers: `name`, `salutation`, `firstName`, `lastName`, `title`, `email`, `secondaryEmail`, `phone`, `mobile`, `company`, `website`, `industry`, `annualRevenue`, `employeeCount`, `source`, `status`, `notes`, `street`, `city`, `state`, `postalCode`, `country`, `emailOpened`, `websiteVisits`, `formSubmissions`, `lastActivityDate`.
                   </p>
                   <input
                     ref={fileInputRef}
@@ -1927,80 +2465,251 @@ ET`;
                   </svg>
                 </button>
               </div>
-              <div className="lead-details-view">
-                <div className="detail-row">
-                  <span className="detail-label">Salutation</span>
-                  <span className="detail-value">{selectedLead.salutation || "-"}</span>
-                </div>
-                <div className="detail-row">
-                  <span className="detail-label">Title</span>
-                  <span className="detail-value">{selectedLead.title || "-"}</span>
-                </div>
-                <div className="detail-row">
-                  <span className="detail-label">Company</span>
-                  <span className="detail-value">{selectedLead.company || "-"}</span>
-                </div>
-                <div className="detail-row">
-                  <span className="detail-label">Email</span>
-                  <span className="detail-value">{selectedLead.email || "-"}</span>
-                </div>
-                <div className="detail-row">
-                  <span className="detail-label">Secondary Email</span>
-                  <span className="detail-value">{selectedLead.secondaryEmail || "-"}</span>
-                </div>
-                <div className="detail-row">
-                  <span className="detail-label">Phone</span>
-                  <span className="detail-value">{selectedLead.phone || "-"}</span>
-                </div>
-                <div className="detail-row">
-                  <span className="detail-label">Mobile</span>
-                  <span className="detail-value">{selectedLead.mobile || "-"}</span>
-                </div>
-                <div className="detail-row">
-                  <span className="detail-label">Website</span>
-                  <span className="detail-value">{selectedLead.website || "-"}</span>
-                </div>
-                <div className="detail-row">
-                  <span className="detail-label">Industry</span>
-                  <span className="detail-value">{selectedLead.industry || "-"}</span>
-                </div>
-                <div className="detail-row">
-                  <span className="detail-label">Annual Revenue</span>
-                  <span className="detail-value">{selectedLead.annualRevenue ?? "-"}</span>
-                </div>
-                <div className="detail-row">
-                  <span className="detail-label">Employee Count</span>
-                  <span className="detail-value">{selectedLead.employeeCount ?? "-"}</span>
-                </div>
-                <div className="detail-row">
-                  <span className="detail-label">Source</span>
-                  <span className="detail-value">{selectedLead.source || "-"}</span>
-                </div>
-                <div className="detail-row">
-                  <span className="detail-label">Rating</span>
-                  <span className="detail-value">{selectedLead.rating || "-"}</span>
-                </div>
-                <div className="detail-row">
-                  <span className="detail-label">Address</span>
-                  <span className="detail-value">
-                    {[selectedLead.address?.street, selectedLead.address?.city, selectedLead.address?.state, selectedLead.address?.postalCode, selectedLead.address?.country]
-                      .filter(Boolean)
-                      .join(", ") || "-"}
-                  </span>
-                </div>
-                <div className="detail-row">
-                  <span className="detail-label">Status</span>
-                  <span className={`status-badge-zoho ${selectedLead.status}`}>{selectedLead.status}</span>
-                </div>
-                <div className="detail-row">
-                  <span className="detail-label">Notes</span>
-                  <span className="detail-value">{selectedLead.notes || "-"}</span>
-                </div>
-                <div className="detail-row">
-                  <span className="detail-label">Added On</span>
-                  <span className="detail-value">{formatAddedDate(selectedLead.createdAt)}</span>
-                </div>
+              <div className="modal-actions" style={{ justifyContent: "flex-end", marginBottom: "8px" }}>
+                {!isEditingLead ? (
+                  <button type="button" className="btn-submit" onClick={() => setIsEditingLead(true)}>
+                    Edit Details
+                  </button>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      className="btn-cancel"
+                      onClick={() => {
+                        setEditLeadForm(buildEditLeadForm(selectedLead));
+                        setIsEditingLead(false);
+                      }}
+                    >
+                      Cancel
+                    </button>
+                    <button type="button" className="btn-submit" onClick={handleSaveLeadDetails}>
+                      Save Changes
+                    </button>
+                  </>
+                )}
               </div>
+
+              {!isEditingLead && (
+                <div className="lead-details-view">
+                  <div className="detail-row">
+                    <span className="detail-label">Salutation</span>
+                    <span className="detail-value">{selectedLead.salutation || "-"}</span>
+                  </div>
+                  <div className="detail-row">
+                    <span className="detail-label">Title</span>
+                    <span className="detail-value">{selectedLead.title || "-"}</span>
+                  </div>
+                  <div className="detail-row">
+                    <span className="detail-label">Company</span>
+                    <span className="detail-value">{selectedLead.company || "-"}</span>
+                  </div>
+                  <div className="detail-row">
+                    <span className="detail-label">Email</span>
+                    <span className="detail-value">{selectedLead.email || "-"}</span>
+                  </div>
+                  <div className="detail-row">
+                    <span className="detail-label">Secondary Email</span>
+                    <span className="detail-value">{selectedLead.secondaryEmail || "-"}</span>
+                  </div>
+                  <div className="detail-row">
+                    <span className="detail-label">Phone</span>
+                    <span className="detail-value">{selectedLead.phone || "-"}</span>
+                  </div>
+                  <div className="detail-row">
+                    <span className="detail-label">Mobile</span>
+                    <span className="detail-value">{selectedLead.mobile || "-"}</span>
+                  </div>
+                  <div className="detail-row">
+                    <span className="detail-label">Website</span>
+                    <span className="detail-value">{selectedLead.website || "-"}</span>
+                  </div>
+                  <div className="detail-row">
+                    <span className="detail-label">Industry</span>
+                    <span className="detail-value">{selectedLead.industry || "-"}</span>
+                  </div>
+                  <div className="detail-row">
+                    <span className="detail-label">Annual Revenue</span>
+                    <span className="detail-value">{selectedLead.annualRevenue ?? "-"}</span>
+                  </div>
+                  <div className="detail-row">
+                    <span className="detail-label">Employee Count</span>
+                    <span className="detail-value">{selectedLead.employeeCount ?? "-"}</span>
+                  </div>
+                  <div className="detail-row">
+                    <span className="detail-label">Source</span>
+                    <span className="detail-value">{selectedLead.source || "-"}</span>
+                  </div>
+                  <div className="detail-row">
+                    <span className="detail-label">Score</span>
+                    <span className="detail-value">{Number(selectedLead.score) || 0}</span>
+                  </div>
+                  <div className="detail-row">
+                    <span className="detail-label">Rating</span>
+                    <span className={`lead-rating-pill ${(selectedLead.rating || "cold").toLowerCase()}`}>
+                      {(selectedLead.rating || "cold").toUpperCase()}
+                    </span>
+                  </div>
+                  <div className="detail-row">
+                    <span className="detail-label">Address</span>
+                    <span className="detail-value">
+                      {[selectedLead.address?.street, selectedLead.address?.city, selectedLead.address?.state, selectedLead.address?.postalCode, selectedLead.address?.country]
+                        .filter(Boolean)
+                        .join(", ") || "-"}
+                    </span>
+                  </div>
+                  <div className="detail-row">
+                    <span className="detail-label">Status</span>
+                    <span className={`status-badge-zoho ${selectedLead.status}`}>{selectedLead.status}</span>
+                  </div>
+                  <div className="detail-row">
+                    <span className="detail-label">Notes</span>
+                    <span className="detail-value">{selectedLead.notes || "-"}</span>
+                  </div>
+                  <div className="detail-row">
+                    <span className="detail-label">Added On</span>
+                    <span className="detail-value">{formatAddedDate(selectedLead.createdAt)}</span>
+                  </div>
+                </div>
+              )}
+
+              {isEditingLead && editLeadForm && (
+                <div className="modal-form-zoho">
+                  <div className="form-section">
+                    <h3>Basic Information</h3>
+                    <div className="form-row-zoho">
+                      <div className="form-group">
+                        <label>Salutation</label>
+                        <select value={editLeadForm.salutation} onChange={(e) => handleEditLeadFieldChange("salutation", e.target.value)}>
+                          <option value="">Salutation</option>
+                          {salutations.map((salutation) => (
+                            <option key={salutation} value={salutation}>{salutation}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="form-group">
+                        <label>First Name *</label>
+                        <input type="text" value={editLeadForm.firstName} onChange={(e) => handleEditLeadFieldChange("firstName", e.target.value)} required />
+                      </div>
+                      <div className="form-group">
+                        <label>Last Name *</label>
+                        <input type="text" value={editLeadForm.lastName} onChange={(e) => handleEditLeadFieldChange("lastName", e.target.value)} required />
+                      </div>
+                    </div>
+
+                    <div className="form-row-zoho">
+                      <div className="form-group">
+                        <label>Title</label>
+                        <input type="text" value={editLeadForm.title} onChange={(e) => handleEditLeadFieldChange("title", e.target.value)} />
+                      </div>
+                      <div className="form-group">
+                        <label>Email</label>
+                        <input type="email" value={editLeadForm.email} onChange={(e) => handleEditLeadFieldChange("email", e.target.value)} />
+                      </div>
+                    </div>
+
+                    <div className="form-row-zoho">
+                      <div className="form-group">
+                        <label>Secondary Email</label>
+                        <input type="email" value={editLeadForm.secondaryEmail} onChange={(e) => handleEditLeadFieldChange("secondaryEmail", e.target.value)} />
+                      </div>
+                      <div className="form-group">
+                        <label>Phone</label>
+                        <input type="tel" value={editLeadForm.phone} onChange={(e) => handleEditLeadFieldChange("phone", e.target.value)} />
+                      </div>
+                      <div className="form-group">
+                        <label>Mobile</label>
+                        <input type="tel" value={editLeadForm.mobile} onChange={(e) => handleEditLeadFieldChange("mobile", e.target.value)} />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="form-section">
+                    <h3>Additional Details</h3>
+                    <div className="form-row-zoho">
+                      <div className="form-group">
+                        <label>Company</label>
+                        <input type="text" value={editLeadForm.company} onChange={(e) => handleEditLeadFieldChange("company", e.target.value)} />
+                      </div>
+                      <div className="form-group">
+                        <label>Website</label>
+                        <input type="url" value={editLeadForm.website} onChange={(e) => handleEditLeadFieldChange("website", e.target.value)} />
+                      </div>
+                      <div className="form-group">
+                        <label>Lead Source</label>
+                        <select value={editLeadForm.source} onChange={(e) => handleEditLeadFieldChange("source", e.target.value)}>
+                          <option value="">Select source</option>
+                          {sources.map((source) => (
+                            <option key={source} value={source}>{source}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="form-row-zoho">
+                      <div className="form-group">
+                        <label>Industry</label>
+                        <select value={editLeadForm.industry} onChange={(e) => handleEditLeadFieldChange("industry", e.target.value)}>
+                          <option value="">Select industry</option>
+                          {industries.map((industry) => (
+                            <option key={industry} value={industry}>{industry}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="form-group">
+                        <label>Annual Revenue</label>
+                        <input type="number" min="0" value={editLeadForm.annualRevenue} onChange={(e) => handleEditLeadFieldChange("annualRevenue", e.target.value)} />
+                      </div>
+                      <div className="form-group">
+                        <label>Employee Count</label>
+                        <input type="number" min="0" value={editLeadForm.employeeCount} onChange={(e) => handleEditLeadFieldChange("employeeCount", e.target.value)} />
+                      </div>
+                    </div>
+
+                    <div className="form-row-zoho">
+                      <div className="form-group">
+                        <label>Score</label>
+                        <input type="text" value={Number(selectedLead?.score) || 0} readOnly />
+                      </div>
+                      <div className="form-group">
+                        <label>Rating</label>
+                        <input type="text" value={(selectedLead?.rating || "cold").toUpperCase()} readOnly />
+                      </div>
+                      <div className="form-group">
+                        <label>Notes</label>
+                        <textarea value={editLeadForm.notes} rows="3" onChange={(e) => handleEditLeadFieldChange("notes", e.target.value)} />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="form-section">
+                    <h3>Address</h3>
+                    <div className="form-row-zoho">
+                      <div className="form-group">
+                        <label>Street</label>
+                        <input type="text" value={editLeadForm.street} onChange={(e) => handleEditLeadFieldChange("street", e.target.value)} />
+                      </div>
+                      <div className="form-group">
+                        <label>City</label>
+                        <input type="text" value={editLeadForm.city} onChange={(e) => handleEditLeadFieldChange("city", e.target.value)} />
+                      </div>
+                    </div>
+                    <div className="form-row-zoho">
+                      <div className="form-group">
+                        <label>State</label>
+                        <input type="text" value={editLeadForm.state} onChange={(e) => handleEditLeadFieldChange("state", e.target.value)} />
+                      </div>
+                      <div className="form-group">
+                        <label>Postal Code</label>
+                        <input type="text" value={editLeadForm.postalCode} onChange={(e) => handleEditLeadFieldChange("postalCode", e.target.value)} />
+                      </div>
+                      <div className="form-group">
+                        <label>Country</label>
+                        <input type="text" value={editLeadForm.country} onChange={(e) => handleEditLeadFieldChange("country", e.target.value)} />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
               { (isAdmin || isManager) && (
                 <div className="assign-section">
                   <h3>Assign To</h3>
