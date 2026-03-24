@@ -32,7 +32,7 @@ contactSchema.pre("validate", function normalizeContactEmail() {
   this.email = email || undefined;
 });
 
-// Allow unique emails while permitting contacts that have no email.
-contactSchema.index({ email: 1 }, { unique: true, sparse: true });
+// Legacy contact sync should not block deal creation when emails repeat across deals.
+contactSchema.index({ email: 1 }, { sparse: true });
 
 module.exports = mongoose.model("Contact", contactSchema);

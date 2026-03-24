@@ -48,6 +48,7 @@ router.get("/", verifyToken, async (req, res) => {
 
     const customers = await Customer.find()
       .populate("leadId", "name email phone status source")
+      .populate("product", "name sku category price")
       .sort({ createdAt: -1 });
 
     const customerIds = customers.map((customer) => customer._id);
@@ -61,8 +62,9 @@ router.get("/", verifyToken, async (req, res) => {
         { sourceLeadId: { $in: leadIds } },
       ],
     })
+      .populate("product", "name sku category price")
       .sort({ updatedAt: -1, createdAt: -1 })
-      .select("customerId sourceLeadId stage status reason updatedAt createdAt");
+      .select("customerId sourceLeadId stage status reason product updatedAt createdAt");
 
     const customerIdToCustomerKey = new Map(
       customers.map((customer) => [String(customer._id), String(customer._id)])
@@ -101,6 +103,7 @@ router.get("/", verifyToken, async (req, res) => {
 
       return {
         ...customer.toObject(),
+        product: customer.product || latestDeal?.product || null,
         status: derivedStatus,
         reason: derivedReason,
       };

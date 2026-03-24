@@ -10,6 +10,12 @@ const getLeadSource = (leadValue) => {
   return String(leadValue.source || "").trim() || "-";
 };
 
+const getProductLabel = (productValue) => {
+  if (!productValue) return "-";
+  if (typeof productValue === "string") return productValue;
+  return String(productValue.name || productValue.sku || "").trim() || "-";
+};
+
 export default function Customers() {
   const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -59,6 +65,7 @@ export default function Customers() {
         customer.company,
         customer.email,
         customer.phone,
+        getProductLabel(customer.product),
         source,
         customer.reason,
       ]
@@ -131,6 +138,7 @@ export default function Customers() {
                     <th>Company</th>
                     <th>Email</th>
                     <th>Phone</th>
+                    <th>Product</th>
                     <th>Source</th>
                     <th>Status</th>
                     <th>Reason</th>
@@ -148,6 +156,7 @@ export default function Customers() {
                       <td data-label="Company">{customer.company || "-"}</td>
                       <td data-label="Email">{customer.email || "-"}</td>
                       <td data-label="Phone">{customer.phone || "-"}</td>
+                      <td data-label="Product">{getProductLabel(customer.product)}</td>
                       <td data-label="Source">
                         {getLeadSource(customer.leadId)}
                       </td>
@@ -189,6 +198,10 @@ export default function Customers() {
                   <div className="detail-row">
                     <span className="detail-label">Phone</span>
                     <span className="detail-value">{selectedCustomer.phone || "-"}</span>
+                  </div>
+                  <div className="detail-row">
+                    <span className="detail-label">Product</span>
+                    <span className="detail-value">{getProductLabel(selectedCustomer.product)}</span>
                   </div>
                   <div className="detail-row">
                     <span className="detail-label">Source</span>

@@ -6,10 +6,16 @@ const customerSchema = new mongoose.Schema(
     email: { type: String, trim: true },
     phone: { type: String, trim: true },
     company: { type: String, trim: true },
+    product: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Product",
+      default: null,
+      index: true,
+    },
     leadId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Lead",
-      required: true,
+      default: null,
       index: true,
     },
     status: {

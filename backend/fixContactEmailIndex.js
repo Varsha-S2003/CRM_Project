@@ -11,11 +11,10 @@ async function fixContactEmailIndex() {
     console.log("Dropping existing contacts email index if present...");
     await collection.dropIndex("email_1").catch(() => {});
 
-    console.log("Creating sparse unique email index...");
+    console.log("Creating sparse non-unique email index...");
     await collection.createIndex(
       { email: 1 },
       {
-        unique: true,
         sparse: true,
         background: true,
       }

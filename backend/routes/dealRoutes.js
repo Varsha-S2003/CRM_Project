@@ -5,6 +5,7 @@ const { permitDealAccess, getUserDealsFilter, getTeamMembers } = require("../mid
 const Deal = require("../models/deal");
 const Customer = require("../models/customer");
 const Contact = require("../models/contact");
+const Product = require("../models/product");
 const Notification = require("../models/notification");
 const User = require("../models/user");
 const DealView = require("../models/dealView");
@@ -131,7 +132,32 @@ const normalizeDealBusinessFields = (payload) => {
     normalized.closingDate = normalizeOptionalDate(normalized.closingDate);
   }
 
-  ["nextStep", "dealType", "leadSource", "campaignSource", "description"].forEach((field) => {
+  if (Object.prototype.hasOwnProperty.call(normalized, "product")) {
+    normalized.product = normalized.product || null;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(normalized, "employeeCount")) {
+    const employeeCount = parseOptionalNumber(normalized.employeeCount);
+    normalized.employeeCount = Number.isNaN(employeeCount) ? null : employeeCount;
+  }
+
+  if (normalized.address || ["street", "city", "state", "postalCode", "country"].some((field) => Object.prototype.hasOwnProperty.call(normalized, field))) {
+    const sourceAddress = normalized.address || {};
+    normalized.address = {
+      street: String(sourceAddress.street ?? normalized.street ?? "").trim(),
+      city: String(sourceAddress.city ?? normalized.city ?? "").trim(),
+      state: String(sourceAddress.state ?? normalized.state ?? "").trim(),
+      postalCode: String(sourceAddress.postalCode ?? normalized.postalCode ?? "").trim(),
+      country: String(sourceAddress.country ?? normalized.country ?? "").trim(),
+    };
+    delete normalized.street;
+    delete normalized.city;
+    delete normalized.state;
+    delete normalized.postalCode;
+    delete normalized.country;
+  }
+
+  ["salutation", "firstName", "lastName", "title", "secondaryEmail", "mobile", "website", "industry", "nextStep", "dealType", "leadSource", "campaignSource", "description"].forEach((field) => {
     if (Object.prototype.hasOwnProperty.call(normalized, field)) {
       normalized[field] = String(normalized[field] || "").trim();
     }
@@ -153,14 +179,37 @@ const applyForecastFields = (dealPayload) => {
 
 const validateCreateDealInput = (payload) => {
   const name = String(payload.name || "").trim();
+  const salutation = String(payload.salutation || "").trim();
+  const firstName = String(payload.firstName || "").trim();
+  const lastName = String(payload.lastName || "").trim();
+  const title = String(payload.title || "").trim();
   const company = String(payload.company || "").trim();
   const contact = String(payload.contact || "").trim();
   const email = String(payload.email || "").trim();
+  const product = String(payload.product || "").trim();
+  const dealType = String(payload.dealType || "").trim();
+  const dealSource = String(payload.leadSource || "").trim();
   const amount = Number(payload.amount);
   const closingDate = payload.closingDate ? new Date(payload.closingDate) : null;
 
   if (!name) {
     return "Deal Name is required";
+  }
+
+  if (!salutation) {
+    return "Salutation is required";
+  }
+
+  if (!firstName) {
+    return "First Name is required";
+  }
+
+  if (!lastName) {
+    return "Last Name is required";
+  }
+
+  if (!title) {
+    return "Title is required";
   }
 
   if (!Number.isFinite(amount) || amount <= 0) {
@@ -177,6 +226,18 @@ const validateCreateDealInput = (payload) => {
 
   if (!email) {
     return "Email is required";
+  }
+
+  if (!product) {
+    return "Product is required";
+  }
+
+  if (!dealType) {
+    return "Deal Type is required";
+  }
+
+  if (!dealSource) {
+    return "Deal Source is required";
   }
 
   if (!closingDate || Number.isNaN(closingDate.getTime())) {
@@ -198,12 +259,13 @@ const syncCustomerStatusFromLatestDeal = async (customerId) => {
 
   const latestDeal = await Deal.findOne({ customerId })
     .sort({ updatedAt: -1, createdAt: -1 })
-    .select("stage status reason");
+    .select("stage status reason product");
 
   if (!latestDeal) {
     await Customer.findByIdAndUpdate(customerId, {
       status: "Active",
       reason: "",
+      product: null,
     });
     return;
   }
@@ -212,6 +274,7 @@ const syncCustomerStatusFromLatestDeal = async (customerId) => {
   await Customer.findByIdAndUpdate(customerId, {
     status,
     reason: status === "Inactive" ? String(latestDeal.reason || "").trim() : "",
+    product: latestDeal.product || null,
   });
 };
 
@@ -241,7 +304,74 @@ const syncDealContact = async (deal) => {
     return;
   }
 
-  await Contact.create(contactPayload);
+  try {
+    await Contact.create(contactPayload);
+  } catch (error) {
+    // Contact email is uniquely indexed in the legacy contacts collection.
+    // Deal creation should not fail just because another contact already uses the same email.
+    if (error?.code === 11000) {
+      const fallbackPayload = { ...contactPayload };
+      delete fallbackPayload.email;
+      await Contact.create(fallbackPayload);
+      return;
+    }
+    throw error;
+  }
+};
+
+const syncCustomerFromDeal = async (deal) => {
+  const normalizedEmail = String(deal.email || "").trim().toLowerCase();
+  const customerName = String(deal.name || "").trim();
+  const companyName = String(deal.company || "").trim();
+  const primaryPhone = String(deal.contact || "").trim();
+  const fallbackPhone = String(deal.phone || "").trim();
+
+  let customer = deal.customerId ? await Customer.findById(deal.customerId) : null;
+
+  if (!customer) {
+    customer = await Customer.create({
+      name: customerName || deal.name || "Customer",
+      email: normalizedEmail || undefined,
+      phone: primaryPhone || fallbackPhone,
+      company: companyName,
+      product: deal.product || null,
+      status: deal.status || "Active",
+      reason: deal.status === "Inactive" ? String(deal.reason || "").trim() : "",
+      leadId: deal.sourceLeadId || null,
+    });
+  } else {
+    customer.name = customerName || customer.name;
+    customer.email = normalizedEmail || customer.email;
+    customer.phone = primaryPhone || fallbackPhone || customer.phone || "";
+    customer.company = companyName || customer.company;
+    customer.product = deal.product || customer.product || null;
+    customer.status = deal.status || customer.status || "Active";
+    customer.reason = customer.status === "Inactive" ? String(deal.reason || customer.reason || "").trim() : "";
+    if (!customer.leadId && deal.sourceLeadId) {
+      customer.leadId = deal.sourceLeadId;
+    }
+    await customer.save();
+  }
+
+  if (!deal.customerId || String(deal.customerId) !== String(customer._id)) {
+    deal.customerId = customer._id;
+    await deal.save();
+  }
+
+  return customer;
+};
+
+const resolveProduct = async (productId) => {
+  if (!productId) {
+    return null;
+  }
+
+  const product = await Product.findById(productId).select("_id");
+  if (!product) {
+    throw new Error("Selected product not found");
+  }
+
+  return product._id;
 };
 
 const buildAdvancedDealFilter = (filters, user) => {
@@ -342,6 +472,7 @@ router.post("/filter", verifyToken, async (req, res) => {
 
     const deals = await Deal.find(finalFilter)
       .populate("assignedTo", "name username role employee_id")
+      .populate("product", "name sku category price")
       .sort(sort)
       .limit(limit)
       .skip(skip);
@@ -447,6 +578,7 @@ router.get("/", verifyToken, permitDealAccess(), async (req, res) => {
     
     const deals = await Deal.find(filter)
       .populate('assignedTo', 'name username role employee_id')
+      .populate("product", "name sku category price")
       .sort({ createdAt: -1 });
     res.json(deals);
   } catch (err) {
@@ -476,6 +608,17 @@ router.post("/", verifyToken, async (req, res) => {
       leadSource,
       campaignSource,
       description,
+      product,
+      salutation,
+      firstName,
+      lastName,
+      title,
+      secondaryEmail,
+      mobile,
+      website,
+      industry,
+      employeeCount,
+      address,
     } = req.body;
     const validationError = validateCreateDealInput({
       name,
@@ -486,6 +629,7 @@ router.post("/", verifyToken, async (req, res) => {
       amount: amount ?? value,
       closingDate,
       probability,
+      product,
     });
     if (validationError) {
       return res.status(400).json({ message: validationError });
@@ -507,6 +651,8 @@ router.post("/", verifyToken, async (req, res) => {
       return res.status(400).json({ message: derived.error });
     }
 
+    const resolvedProduct = await resolveProduct(product);
+
     deal = await Deal.create(applyForecastFields(normalizeDealBusinessFields({
       sourceLeadId: sourceLeadId || null,
       name,
@@ -515,14 +661,25 @@ router.post("/", verifyToken, async (req, res) => {
       contact,
       email,
       phone,
+      secondaryEmail,
+      mobile,
       closingDate,
       probability,
       expectedRevenue,
+      salutation,
+      firstName,
+      lastName,
+      title,
+      website,
+      industry,
+      employeeCount,
+      address,
       nextStep,
       dealType,
       leadSource,
       campaignSource,
       description,
+      product: resolvedProduct,
       stage: finalStage,
       status: derived.status,
       reason: derived.reason,
@@ -530,9 +687,14 @@ router.post("/", verifyToken, async (req, res) => {
     })));
 
     await syncDealContact(deal);
+    await syncCustomerFromDeal(deal);
     await syncCustomerStatusFromLatestDeal(deal.customerId);
 
-    res.status(201).json(deal);
+    const populatedDeal = await Deal.findById(deal._id)
+      .populate("assignedTo", "name username role employee_id")
+      .populate("product", "name sku category price");
+
+    res.status(201).json(populatedDeal);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -637,6 +799,9 @@ const updateDealHandler = async (req, res) => {
 
     const updates = normalizeDealBusinessFields({ ...req.body });
     delete updates.status;
+    if (Object.prototype.hasOwnProperty.call(req.body, "product")) {
+      updates.product = await resolveProduct(req.body.product);
+    }
 
     const amountForForecast = Object.prototype.hasOwnProperty.call(updates, "amount")
       ? Number(updates.amount) || 0
@@ -667,7 +832,9 @@ const updateDealHandler = async (req, res) => {
     let updatedDeal = await Deal.findByIdAndUpdate(req.params.id, updates, {
       new: true,
       runValidators: true,
-    });
+    })
+      .populate("assignedTo", "name username role employee_id")
+      .populate("product", "name sku category price");
 
     if (!updatedDeal) {
       return res.status(404).json({ message: "Deal not found" });
@@ -734,6 +901,7 @@ const updateDealHandler = async (req, res) => {
     }
 
     await syncDealContact(updatedDeal);
+    await syncCustomerFromDeal(updatedDeal);
     await syncCustomerStatusFromLatestDeal(updatedDeal.customerId);
     res.json(updatedDeal);
   } catch (err) {
