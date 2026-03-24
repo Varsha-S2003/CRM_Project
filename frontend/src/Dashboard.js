@@ -34,11 +34,19 @@ function Dashboard() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [showNotifications, setShowNotifications] = useState(false);
   const [notificationsLoading, setNotificationsLoading] = useState(false);
+  const [assignmentSnapshot, setAssignmentSnapshot] = useState(null);
+  const [assignmentLoading, setAssignmentLoading] = useState(false);
+  const [assignableEmployees, setAssignableEmployees] = useState([]);
+  const [assignSelectionByLead, setAssignSelectionByLead] = useState({});
+  const [assigningLeadIds, setAssigningLeadIds] = useState({});
+  const [showAssignedByMePanel, setShowAssignedByMePanel] = useState(false);
   const notificationRef = useRef(null);
+  const assignedByMeRef = useRef(null);
 
   // Make role check case-insensitive
   const userRole = role ? role.toUpperCase() : "";
   const isAdmin = userRole === "ADMIN";
+  const isManager = userRole === "MANAGER";
 
   useEffect(() => {
     if (isAdmin) {
@@ -74,10 +82,107 @@ function Dashboard() {
     return () => clearInterval(interval);
   }, [fetchNotifications]);
 
+  const fetchAssignmentDashboard = useCallback(async () => {
+    if (isAdmin) {
+      setAssignmentSnapshot(null);
+      return;
+    }
+
+    try {
+      const token = localStorage.getItem("token");
+      setAssignmentLoading(true);
+      const res = await axios.get("http://localhost:5000/api/leads/assignment-dashboard", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setAssignmentSnapshot(res.data || null);
+    } catch (err) {
+      console.error("Assignment dashboard fetch error:", err);
+      setAssignmentSnapshot(null);
+    } finally {
+      setAssignmentLoading(false);
+    }
+  }, [isAdmin]);
+
+  useEffect(() => {
+    fetchAssignmentDashboard();
+  }, [fetchAssignmentDashboard]);
+
+  useEffect(() => {
+    if (!isManager) {
+      setAssignableEmployees([]);
+      return;
+    }
+
+    const fetchAssignableEmployees = async () => {
+      try {
+        const token = localStorage.getItem("token");
+        const res = await axios.get("http://localhost:5000/api/employees/assignable", {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        setAssignableEmployees(Array.isArray(res.data) ? res.data : []);
+      } catch (err) {
+        console.error("Manager assignable employees fetch error:", err);
+        setAssignableEmployees([]);
+      }
+    };
+
+    fetchAssignableEmployees();
+  }, [isManager]);
+
+  const handleManagerAssignLead = useCallback(async (leadId) => {
+    const selectedEmployeeId = assignSelectionByLead[leadId];
+    if (!selectedEmployeeId) {
+      window.alert("Select an employee first.");
+      return;
+    }
+
+    try {
+      const token = localStorage.getItem("token");
+      setAssigningLeadIds((prev) => ({ ...prev, [leadId]: true }));
+
+      await axios.post(
+        "http://localhost:5000/api/leads/assign",
+        { leadId, userId: selectedEmployeeId },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      setAssignSelectionByLead((prev) => ({ ...prev, [leadId]: "" }));
+      await fetchAssignmentDashboard();
+    } catch (err) {
+      console.error("Manager lead assignment error:", err);
+      window.alert(err.response?.data?.message || "Failed to assign lead to employee.");
+    } finally {
+      setAssigningLeadIds((prev) => ({ ...prev, [leadId]: false }));
+    }
+  }, [assignSelectionByLead, fetchAssignmentDashboard]);
+
+  const handleManagerUnassignLead = useCallback(async (leadId) => {
+    try {
+      const token = localStorage.getItem("token");
+      setAssigningLeadIds((prev) => ({ ...prev, [leadId]: true }));
+
+      await axios.post(
+        "http://localhost:5000/api/leads/assign",
+        { leadId, userId: "" },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      await fetchAssignmentDashboard();
+    } catch (err) {
+      console.error("Manager lead unassign error:", err);
+      window.alert(err.response?.data?.message || "Failed to remove assignment.");
+    } finally {
+      setAssigningLeadIds((prev) => ({ ...prev, [leadId]: false }));
+    }
+  }, [fetchAssignmentDashboard]);
+
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (notificationRef.current && !notificationRef.current.contains(event.target)) {
         setShowNotifications(false);
+      }
+      if (assignedByMeRef.current && !assignedByMeRef.current.contains(event.target)) {
+        setShowAssignedByMePanel(false);
       }
     };
 
@@ -131,6 +236,76 @@ function Dashboard() {
     boxShadow: "0 16px 40px rgba(42, 27, 77, 0.12)",
   };
 
+  const assignmentItems = assignmentSnapshot?.items || [];
+  const managerIncomingItems = isManager
+    ? assignmentItems.filter((item) => item.canAssign)
+    : [];
+  const managerAssignedByMeItems = isManager
+    ? assignmentItems.filter((item) => item.canUnassign)
+    : [];
+
+  const renderAssignmentItem = (item) => (
+    <div key={item._id} className="assignment-lead-item">
+      <div>
+        <div className="assignment-lead-name">{item.name || "Unnamed Lead"}</div>
+        <div className="assignment-lead-meta">
+          {item.company || "No Company"} | Status: {String(item.status || "").toUpperCase()}
+        </div>
+        <div className="assignment-lead-meta">
+          Assigned by: {item.assignedBy?.name || item.assignedBy?.username || "System"}
+        </div>
+        <div className="assignment-lead-meta">
+          Assigned to: {item.assignedTo?.name || item.assignedTo?.username || "Unassigned"}
+        </div>
+      </div>
+      {isManager && item.canAssign ? (
+        <div className="assignment-manager-action">
+          <select
+            value={assignSelectionByLead[item._id] || ""}
+            onChange={(event) => {
+              const value = event.target.value;
+              setAssignSelectionByLead((prev) => ({ ...prev, [item._id]: value }));
+            }}
+            className="assignment-employee-select"
+          >
+            <option value="">Select employee</option>
+            {assignableEmployees.map((employee) => (
+              <option key={employee._id} value={employee._id}>
+                {(employee.name || employee.username || employee.email || "Employee")} ({String(employee.role || "").toUpperCase()})
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            className="assignment-submit-btn"
+            onClick={() => handleManagerAssignLead(item._id)}
+            disabled={!assignSelectionByLead[item._id] || assigningLeadIds[item._id]}
+          >
+            {assigningLeadIds[item._id] ? "Assigning..." : "Assign"}
+          </button>
+        </div>
+      ) : isManager && item.canUnassign ? (
+        <div className="assignment-manager-action assignment-manager-action-readonly">
+          <div className={`assignment-next-action ${item.nextAction?.type || "tracking"}`}>
+            {item.nextAction?.label || "Assigned"}
+          </div>
+          <button
+            type="button"
+            className="assignment-delete-btn"
+            onClick={() => handleManagerUnassignLead(item._id)}
+            disabled={assigningLeadIds[item._id]}
+          >
+            {assigningLeadIds[item._id] ? "Removing..." : "Delete Assignment"}
+          </button>
+        </div>
+      ) : (
+        <div className={`assignment-next-action ${item.nextAction?.type || "none"}`}>
+          {item.nextAction?.label || "No Immediate Action"}
+        </div>
+      )}
+    </div>
+  );
+
   // state to track bar hover
   const [activeBarIndex, setActiveBarIndex] = useState(null);
 
@@ -145,7 +320,7 @@ function Dashboard() {
           <div className="dashboard-header">
             <div>
               <h2 className="dashboard-title">
-                {isAdmin ? "Admin Dashboard" : "Employee Dashboard"}
+                {isAdmin ? "Admin Dashboard" : isManager ? "Manager Dashboard" : "Employee Dashboard"}
               </h2>
               <p className="dashboard-subtitle">
                 Welcome back, {username} 
@@ -153,6 +328,35 @@ function Dashboard() {
               </p>
             </div>
             <div className="dashboard-header-actions">
+              {isManager && (
+                <div className="dashboard-assigned-wrap" ref={assignedByMeRef}>
+                  <button
+                    type="button"
+                    className="dashboard-assigned-btn"
+                    onClick={() => setShowAssignedByMePanel((prev) => !prev)}
+                    title="Assigned by me"
+                  >
+                    Assigned By Me
+                    <span className="dashboard-assigned-count">{managerAssignedByMeItems.length}</span>
+                  </button>
+                  {showAssignedByMePanel && (
+                    <div className="dashboard-assigned-panel">
+                      <div className="dashboard-assigned-panel-header">
+                        <h4>Assigned By Me</h4>
+                      </div>
+                      {assignmentLoading ? (
+                        <div className="assignment-empty">Loading your assignments...</div>
+                      ) : !managerAssignedByMeItems.length ? (
+                        <div className="assignment-empty">You have not assigned any lead to employees yet.</div>
+                      ) : (
+                        <div className="assignment-lead-list">
+                          {managerAssignedByMeItems.slice(0, 12).map((item) => renderAssignmentItem(item))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
               <div className="dashboard-notification-bell" ref={notificationRef}>
                 <button
                   type="button"
@@ -244,6 +448,73 @@ function Dashboard() {
               </div>
             </div>
           </div>
+
+          {!isAdmin && (
+            <div className="assignment-dashboard-block">
+              <div className="assignment-dashboard-header">
+                <h3>{isManager ? "Leads Assigned By Admin" : "Leads Assigned To You"}</h3>
+                <p>
+                  {isManager
+                    ? "Track leads assigned to you and distribute them to employees."
+                    : "See your assigned leads and the suggested next action."}
+                </p>
+              </div>
+
+              <div className="assignment-summary-grid">
+                <div className="assignment-summary-card">
+                  <span>Total Assigned</span>
+                  <strong>{assignmentSnapshot?.summary?.totalAssignedLeads || 0}</strong>
+                </div>
+                <div className="assignment-summary-card">
+                  <span>{isManager ? "Assign Actions" : "Call Actions"}</span>
+                  <strong>
+                    {isManager
+                      ? assignmentSnapshot?.summary?.assignActions || 0
+                      : assignmentSnapshot?.summary?.callActions || 0}
+                  </strong>
+                </div>
+                <div className="assignment-summary-card">
+                  <span>{isManager ? "Employee Follow-ups" : "Meeting Actions"}</span>
+                  <strong>
+                    {isManager
+                      ? (assignmentSnapshot?.summary?.callActions || 0) + (assignmentSnapshot?.summary?.meetingActions || 0)
+                      : assignmentSnapshot?.summary?.meetingActions || 0}
+                  </strong>
+                </div>
+                <div className="assignment-summary-card">
+                  <span>{isManager ? "No Immediate Action" : "No Immediate Action"}</span>
+                  <strong>{assignmentSnapshot?.summary?.noImmediateAction || 0}</strong>
+                </div>
+              </div>
+
+              {isManager ? (
+                <div className="assignment-list-card">
+                  <div className="assignment-list-title">New From Admin</div>
+                  {assignmentLoading ? (
+                    <div className="assignment-empty">Loading assigned leads...</div>
+                  ) : !managerIncomingItems.length ? (
+                    <div className="assignment-empty">No new leads assigned by admin.</div>
+                  ) : (
+                    <div className="assignment-lead-list">
+                      {managerIncomingItems.slice(0, 8).map((item) => renderAssignmentItem(item))}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="assignment-list-card">
+                  {assignmentLoading ? (
+                    <div className="assignment-empty">Loading assigned leads...</div>
+                  ) : !assignmentItems.length ? (
+                    <div className="assignment-empty">No assigned leads found.</div>
+                  ) : (
+                    <div className="assignment-lead-list">
+                      {assignmentItems.slice(0, 8).map((item) => renderAssignmentItem(item))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Always show charts with default or live data */}
           {/* Top Stat Cards */}

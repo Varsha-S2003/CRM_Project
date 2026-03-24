@@ -2,9 +2,35 @@ const mongoose = require("mongoose");
 
 const activitySchema = new mongoose.Schema(
   {
+    leadId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Lead",
+      index: true,
+    },
+    type: {
+      type: String,
+      enum: ["call", "email", "meeting", "task"],
+      lowercase: true,
+      trim: true,
+    },
+    notes: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    nextFollowUpDate: {
+      type: Date,
+      default: null,
+    },
+    createdBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+      index: true,
+    },
     activityType: {
       type: String,
-      enum: ["task", "meeting", "call"],
+      enum: ["task", "meeting", "call", "email"],
       required: true,
       index: true,
     },

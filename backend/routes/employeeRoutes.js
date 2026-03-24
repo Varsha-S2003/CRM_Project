@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const { verifyToken } = require("../middleware/authMiddleware");
 const isAdmin = require("../middleware/isAdmin");
+const { permit } = require("../middleware/authorize");
 const bcrypt = require("bcryptjs");
 const User = require("../models/user");
 
@@ -98,6 +99,36 @@ router.get("/", verifyToken, isAdmin, async (req, res) => {
       .select("-password")
       .sort({ createdAt: -1 });
     res.json(employees);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// GET /api/employees/assignable -- users a role can assign leads to
+router.get("/assignable", verifyToken, permit("ADMIN", "MANAGER"), async (req, res) => {
+  try {
+    const requesterRole = String(req.user.role || "").toUpperCase();
+    const roleFilter = requesterRole === "ADMIN"
+      ? { role: { $regex: "^MANAGER$", $options: "i" } }
+      : { role: { $regex: "^EMPLOYEE$", $options: "i" } };
+
+    const users = await User.find(roleFilter)
+      .select("name username email role employee_id reportsTo")
+      .sort({ createdAt: -1 });
+
+    const cleanedUsers = users
+      .filter((user) => Boolean(user._id) && Boolean(user.username || user.name || user.email))
+      .map((user) => ({
+        _id: user._id,
+        name: user.name || "",
+        username: user.username || "",
+        email: user.email || "",
+        role: String(user.role || "").toUpperCase(),
+        employee_id: user.employee_id || "",
+        reportsTo: user.reportsTo || null,
+      }));
+
+    res.json(cleanedUsers);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

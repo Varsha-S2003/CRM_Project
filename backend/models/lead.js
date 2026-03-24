@@ -29,6 +29,7 @@ const leadSchema = new mongoose.Schema(
     emailOpened: { type: Number, default: 0 },
     websiteVisits: { type: Number, default: 0 },
     formSubmissions: { type: Number, default: 0 },
+    lastActivityAt: { type: Date, default: null },
     lastActivityDate: { type: Date, default: null },
     rating: {
       type: String,
@@ -53,6 +54,20 @@ const leadSchema = new mongoose.Schema(
     },
     notes: { type: String, trim: true },
     assignedTo: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+    assignedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+    assignedByRole: {
+      type: String,
+      enum: ["ADMIN", "MANAGER", "EMPLOYEE"],
+      default: null,
+    },
+    assignedAt: {
+      type: Date,
+      default: null,
+    },
     isConverted: { type: Boolean, default: false },
     convertedCustomerId: {
       type: mongoose.Schema.Types.ObjectId,
@@ -69,6 +84,63 @@ const leadSchema = new mongoose.Schema(
       ref: "Deal",
       default: null 
     },
+    transitionHistory: [
+      {
+        fromStatus: {
+          type: String,
+          enum: ["new", "contacted", "qualified", "proposal", "converted", "lost"],
+        },
+        toStatus: {
+          type: String,
+          enum: ["new", "contacted", "qualified", "proposal", "converted", "lost"],
+        },
+        performedBy: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "User",
+          default: null,
+        },
+        performedAt: {
+          type: Date,
+          default: Date.now,
+        },
+        reason: { type: String, trim: true },
+        approvalRequired: { type: Boolean, default: false },
+        approvalState: {
+          type: String,
+          enum: ["none", "requested", "approved", "rejected"],
+          default: "none",
+        },
+      },
+    ],
+    pendingTransitionApproval: {
+      fromStatus: {
+        type: String,
+        enum: ["new", "contacted", "qualified", "proposal", "converted", "lost"],
+      },
+      toStatus: {
+        type: String,
+        enum: ["new", "contacted", "qualified", "proposal", "converted", "lost"],
+      },
+      requestedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+        default: null,
+      },
+      requestedAt: { type: Date, default: null },
+      reason: { type: String, trim: true },
+      requiredRole: {
+        type: String,
+        enum: ["MANAGER", "ADMIN"],
+        default: "MANAGER",
+      },
+    },
+    stageTimestamps: {
+      contactedAt: { type: Date, default: null },
+      qualifiedAt: { type: Date, default: null },
+      proposalAt: { type: Date, default: null },
+      convertedAt: { type: Date, default: null },
+      lostAt: { type: Date, default: null },
+    },
   },
 
   { timestamps: true }
@@ -77,6 +149,7 @@ const leadSchema = new mongoose.Schema(
 leadSchema.index({ name: 1, status: 1 });
 leadSchema.index({ email: 1 }, { sparse: true });
 leadSchema.index({ 'customFields': 1 }, { sparse: true });
+leadSchema.index({ assignedTo: 1, assignedByRole: 1, status: 1 });
 
 module.exports = mongoose.model("Lead", leadSchema);
 
