@@ -14,6 +14,32 @@ const TYPE_TO_STATUS = {
   task: ["Pending", "Completed"],
   meeting: ["Scheduled", "Completed", "Cancelled"],
   call: ["Scheduled", "Completed"],
+  email: ["Pending", "Completed"],
+};
+
+const SIMPLE_TYPE_MAP = {
+  call: "call",
+  email: "email",
+  meeting: "meeting",
+  task: "task",
+};
+
+const toLegacyStatus = (value, fallback = "Completed") => {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (normalized === "pending") return "Pending";
+  if (normalized === "completed") return "Completed";
+  if (normalized === "scheduled") return "Scheduled";
+  if (normalized === "cancelled") return "Cancelled";
+  return fallback;
+};
+
+const toSimpleStatus = (value) => {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (normalized === "pending") return "pending";
+  if (normalized === "scheduled") return "pending";
+  if (normalized === "completed") return "completed";
+  if (normalized === "cancelled") return "completed";
+  return "completed";
 };
 
 const getStartOfDay = (value = new Date()) => {
@@ -134,13 +160,14 @@ const getRecordName = (record) => {
 };
 
 const normalizeActivityPayload = async (payload, userId) => {
-  const activityType = String(payload.activityType || "").toLowerCase();
-  if (!["task", "meeting", "call"].includes(activityType)) {
+  const requestedType = String(payload.activityType || payload.type || "").toLowerCase();
+  const activityType = SIMPLE_TYPE_MAP[requestedType] || requestedType;
+  if (!["task", "meeting", "call", "email"].includes(activityType)) {
     throw new Error("Invalid activity type");
   }
 
-  const relatedType = payload.relatedTo?.recordType || payload.relatedType;
-  const relatedId = payload.relatedTo?.recordId || payload.relatedId;
+  const relatedType = payload.relatedTo?.recordType || payload.relatedType || (payload.leadId ? "Lead" : undefined);
+  const relatedId = payload.relatedTo?.recordId || payload.relatedId || payload.leadId;
   const relatedRecord = await ensureRelatedRecord(relatedType, relatedId);
 
   const ownerId = payload.owner || payload.taskOwner || payload.meetingOwner || payload.callOwner || userId;
@@ -149,20 +176,31 @@ const normalizeActivityPayload = async (payload, userId) => {
     throw new Error("Owner not found");
   }
 
-  const statusFallback = activityType === "task" ? "Pending" : "Scheduled";
-  const status = payload.status || payload.callStatus || statusFallback;
+  const statusFallback = payload.status
+    ? toLegacyStatus(payload.status, activityType === "task" || activityType === "email" ? "Completed" : "Scheduled")
+    : activityType === "task" || activityType === "email"
+      ? "Completed"
+      : "Scheduled";
+  const status = payload.status
+    ? toLegacyStatus(payload.status, statusFallback)
+    : payload.callStatus || statusFallback;
   if (!TYPE_TO_STATUS[activityType].includes(status)) {
     throw new Error("Invalid activity status");
   }
 
   const base = {
+    leadId: relatedType === "Lead" ? relatedRecord._id : undefined,
+    type: activityType,
+    notes: payload.notes || payload.description || payload.callNotes || "",
+    nextFollowUpDate: payload.nextFollowUpDate || payload.followUpDate || null,
+    createdBy: payload.createdBy || userId,
     activityType,
     title:
       payload.title ||
       payload.taskTitle ||
       payload.meetingTitle ||
       payload.callSubject,
-    description: payload.description || payload.callNotes || "",
+    description: payload.description || payload.notes || payload.callNotes || "",
     owner: owner._id,
     status,
     priority: payload.priority || "Medium",
@@ -223,6 +261,18 @@ const normalizeActivityPayload = async (payload, userId) => {
   }
 
   return base;
+};
+
+const updateLeadLastActivityAt = async (activity) => {
+  if (!activity) return;
+
+  const leadId = activity.leadId || (activity.relatedTo?.recordType === "Lead" ? activity.relatedTo.recordId : null);
+  if (!leadId) return;
+
+  await Lead.findByIdAndUpdate(leadId, {
+    lastActivityAt: new Date(),
+    lastActivityDate: new Date(),
+  });
 };
 
 const buildFilters = (query) => {
@@ -466,10 +516,37 @@ router.post("/", verifyToken, async (req, res) => {
   try {
     const payload = await normalizeActivityPayload(req.body, req.user._id);
     const activity = await Activity.create(payload);
+    await updateLeadLastActivityAt(activity);
     const saved = await populateActivity(Activity.findById(activity._id));
     res.status(201).json(saved);
   } catch (err) {
     res.status(400).json({ message: err.message });
+  }
+});
+
+// GET /api/activities/:leadId - return activities for a lead sorted by latest
+router.get("/:leadId", verifyToken, async (req, res) => {
+  try {
+    const { leadId } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(leadId)) {
+      return res.status(400).json({ message: "Invalid lead id" });
+    }
+
+    const activities = await populateActivity(
+      Activity.find({
+        $or: [
+          { leadId },
+          {
+            "relatedTo.recordType": "Lead",
+            "relatedTo.recordId": leadId,
+          },
+        ],
+      }).sort({ createdAt: -1 })
+    );
+
+    return res.json(activities);
+  } catch (err) {
+    return res.status(500).json({ message: err.message });
   }
 });
 
@@ -478,6 +555,36 @@ router.put("/:id", verifyToken, async (req, res) => {
     const existing = await Activity.findById(req.params.id);
     if (!existing) {
       return res.status(404).json({ message: "Activity not found" });
+    }
+
+    const onlyStatusUpdate =
+      Object.keys(req.body || {}).length > 0 &&
+      Object.keys(req.body || {}).every((key) => ["status", "notes", "nextFollowUpDate"].includes(key));
+
+    if (onlyStatusUpdate) {
+      if (req.body.status !== undefined) {
+        existing.status = toLegacyStatus(req.body.status, existing.status || "Completed");
+      }
+      if (req.body.notes !== undefined) {
+        existing.notes = String(req.body.notes || "").trim();
+        existing.description = existing.notes;
+      }
+      if (req.body.nextFollowUpDate !== undefined) {
+        existing.nextFollowUpDate = req.body.nextFollowUpDate ? new Date(req.body.nextFollowUpDate) : null;
+      }
+
+      existing.type = existing.activityType;
+      existing.createdBy = existing.createdBy || req.user._id;
+
+      if (toSimpleStatus(existing.status) === "completed") {
+        existing.completedAt = existing.completedAt || new Date();
+      } else {
+        existing.completedAt = null;
+      }
+
+      await existing.save();
+      const savedSimple = await populateActivity(Activity.findById(existing._id));
+      return res.json(savedSimple);
     }
 
     const payload = await normalizeActivityPayload({ ...existing.toObject(), ...req.body }, req.user._id);

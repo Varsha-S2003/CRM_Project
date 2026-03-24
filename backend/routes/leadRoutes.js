@@ -8,6 +8,7 @@ const Contact = require("../models/contact");
 const Customer = require("../models/customer");
 const Deal = require("../models/deal");
 const Activity = require("../models/activity");
+const User = require("../models/user");
 const { applyLeadScoring } = require("../utils/leadScoring");
 
 const normalizeText = (value) => String(value || "").trim();
@@ -285,14 +286,184 @@ const buildMergedLeadPayload = (primaryLead, secondaryLeads, overrides = {}) => 
   return mergedPayload;
 };
 
-// Lead stage movement validation
-const allowedTransitions = {
-  new: ["contacted"],
-  contacted: ["qualified", "new", "lost"],
-  qualified: ["proposal", "contacted", "lost"],
-  proposal: ["converted", "qualified", "lost"],
-  converted: [],
-  lost: []
+// Lead stage movement blueprint rules
+const STATUS_VALUES = ["new", "contacted", "qualified", "proposal", "converted", "lost"];
+
+const TRANSITION_RULES = {
+  new: {
+    contacted: {
+      allowedRoles: ["ADMIN", "MANAGER", "EMPLOYEE"],
+      requiredAny: ["email", "phone", "mobile"],
+      requireApproval: false,
+    },
+  },
+  contacted: {
+    qualified: {
+      allowedRoles: ["ADMIN", "MANAGER", "EMPLOYEE"],
+      requiredAll: ["company", "source"],
+      requireApproval: false,
+    },
+    new: {
+      allowedRoles: ["ADMIN", "MANAGER"],
+      requiredAll: ["notes"],
+      requireApproval: true,
+      approverRole: "MANAGER",
+    },
+    lost: {
+      allowedRoles: ["ADMIN", "MANAGER", "EMPLOYEE"],
+      requiredAll: ["notes"],
+      requireApproval: true,
+      approverRole: "MANAGER",
+      reasonRequired: true,
+    },
+  },
+  qualified: {
+    proposal: {
+      allowedRoles: ["ADMIN", "MANAGER"],
+      requiredAll: ["company", "industry", "source"],
+      requireApproval: false,
+    },
+    contacted: {
+      allowedRoles: ["ADMIN", "MANAGER"],
+      requiredAll: ["notes"],
+      requireApproval: true,
+      approverRole: "MANAGER",
+    },
+    lost: {
+      allowedRoles: ["ADMIN", "MANAGER", "EMPLOYEE"],
+      requiredAll: ["notes"],
+      requireApproval: true,
+      approverRole: "MANAGER",
+      reasonRequired: true,
+    },
+  },
+  proposal: {
+    converted: {
+      allowedRoles: ["ADMIN", "MANAGER"],
+      requiredAll: ["company"],
+      requireApproval: false,
+    },
+    qualified: {
+      allowedRoles: ["ADMIN", "MANAGER"],
+      requiredAll: ["notes"],
+      requireApproval: true,
+      approverRole: "MANAGER",
+    },
+    lost: {
+      allowedRoles: ["ADMIN", "MANAGER", "EMPLOYEE"],
+      requiredAll: ["notes"],
+      requireApproval: true,
+      approverRole: "MANAGER",
+      reasonRequired: true,
+    },
+  },
+  converted: {},
+  lost: {},
+};
+
+const ROLE_ORDER = {
+  EMPLOYEE: 1,
+  MANAGER: 2,
+  ADMIN: 3,
+};
+
+const normalizeRole = (role) => String(role || "").toUpperCase();
+
+const hasRoleLevel = (role, minimumRole) => {
+  const userLevel = ROLE_ORDER[normalizeRole(role)] || 0;
+  const requiredLevel = ROLE_ORDER[normalizeRole(minimumRole)] || Number.MAX_SAFE_INTEGER;
+  return userLevel >= requiredLevel;
+};
+
+const getValueByPath = (obj, path) => {
+  if (!path) return undefined;
+  return String(path)
+    .split(".")
+    .reduce((acc, key) => (acc == null ? undefined : acc[key]), obj);
+};
+
+const hasRequiredValue = (value) => {
+  if (value === undefined || value === null) return false;
+  if (typeof value === "string") return normalizeText(value).length > 0;
+  if (typeof value === "number") return Number.isFinite(value);
+  if (typeof value === "boolean") return true;
+  if (Array.isArray(value)) return value.length > 0;
+  if (typeof value === "object") return Object.keys(value).length > 0;
+  return true;
+};
+
+const getTransitionRule = (fromStatus, toStatus) => {
+  const from = String(fromStatus || "").toLowerCase();
+  const to = String(toStatus || "").toLowerCase();
+  return TRANSITION_RULES[from]?.[to] || null;
+};
+
+const getLeadNextAction = (status, role, options = {}) => {
+  const normalizedRole = normalizeRole(role);
+  if (normalizedRole === "MANAGER") {
+    if (options.canAssign) {
+      return { type: "assign", label: "Assign to Employee" };
+    }
+    if (options.assignedToName) {
+      return { type: "tracking", label: `Assigned to ${options.assignedToName}` };
+    }
+    return { type: "assign", label: "Assign to Employee" };
+  }
+
+  const normalizedStatus = String(status || "").toLowerCase();
+  if (["new", "contacted"].includes(normalizedStatus)) {
+    return { type: "call", label: "Call Lead" };
+  }
+  if (["qualified", "proposal"].includes(normalizedStatus)) {
+    return { type: "meeting", label: "Conduct Meeting" };
+  }
+  return { type: "none", label: "No Immediate Action" };
+};
+
+const validateTransitionChecklist = (lead, rule = {}) => {
+  const missing = [];
+  const requiredAll = Array.isArray(rule.requiredAll) ? rule.requiredAll : [];
+  const requiredAny = Array.isArray(rule.requiredAny) ? rule.requiredAny : [];
+
+  requiredAll.forEach((fieldPath) => {
+    const value = getValueByPath(lead, fieldPath);
+    if (!hasRequiredValue(value)) {
+      missing.push(fieldPath);
+    }
+  });
+
+  if (requiredAny.length > 0) {
+    const hasAny = requiredAny.some((fieldPath) => hasRequiredValue(getValueByPath(lead, fieldPath)));
+    if (!hasAny) {
+      missing.push(`one_of:${requiredAny.join("|")}`);
+    }
+  }
+
+  return missing;
+};
+
+const appendTransitionHistory = (lead, entry = {}) => {
+  lead.transitionHistory = Array.isArray(lead.transitionHistory) ? lead.transitionHistory : [];
+  lead.transitionHistory.push({
+    fromStatus: entry.fromStatus,
+    toStatus: entry.toStatus,
+    performedBy: entry.performedBy || null,
+    performedAt: new Date(),
+    reason: normalizeText(entry.reason || ""),
+    approvalRequired: Boolean(entry.approvalRequired),
+    approvalState: entry.approvalState || "none",
+  });
+};
+
+const setStageTimestamp = (lead, status) => {
+  const normalizedStatus = String(status || "").toLowerCase();
+  lead.stageTimestamps = lead.stageTimestamps || {};
+
+  if (normalizedStatus === "contacted") lead.stageTimestamps.contactedAt = new Date();
+  if (normalizedStatus === "qualified") lead.stageTimestamps.qualifiedAt = new Date();
+  if (normalizedStatus === "proposal") lead.stageTimestamps.proposalAt = new Date();
+  if (normalizedStatus === "converted") lead.stageTimestamps.convertedAt = new Date();
+  if (normalizedStatus === "lost") lead.stageTimestamps.lostAt = new Date();
 };
 
 
@@ -385,16 +556,162 @@ router.get("/my", verifyToken, permit("EMPLOYEE"), async (req, res, next) => {
 router.post("/assign", verifyToken, permit("ADMIN", "MANAGER"), async (req, res, next) => {
   try {
     const { leadId, userId } = req.body;
-    if (!leadId || !userId) {
-      return res.status(400).json({ message: "leadId and userId required" });
+    if (!leadId) {
+      return res.status(400).json({ message: "leadId is required" });
     }
-    const lead = await Lead.findByIdAndUpdate(
-      leadId,
-      { assignedTo: userId },
-      { new: true }
-    );
+
+    const actorRole = normalizeRole(req.user.role);
+    const normalizedUserId = String(userId || "").trim();
+    const lead = await Lead.findById(leadId);
+
     if (!lead) return res.status(404).json({ message: "Lead not found" });
+
+    if (actorRole === "MANAGER") {
+      const assignedToManager = lead.assignedTo && String(lead.assignedTo) === String(req.user._id);
+      const assignedByManager = lead.assignedBy && String(lead.assignedBy) === String(req.user._id);
+      if (!assignedToManager && !assignedByManager) {
+        return res.status(403).json({
+          message: "Managers can only manage leads assigned to them or assigned by them",
+        });
+      }
+    }
+
+    if (!normalizedUserId) {
+      lead.assignedTo = null;
+      lead.assignedBy = null;
+      lead.assignedByRole = null;
+      lead.assignedAt = null;
+      await lead.save();
+      return res.json(lead);
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(normalizedUserId)) {
+      return res.status(400).json({ message: "Invalid userId" });
+    }
+
+    const assignee = await User.findById(normalizedUserId).select("_id role username name email employee_id");
+    if (!assignee) {
+      return res.status(404).json({ message: "Assignee user not found" });
+    }
+
+    const assigneeRole = normalizeRole(assignee.role);
+
+    if (actorRole === "ADMIN" && assigneeRole !== "MANAGER") {
+      return res.status(403).json({
+        message: "Admin can assign leads only to managers",
+      });
+    }
+
+    if (actorRole === "MANAGER" && assigneeRole !== "EMPLOYEE") {
+      return res.status(403).json({
+        message: "Manager can assign leads only to employees",
+      });
+    }
+
+    lead.assignedTo = assignee._id;
+    lead.assignedBy = req.user._id;
+    lead.assignedByRole = actorRole;
+    lead.assignedAt = new Date();
+
+    await lead.save();
+    await lead.populate("assignedTo", "username name role employee_id");
+    await lead.populate("assignedBy", "username name role employee_id");
+
     res.json(lead);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/leads/assignment-dashboard -- role-based assignment visibility for manager and employee dashboards
+router.get("/assignment-dashboard", verifyToken, permit("MANAGER", "EMPLOYEE"), async (req, res, next) => {
+  try {
+    const role = normalizeRole(req.user.role);
+
+    let filter = { assignedTo: req.user._id };
+    if (role === "MANAGER") {
+      filter = {
+        $or: [
+        {
+          $and: [
+            { assignedTo: req.user._id },
+            { $or: [{ assignedByRole: "ADMIN" }, { assignedByRole: { $exists: false } }] },
+          ],
+        },
+        {
+          $and: [
+            { assignedBy: req.user._id },
+            { assignedByRole: "MANAGER" },
+          ],
+        },
+      ],
+      };
+    }
+    if (role === "EMPLOYEE") {
+      filter.$or = [{ assignedByRole: "MANAGER" }, { assignedByRole: { $exists: false } }];
+    }
+
+    const leads = await Lead.find(filter)
+      .select("name firstName lastName company status assignedTo assignedBy assignedByRole assignedAt updatedAt")
+      .populate("assignedBy", "username name role employee_id")
+      .populate("assignedTo", "username name role employee_id")
+      .sort({ assignedAt: -1, updatedAt: -1 })
+      .limit(100);
+
+    const items = leads.map((lead) => {
+      const canAssign = role === "MANAGER" && String(lead.assignedTo?._id || lead.assignedTo || "") === String(req.user._id);
+      const canUnassign =
+        role === "MANAGER" &&
+        String(lead.assignedBy?._id || lead.assignedBy || "") === String(req.user._id) &&
+        String(lead.assignedTo?._id || lead.assignedTo || "") !== String(req.user._id);
+
+      const assignedToName = lead.assignedTo
+        ? (lead.assignedTo.name || lead.assignedTo.username || "")
+        : "";
+
+      const nextAction = getLeadNextAction(lead.status, role, { canAssign, assignedToName });
+      return {
+        _id: lead._id,
+        name: lead.name,
+        firstName: lead.firstName,
+        lastName: lead.lastName,
+        company: lead.company,
+        status: lead.status,
+        assignedAt: lead.assignedAt || lead.updatedAt,
+        assignedByRole: lead.assignedByRole || null,
+        canAssign,
+        canUnassign,
+        assignedBy: lead.assignedBy
+          ? {
+              _id: lead.assignedBy._id,
+              username: lead.assignedBy.username,
+              name: lead.assignedBy.name,
+              role: lead.assignedBy.role,
+              employee_id: lead.assignedBy.employee_id,
+            }
+          : null,
+        assignedTo: lead.assignedTo
+          ? {
+              _id: lead.assignedTo._id,
+              username: lead.assignedTo.username,
+              name: lead.assignedTo.name,
+              role: lead.assignedTo.role,
+              employee_id: lead.assignedTo.employee_id,
+            }
+          : null,
+        nextAction,
+      };
+    });
+
+    const summary = {
+      totalAssignedLeads: items.length,
+      assignActions: items.filter((item) => item.nextAction.type === "assign").length,
+      callActions: items.filter((item) => item.nextAction.type === "call").length,
+      meetingActions: items.filter((item) => item.nextAction.type === "meeting").length,
+      noImmediateAction: items.filter((item) => item.nextAction.type === "none").length,
+    };
+
+    res.json({ role, summary, items });
   } catch (err) {
     next(err);
   }
@@ -838,50 +1155,123 @@ router.put("/:id", verifyToken, permit("ADMIN", "MANAGER", "EMPLOYEE"), async (r
       }
     }
 
-    // Strict stage movement validation
+    // Blueprint stage movement validation
     const { status: newStatus } = req.body;
     if (newStatus !== undefined) {
-      const currentStatus = lead.status?.toLowerCase() || 'new';
-      const normalizedNewStatus = newStatus.toString().toLowerCase().trim();
-      
-      // Validate enum
-      const validStatuses = ["new", "contacted", "qualified", "proposal", "converted", "lost"];
-      if (!validStatuses.includes(normalizedNewStatus)) {
-        return res.status(400).json({ 
-          message: `Invalid status: "${normalizedNewStatus}". Must be one of: ${validStatuses.join(", ")}` 
+      const currentStatus = lead.status?.toLowerCase() || "new";
+      const normalizedNewStatus = String(newStatus || "").toLowerCase().trim();
+      const userRole = normalizeRole(req.user.role);
+      const transitionReason = normalizeText(req.body.transitionReason || req.body.reason);
+      const approveTransition = req.body.approveTransition === true;
+
+      if (!STATUS_VALUES.includes(normalizedNewStatus)) {
+        return res.status(400).json({
+          message: `Invalid status: "${normalizedNewStatus}". Must be one of: ${STATUS_VALUES.join(", ")}`,
         });
       }
-      
-      // Skip if same
+
       if (currentStatus === normalizedNewStatus) {
         if (shouldSave) {
           applyLeadScoring(lead);
           await lead.save();
         }
-        res.json(lead);
-        return;
+        return res.json(lead);
       }
-      
-      // Strict transition validation
-      if (!allowedTransitions[currentStatus]?.includes(normalizedNewStatus)) {
-        return res.status(400).json({ 
-          message: `Invalid stage transition: "${currentStatus}" → "${normalizedNewStatus}" not allowed`
+
+      const rule = getTransitionRule(currentStatus, normalizedNewStatus);
+      if (!rule) {
+        return res.status(400).json({
+          message: `Invalid stage transition: "${currentStatus}" -> "${normalizedNewStatus}" not allowed`,
         });
+      }
+
+      if (Array.isArray(rule.allowedRoles) && !rule.allowedRoles.includes(userRole)) {
+        return res.status(403).json({
+          message: `Role ${userRole} cannot move lead from ${currentStatus} to ${normalizedNewStatus}`,
+        });
+      }
+
+      const missingFields = validateTransitionChecklist(lead, rule);
+      if (missingFields.length > 0) {
+        return res.status(400).json({
+          message: "Cannot move lead. Required lifecycle checklist is incomplete.",
+          missingFields,
+        });
+      }
+
+      if (rule.reasonRequired && !transitionReason) {
+        return res.status(400).json({
+          message: "Transition reason is required for this stage change.",
+        });
+      }
+
+      if (rule.requireApproval) {
+        const approverRole = rule.approverRole || "MANAGER";
+        const canApproveNow = hasRoleLevel(userRole, approverRole) && (approveTransition || userRole === "ADMIN");
+
+        if (!canApproveNow) {
+          lead.pendingTransitionApproval = {
+            fromStatus: currentStatus,
+            toStatus: normalizedNewStatus,
+            requestedBy: req.user._id,
+            requestedAt: new Date(),
+            reason: transitionReason,
+            requiredRole: approverRole,
+          };
+          appendTransitionHistory(lead, {
+            fromStatus: currentStatus,
+            toStatus: normalizedNewStatus,
+            performedBy: req.user._id,
+            reason: transitionReason,
+            approvalRequired: true,
+            approvalState: "requested",
+          });
+
+          if (shouldSave) {
+            applyLeadScoring(lead);
+          }
+
+          await lead.save();
+          return res.status(202).json({
+            message: "Transition request created and waiting for approval",
+            pendingTransitionApproval: lead.pendingTransitionApproval,
+            lead,
+          });
+        }
       }
 
       // Converting from status update must run full lead->customer->deal workflow.
       if (normalizedNewStatus === "converted") {
-        if (shouldSave) {
-          await lead.save();
-        }
+        appendTransitionHistory(lead, {
+          fromStatus: currentStatus,
+          toStatus: normalizedNewStatus,
+          performedBy: req.user._id,
+          reason: transitionReason,
+          approvalRequired: Boolean(rule.requireApproval),
+          approvalState: rule.requireApproval ? "approved" : "none",
+        });
+        lead.pendingTransitionApproval = undefined;
+        await lead.save();
+        req.body.transitionReason = transitionReason;
         return convertLeadToCustomerDeal(req, res, next);
       }
-      
-      // Update
+
       lead.status = normalizedNewStatus;
       if (["converted", "lost"].includes(normalizedNewStatus)) {
         lead.isConverted = true;
       }
+      setStageTimestamp(lead, normalizedNewStatus);
+      lead.pendingTransitionApproval = undefined;
+
+      appendTransitionHistory(lead, {
+        fromStatus: currentStatus,
+        toStatus: normalizedNewStatus,
+        performedBy: req.user._id,
+        reason: transitionReason,
+        approvalRequired: Boolean(rule.requireApproval),
+        approvalState: rule.requireApproval ? "approved" : "none",
+      });
+
       shouldSave = true;
     }
 
@@ -958,6 +1348,100 @@ router.post("/:id/events/form-submission", verifyToken, permit("ADMIN", "MANAGER
   }
 });
 
+router.post("/:id/transition-approval", verifyToken, permit("ADMIN", "MANAGER"), async (req, res, next) => {
+  try {
+    const lead = await Lead.findById(req.params.id);
+    if (!lead) return res.status(404).json({ message: "Lead not found" });
+
+    const pending = lead.pendingTransitionApproval;
+    if (!pending?.toStatus || !pending?.fromStatus) {
+      return res.status(400).json({ message: "No pending transition approval found for this lead" });
+    }
+
+    const approve = req.body?.approve !== false;
+    const approvalComment = normalizeText(req.body?.reason || "");
+    const approverRole = normalizeRole(req.user.role);
+
+    if (!hasRoleLevel(approverRole, pending.requiredRole || "MANAGER")) {
+      return res.status(403).json({
+        message: `Only ${pending.requiredRole || "MANAGER"} or above can approve this transition`,
+      });
+    }
+
+    if (!approve) {
+      appendTransitionHistory(lead, {
+        fromStatus: pending.fromStatus,
+        toStatus: pending.toStatus,
+        performedBy: req.user._id,
+        reason: approvalComment,
+        approvalRequired: true,
+        approvalState: "rejected",
+      });
+      lead.pendingTransitionApproval = undefined;
+      await lead.save();
+      return res.json({ message: "Transition request rejected", lead });
+    }
+
+    if (String(lead.status || "").toLowerCase() !== String(pending.fromStatus || "").toLowerCase()) {
+      return res.status(409).json({
+        message: "Lead status changed after request. Please create a new transition request.",
+      });
+    }
+
+    const rule = getTransitionRule(pending.fromStatus, pending.toStatus);
+    if (!rule) {
+      return res.status(400).json({ message: "The pending transition is no longer valid" });
+    }
+
+    const missingFields = validateTransitionChecklist(lead, rule);
+    if (missingFields.length > 0) {
+      return res.status(400).json({
+        message: "Cannot approve transition. Required lifecycle checklist is incomplete.",
+        missingFields,
+      });
+    }
+
+    if (pending.toStatus === "converted") {
+      lead.pendingTransitionApproval = undefined;
+      appendTransitionHistory(lead, {
+        fromStatus: pending.fromStatus,
+        toStatus: pending.toStatus,
+        performedBy: req.user._id,
+        reason: approvalComment || pending.reason,
+        approvalRequired: true,
+        approvalState: "approved",
+      });
+      await lead.save();
+      req.body.transitionReason = approvalComment || pending.reason || "";
+      req.body.approveTransition = true;
+      return convertLeadToCustomerDeal(req, res, next);
+    }
+
+    lead.status = pending.toStatus;
+    if (["converted", "lost"].includes(String(pending.toStatus || "").toLowerCase())) {
+      lead.isConverted = true;
+    }
+    setStageTimestamp(lead, pending.toStatus);
+    lead.pendingTransitionApproval = undefined;
+
+    appendTransitionHistory(lead, {
+      fromStatus: pending.fromStatus,
+      toStatus: pending.toStatus,
+      performedBy: req.user._id,
+      reason: approvalComment || pending.reason,
+      approvalRequired: true,
+      approvalState: "approved",
+    });
+
+    applyLeadScoring(lead);
+    await lead.save();
+
+    return res.json({ message: "Transition request approved", lead });
+  } catch (err) {
+    next(err);
+  }
+});
+
 
 const convertLeadToCustomerDeal = async (req, res, next) => {
   const session = await mongoose.startSession();
@@ -980,6 +1464,12 @@ const convertLeadToCustomerDeal = async (req, res, next) => {
       const lead = await Lead.findById(leadId).session(session);
       if (!lead) {
         throw Object.assign(new Error("Lead not found"), { statusCode: 404 });
+      }
+
+      if (normalizeRole(req.user.role) === "EMPLOYEE") {
+        if (!lead.assignedTo || String(lead.assignedTo) !== String(req.user._id)) {
+          throw Object.assign(new Error("Forbidden - not assigned to you"), { statusCode: 403 });
+        }
       }
 
       if (lead.isConverted || String(lead.status || "").toLowerCase() === "converted") {
@@ -1058,11 +1548,25 @@ const convertLeadToCustomerDeal = async (req, res, next) => {
         ).then((docs) => docs[0]);
       }
 
+      const previousStatus = String(lead.status || "new").toLowerCase();
+
       lead.status = "converted";
       lead.isConverted = true;
       lead.convertedCustomerId = customer._id;
       lead.convertedContactId = contact?._id || null;
       lead.convertedDealId = deal._id;
+      setStageTimestamp(lead, "converted");
+      lead.pendingTransitionApproval = undefined;
+
+      appendTransitionHistory(lead, {
+        fromStatus: previousStatus,
+        toStatus: "converted",
+        performedBy: req.user?._id || null,
+        reason: normalizeText(req.body?.transitionReason || ""),
+        approvalRequired: false,
+        approvalState: "none",
+      });
+
       await lead.save({ session });
 
       responsePayload = {

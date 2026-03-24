@@ -83,6 +83,19 @@ function Leads() {
 
   const [employees, setEmployees] = useState([]);
 
+  const getEntityId = (value) => {
+    if (!value) return "";
+    if (typeof value === "object") return String(value._id || "");
+    return String(value);
+  };
+
+  const getUserDisplayLabel = (user) => {
+    if (!user) return "";
+    const primary = user.name || user.username || user.email || user.employee_id || "User";
+    const roleLabel = String(user.role || "").toUpperCase();
+    return roleLabel ? `${primary} (${roleLabel})` : primary;
+  };
+
   // 🆕 VIEWS FUNCTIONS 🆕
   const fetchViews = useCallback(async () => {
     try {
@@ -165,14 +178,36 @@ function Leads() {
   const fetchEmployees = useCallback(async () => {
     try {
       const token = localStorage.getItem("token");
-      const res = await axios.get("http://localhost:5000/api/employees", {
+      const res = await axios.get("http://localhost:5000/api/employees/assignable", {
         headers: { Authorization: `Bearer ${token}` },
       });
-      setEmployees(res.data);
+      setEmployees(Array.isArray(res.data) ? res.data : []);
     } catch (err) {
       console.error(err);
+      try {
+        if (!isAdmin) {
+          setEmployees([]);
+          return;
+        }
+        const token = localStorage.getItem("token");
+        const fallbackRes = await axios.get("http://localhost:5000/api/employees", {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const managers = Array.isArray(fallbackRes.data)
+          ? fallbackRes.data
+              .filter((user) => String(user?.role || "").toUpperCase() === "MANAGER")
+              .map((user) => ({
+                ...user,
+                role: String(user.role || "").toUpperCase(),
+              }))
+          : [];
+        setEmployees(managers);
+      } catch (fallbackError) {
+        console.error("Fallback assignable users fetch failed:", fallbackError);
+        setEmployees([]);
+      }
     }
-  }, []);
+  }, [isAdmin]);
 
   const navigate = useNavigate();
 
@@ -227,8 +262,9 @@ function Leads() {
       key: "assignedTo",
       label: "Assigned To",
       getValue: (lead) => {
-        const assignedUser = employees.find((employee) => employee._id === lead.assignedTo);
-        return assignedUser ? assignedUser.username : "Unassigned";
+        const assignedToId = getEntityId(lead.assignedTo);
+        const assignedUser = employees.find((employee) => String(employee._id) === assignedToId);
+        return assignedUser ? getUserDisplayLabel(assignedUser) : "Unassigned";
       },
     },
     { key: "createdAt", label: "Added On", getValue: (lead) => formatAddedDate(lead.createdAt) },
@@ -854,13 +890,35 @@ function Leads() {
       }
     }
 
+    let transitionReason = "";
+    if (newStatus === "lost") {
+      const reasonInput = window.prompt("Enter reason for moving this lead to Lost", "");
+      if (reasonInput === null) return;
+      transitionReason = String(reasonInput || "").trim();
+      if (!transitionReason) {
+        alert("Reason is required for Lost transition.");
+        return;
+      }
+    }
+
     try {
       const token = localStorage.getItem("token");
-      await axios.put(
+      const res = await axios.put(
         `http://localhost:5000/api/leads/${leadId}`,
-        { status: newStatus },
+        { status: newStatus, transitionReason },
         { headers: { Authorization: `Bearer ${token}` } }
       );
+
+      if (res.status === 202) {
+        alert(res.data?.message || "Transition request sent for approval.");
+        if (res.data?.lead?._id) {
+          setSelectedLead(res.data.lead);
+        }
+        fetchLeads();
+        fetchStats();
+        return;
+      }
+
       alert(`Status updated to "${stages.find(s => s.id === newStatus)?.name || newStatus}"`);
       fetchLeads();
       fetchStats();
@@ -921,20 +979,24 @@ function Leads() {
   const handleAssign = async (leadId, userId) => {
     try {
       const token = localStorage.getItem("token");
-      await axios.post(
+      const res = await axios.post(
         "http://localhost:5000/api/leads/assign",
         { leadId, userId },
         { headers: { Authorization: `Bearer ${token}` } }
       );
+      const updatedLead = res.data;
+      if (updatedLead?._id) {
+        setLeads((prev) => prev.map((lead) => (lead._id === updatedLead._id ? updatedLead : lead)));
+      }
       fetchLeads();
       fetchStats();
       // update selectedLead assignment locally if it's open
-      if (selectedLead && selectedLead._id === leadId) {
-        setSelectedLead((prev) => ({ ...prev, assignedTo: userId }));
+      if (selectedLead && selectedLead._id === leadId && updatedLead?._id) {
+        setSelectedLead(updatedLead);
       }
     } catch (err) {
       console.error(err);
-      alert("Failed to assign lead");
+      alert(err.response?.data?.message || "Failed to assign lead");
     }
   };
 
@@ -951,6 +1013,35 @@ function Leads() {
     } catch (err) {
       console.error(err);
       alert("Failed to delete lead");
+    }
+  };
+
+  const handleTransitionApproval = async (leadId, approve) => {
+    try {
+      const token = localStorage.getItem("token");
+      let reason = "";
+
+      if (!approve) {
+        const rejectReason = window.prompt("Enter rejection reason", "");
+        if (rejectReason === null) return;
+        reason = String(rejectReason || "").trim();
+      }
+
+      const res = await axios.post(
+        `http://localhost:5000/api/leads/${leadId}/transition-approval`,
+        { approve, reason },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      alert(res.data?.message || (approve ? "Transition approved" : "Transition rejected"));
+      if (res.data?.lead?._id) {
+        setSelectedLead(res.data.lead);
+      }
+      fetchLeads();
+      fetchStats();
+    } catch (err) {
+      console.error(err);
+      alert(err.response?.data?.message || "Failed to process transition approval");
     }
   };
 
@@ -1233,6 +1324,13 @@ function Leads() {
     if (exportView === "all") return matchingLeads;
     return matchingLeads.filter((lead) => lead.status === exportView);
   };
+
+  const assignableUsers = employees.filter((user) => {
+    const roleName = String(user?.role || "").toUpperCase();
+    if (isAdmin) return roleName === "MANAGER";
+    if (isManager) return roleName === "EMPLOYEE";
+    return false;
+  });
 
   const getSelectedExportFields = () => {
     const allowedFields = new Set(exportFieldPresets[exportFieldScope] || exportFieldPresets.custom);
@@ -2714,13 +2812,13 @@ ET`;
                 <div className="assign-section">
                   <h3>Assign To</h3>
                   <select
-                    value={selectedLead.assignedTo || ""}
+                    value={getEntityId(selectedLead.assignedTo)}
                     onChange={(e) => handleAssign(selectedLead._id, e.target.value)}
                   >
                     <option value="">Unassigned</option>
-                    {employees.map((emp) => (
+                    {assignableUsers.map((emp) => (
                       <option key={emp._id} value={emp._id}>
-                        {emp.username} ({emp.role})
+                        {getUserDisplayLabel(emp)}
                       </option>
                     ))}
                   </select>
@@ -2755,6 +2853,37 @@ ET`;
 
                 </div>
               </div>
+
+              {selectedLead.pendingTransitionApproval?.toStatus && (isAdmin || isManager) && (
+                <div className="status-section">
+                  <h3>Pending Transition Approval</h3>
+                  <p className="import-helper-text" style={{ marginBottom: "10px" }}>
+                    {`${selectedLead.pendingTransitionApproval.fromStatus} -> ${selectedLead.pendingTransitionApproval.toStatus}`}
+                  </p>
+                  {selectedLead.pendingTransitionApproval.reason && (
+                    <p className="import-helper-text" style={{ marginBottom: "10px" }}>
+                      {`Reason: ${selectedLead.pendingTransitionApproval.reason}`}
+                    </p>
+                  )}
+                  <div className="modal-actions" style={{ justifyContent: "flex-start" }}>
+                    <button
+                      type="button"
+                      className="btn-submit"
+                      onClick={() => handleTransitionApproval(selectedLead._id, true)}
+                    >
+                      Approve Transition
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-cancel"
+                      onClick={() => handleTransitionApproval(selectedLead._id, false)}
+                    >
+                      Reject Transition
+                    </button>
+                  </div>
+                </div>
+              )}
+
               <div className="convert-section">
                 <button
                   className="btn-convert-lead"
