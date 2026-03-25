@@ -15,7 +15,7 @@ const SERVICE_TYPE_CATEGORY_MAP = {
 };
 const BILLING_CYCLE_VALUES = ["monthly", "yearly"];
 const STORAGE_UNIT_VALUES = ["GB", "TB"];
-const SERVICE_STATUS_VALUES = ["Active", "Expired"];
+const SERVICE_STATUS_VALUES = ["Active", "Inactive"];
 
 const CATEGORY_SKU_PREFIX = {
   "Networking Equipment": "NET",
@@ -135,6 +135,7 @@ const findMatchingServices = async ({ name, category, serviceType }) => {
 const applyCommonItemFields = (target, payload) => {
   if (payload.price !== undefined) target.price = payload.price;
   if (payload.cost !== undefined) target.cost = payload.cost;
+  if (payload.status !== undefined) target.status = payload.status;
   if (payload.vendor !== undefined) target.vendor = payload.vendor;
   if (payload.location !== undefined) target.location = payload.location;
   if (payload.description !== undefined) target.description = payload.description;
@@ -145,10 +146,6 @@ const applyCommonItemFields = (target, payload) => {
 
 const mergeServiceValues = (target, payload) => {
   if (payload.serviceType === "license") {
-    target.licenseKey = payload.licenseKey;
-    target.purchaseDate = payload.purchaseDate;
-    target.expiryDate = payload.expiryDate;
-    target.seats = payload.seats;
     target.cost = payload.cost;
     target.status = payload.status;
     return;
@@ -156,20 +153,15 @@ const mergeServiceValues = (target, payload) => {
 
   if (payload.serviceType === "storage") {
     target.totalStorage = payload.totalStorage;
-    target.usedStorage = payload.usedStorage;
-    target.provider = payload.provider;
     target.storageUnit = payload.storageUnit;
     target.billingCycle = payload.billingCycle;
     target.cost = payload.cost;
+    target.status = payload.status;
     return;
   }
 
   target.billingCycle = payload.billingCycle;
-  target.startDate = payload.startDate;
-  target.nextBillingDate = payload.nextBillingDate;
-  target.expiryDate = payload.expiryDate;
   target.cost = payload.cost;
-  target.autoRenew = payload.autoRenew;
   target.status = payload.status;
 };
 
@@ -183,6 +175,7 @@ const buildItemPayload = (body, existing = null) => {
     category: String(source.category || "").trim(),
     price: parseNumber(source.price),
     cost: parseNumber(source.cost),
+    status: String(source.status || "Active").trim(),
     vendor: String(source.vendor || "").trim(),
     location: String(source.location || "").trim(),
     lowStockThreshold: parseNumber(source.lowStockThreshold ?? 5),
@@ -204,6 +197,10 @@ const buildItemPayload = (body, existing = null) => {
   if (payload.type === "product") {
     if (Number.isNaN(payload.price) || payload.price === undefined || payload.price < 0) {
       errors.push("price must be a non-negative number");
+    }
+
+    if (!SERVICE_STATUS_VALUES.includes(payload.status)) {
+      errors.push("status must be Active or Inactive");
     }
 
     if (Number.isNaN(payload.lowStockThreshold) || payload.lowStockThreshold < 0) {
@@ -242,106 +239,49 @@ const buildItemPayload = (body, existing = null) => {
   }
 
   if (source.serviceType === "license") {
-    const purchaseDate = parseDate(source.purchaseDate);
-    const expiryDate = parseDate(source.expiryDate);
-    const seats = parseNumber(source.seats);
     const cost = parseNumber(source.cost);
 
-    payload.licenseKey = String(source.licenseKey || "").trim();
-    payload.purchaseDate = purchaseDate;
-    payload.expiryDate = expiryDate;
-    payload.seats = seats;
     payload.cost = cost;
-    payload.status = String(source.status || "").trim();
+    payload.status = String(source.status || "Active").trim();
 
-    if (!payload.licenseKey) {
-      errors.push("licenseKey is required for license services");
-    }
-    if (purchaseDate === undefined) {
-      errors.push("purchaseDate is required for license services");
-    } else if (purchaseDate === null) {
-      errors.push("purchaseDate must be a valid date");
-    }
-    if (expiryDate === undefined) {
-      errors.push("expiryDate is required for license services");
-    } else if (expiryDate === null) {
-      errors.push("expiryDate must be a valid date");
-    }
-    if (seats === undefined || Number.isNaN(seats) || seats < 0) {
-      errors.push("seats is required for license services and must be a non-negative number");
-    }
     if (Number.isNaN(cost) || cost === undefined || cost < 0) {
       errors.push("cost is required for license services and must be a non-negative number");
     }
     if (!SERVICE_STATUS_VALUES.includes(payload.status)) {
-      errors.push("status must be Active or Expired for license services");
+      errors.push("status must be Active or Inactive for license services");
     }
   }
 
   if (source.serviceType === "subscription") {
-    const startDate = parseDate(source.startDate);
-    const nextBillingDate = parseDate(source.nextBillingDate);
-    const expiryDate = parseDate(source.expiryDate);
     const cost = parseNumber(source.cost);
 
     payload.billingCycle = source.billingCycle;
-    payload.startDate = startDate;
-    payload.nextBillingDate = nextBillingDate;
-    payload.expiryDate = expiryDate ?? undefined;
     payload.cost = cost;
-    payload.autoRenew = Boolean(source.autoRenew);
-    payload.status = String(source.status || "").trim();
+    payload.status = String(source.status || "Active").trim();
 
     if (!BILLING_CYCLE_VALUES.includes(source.billingCycle)) {
       errors.push("billingCycle is required and must be monthly or yearly for subscription services");
-    }
-    if (startDate === undefined) {
-      errors.push("startDate is required for subscription services");
-    } else if (startDate === null) {
-      errors.push("startDate must be a valid date");
-    }
-    if (nextBillingDate === undefined) {
-      errors.push("nextBillingDate is required for subscription services");
-    } else if (nextBillingDate === null) {
-      errors.push("nextBillingDate must be a valid date");
-    }
-    if (expiryDate === null) {
-      errors.push("expiryDate must be a valid date");
     }
     if (Number.isNaN(cost) || cost === undefined || cost < 0) {
       errors.push("cost is required for subscription services and must be a non-negative number");
     }
     if (!SERVICE_STATUS_VALUES.includes(payload.status)) {
-      errors.push("status must be Active or Expired for subscription services");
-    }
-    if (startDate && nextBillingDate && startDate > nextBillingDate) {
-      errors.push("startDate cannot be after nextBillingDate");
-    }
-    if (startDate && expiryDate && startDate > expiryDate) {
-      errors.push("startDate cannot be after expiryDate");
+      errors.push("status must be Active or Inactive for subscription services");
     }
   }
 
   if (source.serviceType === "storage") {
     const totalStorage = parseNumber(source.totalStorage);
-    const usedStorage = parseNumber(source.usedStorage);
     const cost = parseNumber(source.cost);
 
     payload.totalStorage = totalStorage;
-    payload.usedStorage = usedStorage;
-    payload.provider = String(source.provider || "").trim();
     payload.storageUnit = source.storageUnit;
     payload.billingCycle = source.billingCycle;
     payload.cost = cost;
+    payload.status = String(source.status || "Active").trim();
 
     if (totalStorage === undefined || Number.isNaN(totalStorage) || totalStorage <= 0) {
       errors.push("totalStorage is required for storage services and must be greater than 0");
-    }
-    if (usedStorage === undefined || Number.isNaN(usedStorage) || usedStorage < 0) {
-      errors.push("usedStorage is required for storage services and must be a non-negative number");
-    }
-    if (!payload.provider) {
-      errors.push("provider is required for storage services");
     }
     if (!STORAGE_UNIT_VALUES.includes(payload.storageUnit)) {
       errors.push("storageUnit must be GB or TB for storage services");
@@ -352,14 +292,8 @@ const buildItemPayload = (body, existing = null) => {
     if (Number.isNaN(cost) || cost === undefined || cost < 0) {
       errors.push("cost is required for storage services and must be a non-negative number");
     }
-    if (
-      totalStorage !== undefined &&
-      usedStorage !== undefined &&
-      !Number.isNaN(totalStorage) &&
-      !Number.isNaN(usedStorage) &&
-      usedStorage > totalStorage
-    ) {
-      errors.push("usedStorage cannot be greater than totalStorage");
+    if (!SERVICE_STATUS_VALUES.includes(payload.status)) {
+      errors.push("status must be Active or Inactive for storage services");
     }
   }
 
@@ -568,10 +502,36 @@ const deleteItem = async (req, res) => {
   }
 };
 
+const updateItemStatus = async (req, res) => {
+  try {
+    const item = await Item.findById(req.params.id);
+
+    if (!item) {
+      return res.status(404).json({ message: "Item not found" });
+    }
+
+    const status = String(req.body?.status || "").trim();
+    if (!SERVICE_STATUS_VALUES.includes(status)) {
+      return res.status(400).json({ message: "status must be Active or Inactive" });
+    }
+
+    item.status = status;
+    await item.save();
+
+    return res.json({
+      message: "Status updated successfully",
+      item
+    });
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+};
+
 module.exports = {
   createItem,
   getItems,
   getItemById,
   updateItem,
-  deleteItem
+  deleteItem,
+  updateItemStatus
 };

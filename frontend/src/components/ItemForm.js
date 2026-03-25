@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 
 const PRODUCT_CATEGORIES = [
   "Networking Equipment",
@@ -23,24 +23,13 @@ const defaultValues = {
   vendor: "",
   location: "",
   serviceType: "",
-  licenseKey: "",
-  purchaseDate: "",
-  expiryDate: "",
-  seats: "",
   status: "Active",
   billingCycle: "monthly",
-  startDate: "",
-  nextBillingDate: "",
   cost: "",
-  autoRenew: false,
   totalStorage: "",
-  usedStorage: "",
   storageUnit: "GB",
-  provider: "",
   description: ""
 };
-
-const normalizeDate = (value) => (value ? new Date(value).toISOString().split("T")[0] : "");
 
 const normalizeForForm = (item = {}) => {
   const type = item.type === "service" ? "service" : "product";
@@ -61,16 +50,8 @@ const normalizeForForm = (item = {}) => {
       item.lowStockThreshold !== undefined && item.lowStockThreshold !== null
         ? String(item.lowStockThreshold)
         : "5",
-    seats: item.seats !== undefined && item.seats !== null ? String(item.seats) : "",
     totalStorage:
       item.totalStorage !== undefined && item.totalStorage !== null ? String(item.totalStorage) : "",
-    usedStorage:
-      item.usedStorage !== undefined && item.usedStorage !== null ? String(item.usedStorage) : "",
-    purchaseDate: normalizeDate(item.purchaseDate),
-    expiryDate: normalizeDate(item.expiryDate),
-    startDate: normalizeDate(item.startDate),
-    nextBillingDate: normalizeDate(item.nextBillingDate),
-    autoRenew: Boolean(item.autoRenew),
     status: item.status || "Active",
     storageUnit: item.storageUnit || "GB"
   };
@@ -90,35 +71,26 @@ const toPayload = (form) => {
     payload.quantity = Number(form.quantity);
     payload.lowStockThreshold = Number(form.lowStockThreshold || 5);
     payload.vendor = form.vendor.trim();
+    payload.status = form.status;
     return payload;
   }
 
   payload.serviceType = form.serviceType;
 
   if (form.serviceType === "license") {
-    payload.licenseKey = form.licenseKey.trim();
-    payload.purchaseDate = form.purchaseDate || null;
-    payload.expiryDate = form.expiryDate || null;
-    payload.seats = Number(form.seats);
     payload.cost = Number(form.cost);
     payload.status = form.status;
   }
 
   if (form.serviceType === "subscription") {
     payload.billingCycle = form.billingCycle;
-    payload.startDate = form.startDate || null;
-    payload.nextBillingDate = form.nextBillingDate || null;
-    payload.expiryDate = form.expiryDate || null;
     payload.cost = Number(form.cost);
-    payload.autoRenew = Boolean(form.autoRenew);
     payload.status = form.status;
   }
 
   if (form.serviceType === "storage") {
     payload.totalStorage = Number(form.totalStorage);
-    payload.usedStorage = Number(form.usedStorage);
     payload.storageUnit = form.storageUnit;
-    payload.provider = form.provider.trim();
     payload.billingCycle = form.billingCycle;
     payload.cost = Number(form.cost);
   }
@@ -135,21 +107,12 @@ const getCategoryOptions = (type, serviceType) => {
 };
 
 const getResetServiceFields = () => ({
-  licenseKey: "",
   vendor: "",
-  purchaseDate: "",
-  expiryDate: "",
-  seats: "",
   status: "Active",
   billingCycle: "monthly",
-  startDate: "",
-  nextBillingDate: "",
   cost: "",
-  autoRenew: false,
   totalStorage: "",
-  usedStorage: "",
   storageUnit: "GB",
-  provider: ""
 });
 
 function ItemForm({
@@ -158,13 +121,13 @@ function ItemForm({
   onCancel,
   submitLabel = "Save"
 }) {
+  const isEditing = Boolean(initialItem);
   const [form, setForm] = useState(() => normalizeForForm(initialItem));
   const [categoryOptions, setCategoryOptions] = useState(() => {
     const initialForm = normalizeForForm(initialItem);
     return getCategoryOptions(initialForm.type, initialForm.serviceType);
   });
   const [categoryError, setCategoryError] = useState("");
-
   useEffect(() => {
     const nextForm = normalizeForForm(initialItem);
     setForm(nextForm);
@@ -179,12 +142,6 @@ function ItemForm({
       setForm((prev) => ({ ...prev, category: "" }));
     }
   }, [form.type, form.serviceType, form.category]);
-
-  const availableStorage = useMemo(() => {
-    const total = Number(form.totalStorage || 0);
-    const used = Number(form.usedStorage || 0);
-    return Math.max(total - used, 0);
-  }, [form.totalStorage, form.usedStorage]);
 
   const update = (key, value) => {
     setCategoryError("");
@@ -248,6 +205,19 @@ function ItemForm({
               <option value="service">Service</option>
             </select>
           </div>
+          {isEditing && (
+            <div className="form-group">
+              <label>Status *</label>
+              <select
+                value={form.status}
+                onChange={(e) => update("status", e.target.value)}
+                required
+              >
+                <option value="Active">Active</option>
+                <option value="Inactive">Inactive</option>
+              </select>
+            </div>
+          )}
         </div>
       </div>
 
@@ -400,15 +370,6 @@ function ItemForm({
               <h3>License Fields</h3>
               <div className="form-row-zoho">
                 <div className="form-group">
-                  <label>License Key *</label>
-                  <input
-                    type="text"
-                    value={form.licenseKey}
-                    onChange={(e) => update("licenseKey", e.target.value)}
-                    required
-                  />
-                </div>
-                <div className="form-group">
                   <label>Cost *</label>
                   <input
                     type="number"
@@ -416,38 +377,6 @@ function ItemForm({
                     step="0.01"
                     value={form.cost}
                     onChange={(e) => update("cost", e.target.value)}
-                    required
-                  />
-                </div>
-              </div>
-              <div className="form-row-zoho">
-                <div className="form-group">
-                  <label>Purchase Date *</label>
-                  <input
-                    type="date"
-                    value={form.purchaseDate}
-                    onChange={(e) => update("purchaseDate", e.target.value)}
-                    required
-                  />
-                </div>
-                <div className="form-group">
-                  <label>Expiry Date *</label>
-                  <input
-                    type="date"
-                    value={form.expiryDate}
-                    onChange={(e) => update("expiryDate", e.target.value)}
-                    required
-                  />
-                </div>
-              </div>
-              <div className="form-row-zoho">
-                <div className="form-group">
-                  <label>Seats *</label>
-                  <input
-                    type="number"
-                    min="0"
-                    value={form.seats}
-                    onChange={(e) => update("seats", e.target.value)}
                     required
                   />
                 </div>
@@ -482,38 +411,6 @@ function ItemForm({
                   />
                 </div>
               </div>
-              <div className="form-row-zoho">
-                <div className="form-group">
-                  <label>Start Date *</label>
-                  <input
-                    type="date"
-                    value={form.startDate}
-                    onChange={(e) => update("startDate", e.target.value)}
-                    required
-                  />
-                </div>
-                <div className="form-group">
-                  <label>Next Billing Date *</label>
-                  <input
-                    type="date"
-                    value={form.nextBillingDate}
-                    onChange={(e) => update("nextBillingDate", e.target.value)}
-                    required
-                  />
-                </div>
-              </div>
-              <div className="form-row-zoho">
-                <div className="form-group">
-                  <label>Auto Renew</label>
-                  <select
-                    value={form.autoRenew ? "true" : "false"}
-                    onChange={(e) => update("autoRenew", e.target.value === "true")}
-                  >
-                    <option value="false">No</option>
-                    <option value="true">Yes</option>
-                  </select>
-                </div>
-              </div>
             </div>
           )}
 
@@ -529,27 +426,6 @@ function ItemForm({
                     value={form.totalStorage}
                     onChange={(e) => update("totalStorage", e.target.value)}
                     required
-                  />
-                </div>
-                <div className="form-group">
-                  <label>Used Storage *</label>
-                  <input
-                    type="number"
-                    min="0"
-                    value={form.usedStorage}
-                    onChange={(e) => update("usedStorage", e.target.value)}
-                    required
-                  />
-                </div>
-              </div>
-              <div className="form-row-zoho">
-                <div className="form-group">
-                  <label>Available Storage</label>
-                  <input
-                    type="text"
-                    value={`${availableStorage} ${form.storageUnit}`}
-                    disabled
-                    className="disabled-input"
                   />
                 </div>
                 <div className="form-group">

@@ -318,6 +318,18 @@ const endOfDay = (value) => {
   return date;
 };
 
+const getTodayDateInputValue = () => {
+  const today = new Date();
+  today.setMinutes(today.getMinutes() - today.getTimezoneOffset());
+  return today.toISOString().slice(0, 10);
+};
+
+const getCurrentDateTimeInputValue = () => {
+  const now = new Date();
+  now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+  return now.toISOString().slice(0, 16);
+};
+
 const getTaskBoardStatus = (status) => {
   const normalized = (status || "").toLowerCase();
   if (normalized === "completed") return "Completed";
@@ -690,6 +702,8 @@ function ActivityModule() {
   }, [calendarActivities]);
 
   const today = startOfDay(new Date()).toISOString().slice(0, 10);
+  const minDate = useMemo(() => getTodayDateInputValue(), []);
+  const minDateTime = useMemo(() => getCurrentDateTimeInputValue(), []);
   const currentModule = MODULE_CONFIG[activeSidebar] || MODULE_CONFIG.all;
   const clearFieldError = (field) => {
     setFormErrors((prev) => {
@@ -1808,6 +1822,7 @@ function ActivityModule() {
                     Reminder Time
                     <input
                       type="datetime-local"
+                      min={minDateTime}
                       value={form.reminderTime}
                       onChange={(event) => updateField("reminderTime", event.target.value)}
                       className={formErrors.reminderTime ? "activity-input-error" : ""}
@@ -1837,6 +1852,7 @@ function ActivityModule() {
                       Due Date
                       <input
                         type="datetime-local"
+                        min={minDateTime}
                         value={form.dueDate}
                         onChange={(event) => updateField("dueDate", event.target.value)}
                         className={formErrors.dueDate ? "activity-input-error" : ""}
@@ -1860,6 +1876,7 @@ function ActivityModule() {
                       Meeting Date
                       <input
                         type="date"
+                        min={minDate}
                         value={form.meetingDate}
                         onChange={(event) => updateField("meetingDate", event.target.value)}
                         className={formErrors.meetingDate ? "activity-input-error" : ""}
@@ -1921,6 +1938,7 @@ function ActivityModule() {
                       Call Date
                       <input
                         type="date"
+                        min={minDate}
                         value={form.callDate}
                         onChange={(event) => updateField("callDate", event.target.value)}
                         className={formErrors.callDate ? "activity-input-error" : ""}

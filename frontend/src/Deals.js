@@ -33,6 +33,11 @@ const DEFAULT_PROBABILITY_BY_STAGE = {
 };
 
 const dealTypeOptions = ["", "New Business", "Existing Business", "Renewal", "Upsell", "Other"];
+const billingCycleOptions = [
+  { value: "monthly", label: "Monthly" },
+  { value: "6_months", label: "6 Months" },
+  { value: "yearly", label: "Yearly" },
+];
 const salutations = ["", "Mr.", "Mrs.", "Ms.", "Dr.", "Prof."];
 const industries = ["", "Technology", "Manufacturing", "Finance", "Healthcare", "Retail", "Education", "Real Estate", "Other"];
 const dealSources = ["", "Website", "Referral", "Social Media", "Email Campaign", "Cold Call", "Trade Show", "Other"];
@@ -62,6 +67,11 @@ const getProductLabel = (product) => {
   if (!product) return "-";
   if (typeof product === "string") return product;
   return product.name || product.sku || "-";
+};
+
+const getItemType = (item) => {
+  if (!item) return "";
+  return item.type === "service" ? "service" : "product";
 };
 
 const normalizeDeal = (deal) => {
@@ -101,7 +111,14 @@ const parseOptionalNumberInput = (value) => {
   return Number.isFinite(numeric) ? numeric : null;
 };
 
+const getTodayDateInputValue = () => {
+  const today = new Date();
+  today.setMinutes(today.getMinutes() - today.getTimezoneOffset());
+  return today.toISOString().slice(0, 10);
+};
+
 function Deals() {
+  const minDate = useMemo(() => getTodayDateInputValue(), []);
   const [deals, setDeals] = useState([]);
   const [products, setProducts] = useState([]);
   const [views, setViews] = useState([]);
@@ -166,6 +183,8 @@ function Deals() {
     campaignSource: "",
     description: "",
     product: "",
+    quantity: "",
+    billingCycle: "",
     stage: "qualification",
   });
   const exportViews = [{ id: "all", name: "All Deals" }, ...stages.map((stage) => ({ id: stage.id, name: `${stage.name} Deals` }))];
@@ -228,7 +247,7 @@ function Deals() {
   const fetchProducts = useCallback(async () => {
     try {
       const token = localStorage.getItem("token");
-      const res = await axios.get("http://localhost:5000/api/products", {
+      const res = await axios.get("http://localhost:5000/api/items", {
         headers: { Authorization: `Bearer ${token}` },
       });
       setProducts(res.data || []);
@@ -356,6 +375,8 @@ function Deals() {
       campaignSource: selectedDeal.campaignSource || "",
       description: selectedDeal.description || "",
       product: selectedDeal.product?._id || selectedDeal.product || "",
+      quantity: selectedDeal.quantity ?? "",
+      billingCycle: selectedDeal.billingCycle || "",
     });
     setIsEditingSelectedDeal(false);
   }, [selectedDeal]);
@@ -409,6 +430,9 @@ function Deals() {
     return Number(((amount * probability) / 100).toFixed(2)).toString();
   }, [newDeal.amount, newDeal.probability]);
 
+  const selectedNewDealItemType = getItemType(products.find((item) => String(item._id) === String(newDeal.product)));
+  const selectedEditDealItemType = getItemType(products.find((item) => String(item._id) === String(editDealForm?.product || "")));
+
   // Get stages that have deals matching the search
   const getStagesWithDeals = () => {
     if (!search.trim()) return stages;
@@ -446,6 +470,8 @@ function Deals() {
       campaignSource: "",
       description: "",
       product: "",
+      quantity: "",
+      billingCycle: "",
       stage: "qualification",
     });
     setShowModal(true);
@@ -526,6 +552,8 @@ function Deals() {
       campaignSource: row.campaignsource || row.campaign || "",
       description: row.description || "",
       product: "",
+      quantity: "",
+      billingCycle: "",
       stage: validStages.has(rawStage) ? rawStage : "qualification",
     };
   };
@@ -624,14 +652,27 @@ function Deals() {
         alert("Email is required");
         return;
       }
-      if (!String(newDeal.product || "").trim()) {
-        alert("Product is required");
+    if (!String(newDeal.product || "").trim()) {
+      alert("Product is required");
+      return;
+    }
+    if (selectedNewDealItemType === "product") {
+      const quantityValue = parseOptionalNumberInput(newDeal.quantity);
+      if (quantityValue === null || quantityValue < 0) {
+        alert("Quantity is required for selected products");
         return;
       }
-      if (!trimmedDealType) {
-        alert("Deal Type is required");
+    }
+    if (selectedNewDealItemType === "service") {
+      if (!String(newDeal.billingCycle || "").trim()) {
+        alert("Plan / Billing Cycle is required for selected services");
         return;
       }
+    }
+    if (!trimmedDealType) {
+      alert("Deal Type is required");
+      return;
+    }
       if (!trimmedDealSource) {
         alert("Deal Source is required");
         return;
@@ -658,10 +699,12 @@ function Deals() {
           name: trimmedName,
           amount: amountValue,
           probability: probabilityValue,
-          expectedRevenue: expectedRevenueValue,
-          closingDate: newDeal.closingDate || null,
-          product: newDeal.product || null,
-        },
+      expectedRevenue: expectedRevenueValue,
+      closingDate: newDeal.closingDate || null,
+      product: newDeal.product || null,
+      quantity: selectedNewDealItemType === "product" ? parseOptionalNumberInput(newDeal.quantity) : undefined,
+      billingCycle: selectedNewDealItemType === "service" ? newDeal.billingCycle || "" : undefined,
+    },
         { headers: { Authorization: `Bearer ${token}` } }
       );
       setDeals((prev) => [normalizeDeal(res.data), ...prev]);
@@ -950,6 +993,19 @@ function Deals() {
       alert("Product is required");
       return;
     }
+    if (selectedEditDealItemType === "product") {
+      const quantityValue = parseOptionalNumberInput(editDealForm.quantity);
+      if (quantityValue === null || quantityValue < 0) {
+        alert("Quantity is required for selected products");
+        return;
+      }
+    }
+    if (selectedEditDealItemType === "service") {
+      if (!String(editDealForm.billingCycle || "").trim()) {
+        alert("Plan / Billing Cycle is required for selected services");
+        return;
+      }
+    }
     if (amountValue === null || amountValue <= 0) {
       alert("Amount (Deal Value) is required and must be greater than 0");
       return;
@@ -974,14 +1030,16 @@ function Deals() {
         amount: amountValue,
         closingDate: closingDateValue,
         probability: probabilityValue,
-        expectedRevenue: probabilityValue === null ? expectedRevenueValue : undefined,
-        nextStep: String(editDealForm.nextStep || "").trim(),
-        dealType: String(editDealForm.dealType || "").trim(),
-        leadSource: String(editDealForm.leadSource || "").trim(),
-        campaignSource: String(editDealForm.campaignSource || "").trim(),
-        description: String(editDealForm.description || "").trim(),
-        product: editDealForm.product || null,
-      };
+      expectedRevenue: probabilityValue === null ? expectedRevenueValue : undefined,
+      nextStep: String(editDealForm.nextStep || "").trim(),
+      dealType: String(editDealForm.dealType || "").trim(),
+      leadSource: String(editDealForm.leadSource || "").trim(),
+      campaignSource: String(editDealForm.campaignSource || "").trim(),
+      description: String(editDealForm.description || "").trim(),
+      product: editDealForm.product || null,
+      quantity: selectedEditDealItemType === "product" ? parseOptionalNumberInput(editDealForm.quantity) : undefined,
+      billingCycle: selectedEditDealItemType === "service" ? editDealForm.billingCycle || "" : undefined,
+    };
 
       const res = await axios.put(`http://localhost:5000/api/deals/${selectedDeal._id}`, payload, {
         headers: { Authorization: `Bearer ${token}` },
@@ -2010,6 +2068,7 @@ ET`;
                     <input
                       type="date"
                       name="closingDate"
+                      min={minDate}
                       value={newDeal.closingDate}
                       onChange={(e) => setNewDeal((prev) => ({ ...prev, closingDate: e.target.value }))}
                       required
@@ -2037,51 +2096,6 @@ ET`;
                       {industries.map((industry) => (
                         <option key={industry || "blank"} value={industry}>
                           {industry || "Select industry"}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-                <div className="form-row-zoho">
-                  <div className="form-group">
-                    <label>Probability (%)</label>
-                    <input
-                      type="number"
-                      name="probability"
-                      min="0"
-                      max="100"
-                      value={newDeal.probability}
-                      onChange={(e) => setNewDeal((prev) => ({ ...prev, probability: e.target.value }))}
-                      autoComplete="off"
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label>Expected Revenue</label>
-                    <input
-                      type="number"
-                      name="expectedRevenue"
-                      step="0.01"
-                      min="0"
-                      value={newDeal.probability === "" ? newDeal.expectedRevenue : computedExpectedRevenue}
-                      onChange={(e) => setNewDeal((prev) => ({ ...prev, expectedRevenue: e.target.value }))}
-                      autoComplete="off"
-                      disabled={newDeal.probability !== ""}
-                    />
-                  </div>
-                </div>
-                <div className="form-row-zoho">
-                  <div className="form-group">
-                    <label>Product *</label>
-                    <select
-                      name="product"
-                      value={newDeal.product}
-                      onChange={(e) => setNewDeal((prev) => ({ ...prev, product: e.target.value }))}
-                      required
-                    >
-                      <option value="">Select product</option>
-                      {products.map((product) => (
-                        <option key={product._id} value={product._id}>
-                          {product.name}
                         </option>
                       ))}
                     </select>
@@ -2124,6 +2138,94 @@ ET`;
                     </select>
                   </div>
                 </div>
+                <div className="form-row-zoho">
+                  <div className="form-group">
+                    <label>Probability (%)</label>
+                    <input
+                      type="number"
+                      name="probability"
+                      min="0"
+                      max="100"
+                      value={newDeal.probability}
+                      onChange={(e) => setNewDeal((prev) => ({ ...prev, probability: e.target.value }))}
+                      autoComplete="off"
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Expected Revenue</label>
+                    <input
+                      type="number"
+                      name="expectedRevenue"
+                      step="0.01"
+                      min="0"
+                      value={newDeal.probability === "" ? newDeal.expectedRevenue : computedExpectedRevenue}
+                      onChange={(e) => setNewDeal((prev) => ({ ...prev, expectedRevenue: e.target.value }))}
+                      autoComplete="off"
+                      disabled={newDeal.probability !== ""}
+                    />
+                  </div>
+                </div>
+                <div className="form-section">
+                  <h3>Product Details</h3>
+                </div>
+                <div className="form-row-zoho">
+                  <div className="form-group">
+                    <label>Product *</label>
+                    <select
+                      name="product"
+                      value={newDeal.product}
+                      onChange={(e) =>
+                        setNewDeal((prev) => ({
+                          ...prev,
+                          product: e.target.value,
+                          quantity: "",
+                          billingCycle: "",
+                        }))
+                      }
+                      required
+                    >
+                      <option value="">Select product</option>
+                      {products.map((product) => (
+                        <option key={product._id} value={product._id}>
+                          {product.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                {selectedNewDealItemType === "product" && (
+                  <div className="form-row-zoho">
+                    <div className="form-group">
+                      <label>Quantity *</label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={newDeal.quantity}
+                        onChange={(e) => setNewDeal((prev) => ({ ...prev, quantity: e.target.value }))}
+                        required
+                      />
+                    </div>
+                  </div>
+                )}
+                {selectedNewDealItemType === "service" && (
+                  <div className="form-row-zoho">
+                    <div className="form-group">
+                      <label>Plan / Billing Cycle *</label>
+                      <select
+                        value={newDeal.billingCycle}
+                        onChange={(e) => setNewDeal((prev) => ({ ...prev, billingCycle: e.target.value }))}
+                        required
+                      >
+                        <option value="">Select plan</option>
+                        {billingCycleOptions.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                )}
                 <div className="form-section">
                   <h3>Address</h3>
                 </div>
@@ -2344,6 +2446,8 @@ ET`;
                             campaignSource: selectedDeal.campaignSource || "",
                             description: selectedDeal.description || "",
                             product: selectedDeal.product?._id || selectedDeal.product || "",
+                            quantity: selectedDeal.quantity ?? "",
+                            billingCycle: selectedDeal.billingCycle || "",
                           });
                         }}
                       >
@@ -2420,7 +2524,14 @@ ET`;
                     <select
                       className="deal-detail-input"
                       value={editDealForm?.product || ""}
-                      onChange={(e) => setEditDealForm((prev) => ({ ...prev, product: e.target.value }))}
+                      onChange={(e) =>
+                        setEditDealForm((prev) => ({
+                          ...prev,
+                          product: e.target.value,
+                          quantity: "",
+                          billingCycle: "",
+                        }))
+                      }
                     >
                       <option value="">Select product</option>
                       {products.map((product) => (
@@ -2433,12 +2544,83 @@ ET`;
                     <span className="detail-value">{getProductLabel(selectedDeal.product)}</span>
                   )}
                 </div>
+                {isEditingSelectedDeal && selectedEditDealItemType === "product" && (
+                  <div className="detail-row">
+                    <span className="detail-label">Quantity</span>
+                    <input
+                      type="number"
+                      className="deal-detail-input"
+                      min="0"
+                      value={editDealForm?.quantity ?? ""}
+                      onChange={(e) => setEditDealForm((prev) => ({ ...prev, quantity: e.target.value }))}
+                    />
+                  </div>
+                )}
+                {isEditingSelectedDeal && selectedEditDealItemType === "service" && (
+                  <div className="detail-row">
+                    <span className="detail-label">Plan / Billing Cycle</span>
+                    <select
+                      className="deal-detail-input"
+                      value={editDealForm?.billingCycle || ""}
+                      onChange={(e) => setEditDealForm((prev) => ({ ...prev, billingCycle: e.target.value }))}
+                    >
+                      <option value="">Select plan</option>
+                      {billingCycleOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                <div className="detail-row">
+                  <span className="detail-label">Deal Stage</span>
+                  {isEditingSelectedDeal ? (
+                    <select
+                      className="deal-detail-input"
+                      value={editDealForm?.stage || ""}
+                      onChange={(e) =>
+                        setEditDealForm((prev) => ({
+                          ...prev,
+                          stage: e.target.value,
+                        }))
+                      }
+                    >
+                      {stages.filter((stage) => stage.id !== "lost").map((stage) => (
+                        <option key={stage.id} value={stage.id}>
+                          {stage.name}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <span className="detail-value">{selectedDeal.stage ? selectedDeal.stage.replaceAll("_", " ") : "-"}</span>
+                  )}
+                </div>
+                <div className="detail-row">
+                  <span className="detail-label">Deal Type</span>
+                  {isEditingSelectedDeal ? (
+                    <select
+                      className="deal-detail-input"
+                      value={editDealForm?.dealType || ""}
+                      onChange={(e) => setEditDealForm((prev) => ({ ...prev, dealType: e.target.value }))}
+                    >
+                      {dealTypeOptions.map((typeOption) => (
+                        <option key={typeOption || "blank"} value={typeOption}>
+                          {typeOption || "Select deal type"}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <span className="detail-value">{selectedDeal.dealType || "-"}</span>
+                  )}
+                </div>
                 <div className="detail-row">
                   <span className="detail-label">Closing Date</span>
                   {isEditingSelectedDeal ? (
                     <input
                       type="date"
                       className="deal-detail-input"
+                      min={minDate}
                       value={editDealForm?.closingDate || ""}
                       onChange={(e) => setEditDealForm((prev) => ({ ...prev, closingDate: e.target.value }))}
                     />
@@ -2477,26 +2659,8 @@ ET`;
                     <span className="detail-value">
                       {selectedDeal.expectedRevenue === null || selectedDeal.expectedRevenue === undefined
                         ? "-"
-                        : `$${Number(selectedDeal.expectedRevenue).toLocaleString()}`}
+                      : `$${Number(selectedDeal.expectedRevenue).toLocaleString()}`}
                     </span>
-                  )}
-                </div>
-                <div className="detail-row">
-                  <span className="detail-label">Deal Type</span>
-                  {isEditingSelectedDeal ? (
-                    <select
-                      className="deal-detail-input"
-                      value={editDealForm?.dealType || ""}
-                      onChange={(e) => setEditDealForm((prev) => ({ ...prev, dealType: e.target.value }))}
-                    >
-                      {dealTypeOptions.map((typeOption) => (
-                        <option key={typeOption || "blank"} value={typeOption}>
-                          {typeOption || "Select deal type"}
-                        </option>
-                      ))}
-                    </select>
-                  ) : (
-                    <span className="detail-value">{selectedDeal.dealType || "-"}</span>
                   )}
                 </div>
                 <div className="detail-row">
