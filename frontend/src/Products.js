@@ -20,45 +20,24 @@ const SERVICE_CATEGORIES = [
 ];
 
 const getItemAlert = (item) => {
-  const type = item.type === "service" ? "service" : "product";
+  if ((item.type || "product") === "product") {
+    const quantity = Number(item.quantity ?? item.stock ?? 0);
+    const threshold = Number(item.lowStockThreshold ?? 5);
 
-  if (type === "product") {
-    const quantity = item.quantity ?? item.stock ?? 0;
-    const threshold = item.lowStockThreshold ?? 5;
+    if (quantity <= 0) {
+      return { text: "Out of Stock", className: "out-of-stock" };
+    }
 
-    if (quantity === 0) return { text: "Out of Stock", className: "out-of-stock" };
-    if (quantity <= threshold) return { text: `Low Stock (${quantity})`, className: "low-stock" };
+    if (quantity <= threshold) {
+      return { text: `Low Stock (${quantity})`, className: "low-stock" };
+    }
+
     return { text: `In Stock (${quantity})`, className: "in-stock" };
   }
 
-  if (item.serviceType === "license") {
-    if (item.status === "Expired") return { text: "Expired", className: "out-of-stock" };
-    const expiryDate = item.expiryDate ? new Date(item.expiryDate) : null;
-    if (!expiryDate) return { text: "Active", className: "in-stock" };
-    const daysLeft = Math.ceil((expiryDate.getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
-    if (daysLeft <= 30) return { text: `Expiring Soon (${Math.max(daysLeft, 0)}d)`, className: "low-stock" };
-    return { text: "Active", className: "in-stock" };
-  }
-
-  if (item.serviceType === "storage") {
-    const total = item.totalStorage || 0;
-    const available = item.availableStorage ?? 0;
-    const freeRatio = total > 0 ? (available / total) * 100 : 0;
-    if (freeRatio < 20) return { text: `Low Capacity (${freeRatio.toFixed(0)}%)`, className: "low-stock" };
-    return { text: `Available Storage (${available} ${item.storageUnit || "GB"})`, className: "in-stock" };
-  }
-
-  if (item.serviceType === "subscription") {
-    if (item.status === "Expired") return { text: "Expired", className: "out-of-stock" };
-    const nextBillingDate = item.nextBillingDate ? new Date(item.nextBillingDate) : null;
-    if (!nextBillingDate) return { text: "No Billing Date", className: "out-of-stock" };
-
-    const daysLeft = Math.ceil((nextBillingDate.getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
-    if (daysLeft <= 7) return { text: `Billing Soon (${Math.max(daysLeft, 0)}d)`, className: "low-stock" };
-    return { text: `Active (${daysLeft}d to bill)`, className: "in-stock" };
-  }
-
-  return { text: "-", className: "in-stock" };
+  return item.status === "Inactive"
+    ? { text: "Inactive", className: "out-of-stock" }
+    : { text: "Active", className: "in-stock" };
 };
 
 function Products() {
@@ -128,6 +107,9 @@ function Products() {
 
   const formatCurrency = (value) =>
     new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(value || 0);
+
+  const getDisplayPrice = (item) =>
+    (item.type || "product") === "service" ? item.cost : item.price;
 
   const formatDate = (value) => {
     if (!value) return "-";
@@ -210,7 +192,7 @@ function Products() {
                         <td className="product-name">{item.name}</td>
                         <td>{(item.type || "product") === "service" ? "Service" : "Product"}</td>
                         <td>{item.category}</td>
-                        <td>{formatCurrency(item.price)}</td>
+                        <td>{formatCurrency(getDisplayPrice(item))}</td>
                         <td>
                           <span className={`stock-badge ${alertInfo.className}`}>{alertInfo.text}</span>
                         </td>

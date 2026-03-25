@@ -25,11 +25,7 @@ const mergeGroupIntoPrimary = async (items) => {
   if (primary.type === "product") {
     primary.stock = items.reduce((sum, item) => sum + (item.stock || 0), 0);
   } else if (primary.serviceType === "license") {
-    primary.licenseKey = latest.licenseKey;
-    primary.vendor = latest.vendor;
-    primary.purchaseDate = latest.purchaseDate;
-    primary.expiryDate = latest.expiryDate;
-    primary.seats = latest.seats;
+    primary.cost = latest.cost;
     primary.status = latest.status;
   } else if (primary.serviceType === "storage") {
     primary.totalStorage = latest.totalStorage;

@@ -20,55 +20,25 @@ const SERVICE_CATEGORIES = [
   "Infrastructure"
 ];
 
-const formatShortDate = (dateString) => {
-  if (!dateString) return "-";
-  return new Date(dateString).toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "short",
-    day: "numeric"
-  });
-};
-
 const getInventoryStatus = (item) => {
-  const type = item.type === "service" ? "service" : "product";
+  if ((item.type || "product") === "product") {
+    const quantity = Number(item.quantity ?? item.stock ?? 0);
+    const threshold = Number(item.lowStockThreshold ?? 5);
 
-  if (type === "product") {
-    const quantity = item.quantity ?? item.stock ?? 0;
-    const threshold = item.lowStockThreshold ?? 5;
+    if (quantity <= 0) {
+      return { text: "Out of Stock", className: "out-of-stock" };
+    }
 
-    if (quantity === 0) return { text: "Out of Stock", className: "out-of-stock" };
-    if (quantity <= threshold) return { text: `Low Stock (${quantity})`, className: "low-stock" };
+    if (quantity <= threshold) {
+      return { text: `Low Stock (${quantity})`, className: "low-stock" };
+    }
+
     return { text: `In Stock (${quantity})`, className: "in-stock" };
   }
 
-  if (item.serviceType === "license") {
-    if (item.status === "Expired") return { text: "Expired", className: "out-of-stock" };
-    const expiryDate = item.expiryDate ? new Date(item.expiryDate) : null;
-    if (!expiryDate) return { text: "Active", className: "in-stock" };
-    const daysLeft = Math.ceil((expiryDate.getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
-    if (daysLeft <= 30) return { text: `Expiring Soon (${Math.max(daysLeft, 0)}d)`, className: "low-stock" };
-    return { text: "Active", className: "in-stock" };
-  }
-
-  if (item.serviceType === "storage") {
-    const total = item.totalStorage || 0;
-    const available = item.availableStorage ?? 0;
-    const freeRatio = total > 0 ? (available / total) * 100 : 0;
-    if (freeRatio < 20) return { text: `Low Capacity (${freeRatio.toFixed(0)}%)`, className: "low-stock" };
-    return { text: `Available Storage (${available} ${item.storageUnit || "GB"})`, className: "in-stock" };
-  }
-
-  if (item.serviceType === "subscription") {
-    if (item.status === "Expired") return { text: "Expired", className: "out-of-stock" };
-    const nextBillingDate = item.nextBillingDate ? new Date(item.nextBillingDate) : null;
-    if (!nextBillingDate) return { text: "No Billing Date", className: "out-of-stock" };
-
-    const daysLeft = Math.ceil((nextBillingDate.getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
-    if (daysLeft <= 7) return { text: `Billing Soon (${Math.max(daysLeft, 0)}d)`, className: "low-stock" };
-    return { text: `Active (${daysLeft}d to bill)`, className: "in-stock" };
-  }
-
-  return { text: "-", className: "in-stock" };
+  return item.status === "Inactive"
+    ? { text: "Inactive", className: "out-of-stock" }
+    : { text: "Active", className: "in-stock" };
 };
 
 const formatInventoryInfo = (item) => {
@@ -76,25 +46,16 @@ const formatInventoryInfo = (item) => {
     return item.quantity ?? item.stock ?? 0;
   }
 
-  if (item.serviceType === "license") {
-    if (item.seats) return `${item.seats} seats`;
-    return item.expiryDate ? `Expires ${new Date(item.expiryDate).toLocaleDateString("en-US")}` : "-";
-  }
-
-  if (item.serviceType === "storage") {
-    const used = item.usedStorage ?? 0;
-    const total = item.totalStorage ?? 0;
-    const unit = item.storageUnit || "GB";
-    return `${used}${unit} / ${total}${unit}`;
-  }
-
-  if (item.serviceType === "subscription") {
-    return item.nextBillingDate
-      ? formatShortDate(item.nextBillingDate)
-      : "-";
-  }
-
   return "-";
+};
+
+const formatCurrency = (value) => {
+  if (value === undefined || value === null || value === "") return "-";
+
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD"
+  }).format(Number(value) || 0);
 };
 
 function Inventory() {
@@ -313,7 +274,8 @@ function Inventory() {
                   <th>Type</th>
                   <th>SKU</th>
                   <th>Category</th>
-                  <th>Quantity / Info</th>
+                  <th>Quantity</th>
+                  <th>Price</th>
                   <th>Status</th>
                   {canEdit && <th>Actions</th>}
                 </tr>
@@ -321,7 +283,7 @@ function Inventory() {
               <tbody>
                 {items.length === 0 ? (
                   <tr>
-                    <td colSpan={canEdit ? 8 : 7} className="no-data">
+                    <td colSpan={canEdit ? 9 : 8} className="no-data">
                       No items found. {canEdit ? "Add your first item here." : ""}
                     </td>
                   </tr>
@@ -337,6 +299,11 @@ function Inventory() {
                         <td><span className="sku-badge">{item.sku || "-"}</span></td>
                         <td>{item.category || "-"}</td>
                         <td className="quantity-in">{formatInventoryInfo(item)}</td>
+                        <td className="quantity-in">
+                          {(item.type || "product") === "service"
+                            ? formatCurrency(item.cost)
+                            : formatCurrency(item.price)}
+                        </td>
                         <td>
                           <span className={`stock-badge ${status.className}`}>{status.text}</span>
                         </td>

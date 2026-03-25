@@ -8,12 +8,14 @@ const {
 	getItems,
 	getItemById,
 	updateItem,
+	updateItemStatus,
 	deleteItem
 } = require("../controllers/itemController");
 
 router.post("/", verifyToken, permit("ADMIN", "MANAGER"), createItem);
 router.get("/", verifyToken, permit("ADMIN", "MANAGER", "EMPLOYEE"), getItems);
 router.get("/:id", verifyToken, permit("ADMIN", "MANAGER", "EMPLOYEE"), getItemById);
+router.put("/:id/status", verifyToken, permit("ADMIN", "MANAGER"), updateItemStatus);
 router.put("/:id", verifyToken, permit("ADMIN", "MANAGER"), updateItem);
 router.delete("/:id", verifyToken, permit("ADMIN"), deleteItem);
 

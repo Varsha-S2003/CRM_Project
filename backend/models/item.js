@@ -13,7 +13,7 @@ const SERVICE_TYPE_CATEGORY_MAP = {
   storage: ["Cloud Services", "Infrastructure"],
   subscription: ["Cloud Services", "Managed Services", "Security"]
 };
-const SERVICE_STATUS_VALUES = ["Active", "Expired"];
+const SERVICE_STATUS_VALUES = ["Active", "Inactive"];
 const BILLING_CYCLE_VALUES = ["monthly", "yearly"];
 const STORAGE_UNIT_VALUES = ["GB", "TB"];
 
@@ -116,7 +116,7 @@ const itemSchema = new mongoose.Schema(
     status: {
       type: String,
       enum: SERVICE_STATUS_VALUES,
-      default: null
+      default: "Active"
     },
 
     // Subscription
@@ -226,6 +226,7 @@ itemSchema.pre("validate", function validateByType() {
   this.vendor = String(this.vendor || "").trim();
   this.provider = String(this.provider || "").trim();
   this.licenseKey = String(this.licenseKey || "").trim();
+  this.status = this.status || "Active";
 
   if (this.type === "product") {
     if (this.stock === undefined || this.stock === null) {
@@ -241,7 +242,6 @@ itemSchema.pre("validate", function validateByType() {
     this.purchaseDate = null;
     this.expiryDate = null;
     this.seats = null;
-    this.status = null;
     this.billingCycle = null;
     this.startDate = null;
     this.nextBillingDate = null;
@@ -257,6 +257,10 @@ itemSchema.pre("validate", function validateByType() {
   this.lowStockThreshold = 0;
   this.price = null;
 
+  if (!SERVICE_STATUS_VALUES.includes(this.status)) {
+    this.invalidate("status", "status must be Active or Inactive");
+  }
+
   if (this.serviceType) {
     const allowedCategories = SERVICE_TYPE_CATEGORY_MAP[this.serviceType] || [];
     if (!allowedCategories.includes(this.category)) {
@@ -268,25 +272,17 @@ itemSchema.pre("validate", function validateByType() {
   }
 
   if (this.serviceType === "license") {
-    if (!this.licenseKey) {
-      this.invalidate("licenseKey", "licenseKey is required for license services");
-    }
-    if (!this.purchaseDate) {
-      this.invalidate("purchaseDate", "purchaseDate is required for license services");
-    }
-    if (!this.expiryDate) {
-      this.invalidate("expiryDate", "expiryDate is required for license services");
-    }
-    if (this.seats === undefined || this.seats === null) {
-      this.invalidate("seats", "seats is required for license services");
-    }
     if (this.cost === undefined || this.cost === null) {
       this.invalidate("cost", "cost is required for license services");
     }
     if (!SERVICE_STATUS_VALUES.includes(this.status)) {
-      this.invalidate("status", "status must be Active or Expired for license services");
+      this.invalidate("status", "status must be Active or Inactive for license services");
     }
 
+    this.licenseKey = "";
+    this.purchaseDate = null;
+    this.expiryDate = null;
+    this.seats = null;
     this.vendor = "";
     this.billingCycle = null;
     this.startDate = null;
@@ -300,36 +296,28 @@ itemSchema.pre("validate", function validateByType() {
     if (!BILLING_CYCLE_VALUES.includes(this.billingCycle)) {
       this.invalidate("billingCycle", "billingCycle must be monthly or yearly for subscription services");
     }
-    if (!this.startDate) {
-      this.invalidate("startDate", "startDate is required for subscription services");
-    }
-    if (!this.nextBillingDate) {
-      this.invalidate("nextBillingDate", "nextBillingDate is required for subscription services");
-    }
     if (this.cost === undefined || this.cost === null) {
       this.invalidate("cost", "cost is required for subscription services");
     }
     if (!SERVICE_STATUS_VALUES.includes(this.status)) {
-      this.invalidate("status", "status must be Active or Expired for subscription services");
+      this.invalidate("status", "status must be Active or Inactive for subscription services");
     }
 
     this.licenseKey = "";
     this.purchaseDate = null;
+    this.expiryDate = null;
     this.seats = null;
     this.vendor = "";
     this.totalStorage = null;
     this.usedStorage = null;
     this.storageUnit = "GB";
     this.provider = "";
+    this.startDate = null;
+    this.nextBillingDate = null;
+    this.autoRenew = false;
   } else if (this.serviceType === "storage") {
     if (this.totalStorage === undefined || this.totalStorage === null) {
       this.invalidate("totalStorage", "totalStorage is required for storage services");
-    }
-    if (this.usedStorage === undefined || this.usedStorage === null) {
-      this.invalidate("usedStorage", "usedStorage is required for storage services");
-    }
-    if (!this.provider) {
-      this.invalidate("provider", "provider is required for storage services");
     }
     if (!BILLING_CYCLE_VALUES.includes(this.billingCycle)) {
       this.invalidate("billingCycle", "billingCycle must be monthly or yearly for storage services");
@@ -337,19 +325,17 @@ itemSchema.pre("validate", function validateByType() {
     if (this.cost === undefined || this.cost === null) {
       this.invalidate("cost", "cost is required for storage services");
     }
-    if ((this.usedStorage || 0) > (this.totalStorage || 0)) {
-      this.invalidate("usedStorage", "usedStorage cannot be greater than totalStorage");
-    }
 
     this.licenseKey = "";
     this.purchaseDate = null;
     this.expiryDate = null;
     this.seats = null;
-    this.status = null;
+    this.usedStorage = null;
     this.startDate = null;
     this.nextBillingDate = null;
     this.autoRenew = false;
     this.vendor = "";
+    this.provider = "";
   } else {
     this.invalidate("serviceType", "serviceType must be one of: license, storage, subscription");
   }
