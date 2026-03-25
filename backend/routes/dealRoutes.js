@@ -622,10 +622,16 @@ router.post("/", verifyToken, async (req, res) => {
     } = req.body;
     const validationError = validateCreateDealInput({
       name,
+      salutation,
+      firstName,
+      lastName,
+      title,
       company,
       contact,
       email,
       phone,
+      dealType,
+      leadSource,
       amount: amount ?? value,
       closingDate,
       probability,

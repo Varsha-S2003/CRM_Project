@@ -570,11 +570,12 @@ function Deals() {
   const submitNewDeal = async (e) => {
     e.preventDefault();
     try {
+      const formData = new FormData(e.currentTarget);
       const trimmedName = [String(newDeal.firstName || "").trim(), String(newDeal.lastName || "").trim()]
         .filter(Boolean)
         .join(" ")
         .trim();
-      const trimmedSalutation = String(newDeal.salutation || "").trim();
+      const trimmedSalutation = String(formData.get("salutation") || newDeal.salutation || "").trim();
       const trimmedFirstName = String(newDeal.firstName || "").trim();
       const trimmedLastName = String(newDeal.lastName || "").trim();
       const trimmedTitle = String(newDeal.title || "").trim();
@@ -653,6 +654,7 @@ function Deals() {
         "http://localhost:5000/api/deals",
         {
           ...newDeal,
+          salutation: trimmedSalutation,
           name: trimmedName,
           amount: amountValue,
           probability: probabilityValue,
@@ -1893,6 +1895,7 @@ ET`;
                   <div className="form-group">
                     <label>Salutation *</label>
                     <select
+                      name="salutation"
                       value={newDeal.salutation}
                       onChange={(e) => setNewDeal((prev) => ({ ...prev, salutation: e.target.value }))}
                       required

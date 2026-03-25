@@ -64,7 +64,7 @@ router.get("/", verifyToken, async (req, res) => {
     })
       .populate("product", "name sku category price")
       .sort({ updatedAt: -1, createdAt: -1 })
-      .select("customerId sourceLeadId stage status reason product updatedAt createdAt");
+      .select("customerId sourceLeadId stage status reason product leadSource updatedAt createdAt");
 
     const customerIdToCustomerKey = new Map(
       customers.map((customer) => [String(customer._id), String(customer._id)])
@@ -104,6 +104,13 @@ router.get("/", verifyToken, async (req, res) => {
       return {
         ...customer.toObject(),
         product: customer.product || latestDeal?.product || null,
+        dealStage: latestDeal?.stage || "",
+        dealStatus: latestDeal
+          ? normalizeStatus(latestDeal.status, latestDeal.stage)
+          : normalizeStatus(customer.status, null),
+        dealReason: String(latestDeal?.reason || "").trim(),
+        dealSource: String(latestDeal?.leadSource || customer.leadId?.source || "").trim(),
+        dealCreatedAt: latestDeal?.createdAt || null,
         status: derivedStatus,
         reason: derivedReason,
       };
