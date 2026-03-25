@@ -1,0 +1,149 @@
+:root {
+  --bg: #f2f6fb;
+  --card: #ffffff;
+  --text: #1f2d3d;
+  --muted: #52606d;
+  --line: #d8e1eb;
+  --accent: #0a6cd6;
+  --good: #0f9d58;
+  --warn: #f5a623;
+  --bad: #d93025;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+  background: radial-gradient(circle at top right, #dfeeff 0%, var(--bg) 40%, #eef4fb 100%);
+  color: var(--text);
+}
+
+.page {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 24px 16px 36px;
+}
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 20px;
+  margin-bottom: 16px;
+  box-shadow: 0 8px 20px rgba(20, 45, 84, 0.08);
+}
+
+h1, h2 {
+  margin-top: 0;
+}
+
+.muted {
+  color: var(--muted);
+  margin-bottom: 16px;
+}
+
+.table-wrap {
+  overflow-x: auto;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  background: #fff;
+}
+
+th, td {
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  padding: 12px;
+  font-size: 14px;
+}
+
+thead th {
+  background: #f6f9fd;
+  font-weight: 600;
+}
+
+tbody tr.clickable {
+  cursor: pointer;
+}
+
+tbody tr.clickable:hover {
+  background: #eef6ff;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+.info-item {
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fbfdff;
+}
+
+.label {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.value {
+  font-weight: 600;
+}
+
+.badge {
+  display: inline-block;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.badge.Active {
+  background: #e8f7ee;
+  color: var(--good);
+}
+
+.badge.Inactive {
+  background: #fff8e6;
+  color: var(--warn);
+}
+
+.badge.Closed-Won {
+  background: #e8f0ff;
+  color: var(--accent);
+}
+
+.badge.Closed-Lost {
+  background: #fdeaea;
+  color: var(--bad);
+}
+
+.back-link {
+  color: var(--accent);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.empty-state {
+  padding: 16px;
+  color: var(--muted);
+  text-align: center;
+}
+
+@media (max-width: 640px) {
+  .card {
+    padding: 14px;
+  }
+
+  th, td {
+    padding: 10px 8px;
+  }
+}

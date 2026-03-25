@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Customer Detail</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+</head>
+<body>
+  <main class="page">
+    <section class="card">
+      <a class="back-link" href="/ui/customers">Back to Customers</a>
+      <h1>Customer Detail</h1>
+      <div id="customer-info" class="grid"></div>
+    </section>
+
+    <section class="card">
+      <h2>Deals</h2>
+      <div class="table-wrap">
+        <table id="deal-table">
+          <thead>
+            <tr>
+              <th>Service Type</th>
+              <th>Status</th>
+              <th>Created At</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Activities</h2>
+      <div class="table-wrap">
+        <table id="activity-table">
+          <thead>
+            <tr>
+              <th>Type</th>
+              <th>Notes</th>
+              <th>Date</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+  <script src="{{ url_for('static', filename='js/customer_detail.js') }}"></script>
+</body>
+</html>

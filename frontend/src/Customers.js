@@ -1,11 +1,13 @@
 import React, { useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import Sidebar from "./Sidebar";
-import RecordActivityPanel from "./RecordActivityPanel";
 import "./Leads.css";
 import "./Customers.css";
 
 const getLeadSource = (leadValue) => {
+  if (typeof leadValue === "string") {
+    return String(leadValue).trim() || "-";
+  }
   if (!leadValue || typeof leadValue !== "object") return "-";
   return String(leadValue.source || "").trim() || "-";
 };
@@ -14,6 +16,28 @@ const getProductLabel = (productValue) => {
   if (!productValue) return "-";
   if (typeof productValue === "string") return productValue;
   return String(productValue.name || productValue.sku || "").trim() || "-";
+};
+
+const toTimestamp = (value) => {
+  if (!value) return 0;
+  const timestamp = new Date(value).getTime();
+  return Number.isFinite(timestamp) ? timestamp : 0;
+};
+
+const normalizeKeyPart = (value) => String(value || "").trim().toLowerCase();
+
+const buildCustomerMergeKey = (customer) =>
+  [customer.name, customer.company, customer.email].map(normalizeKeyPart).join("|");
+
+const formatDateTime = (value) => {
+  const timestamp = toTimestamp(value);
+  if (!timestamp) return "-";
+  return new Date(timestamp).toLocaleString();
+};
+
+const normalizeStatusLabel = (value) => {
+  const normalized = String(value || "").trim().toLowerCase();
+  return normalized === "inactive" ? "Inactive" : "Active";
 };
 
 export default function Customers() {
@@ -49,30 +73,100 @@ export default function Customers() {
     fetchCustomers();
   }, [statusFilter]);
 
+  const mergedCustomers = useMemo(() => {
+    const grouped = new Map();
+
+    customers.forEach((customer) => {
+      const key = buildCustomerMergeKey(customer);
+      const createdAtValue = customer.createdAt || customer.created_at || null;
+      const purchase = {
+        id: customer._id,
+        product: getProductLabel(customer.product),
+        source: getLeadSource(customer.dealSource || customer.leadId),
+        stage: String(customer.dealStage || customer.stage || "-").trim() || "-",
+        status: normalizeStatusLabel(customer.dealStatus || customer.status),
+        reason: String(customer.dealReason || customer.reason || "").trim(),
+        createdAt: customer.dealCreatedAt || createdAtValue,
+      };
+
+      if (!grouped.has(key)) {
+        grouped.set(key, {
+          _id: customer._id,
+          key,
+          name: customer.name || "",
+          company: customer.company || "",
+          email: customer.email || "",
+          phone: customer.phone || "",
+          status: customer.status || "Active",
+          reason: customer.status === "Inactive" ? String(customer.reason || "").trim() : "",
+          createdAt: createdAtValue,
+          purchases: [purchase],
+        });
+        return;
+      }
+
+      const existing = grouped.get(key);
+      existing.purchases.push(purchase);
+
+      if (!existing.phone && customer.phone) {
+        existing.phone = customer.phone;
+      }
+
+      const existingCreatedAtTs = toTimestamp(existing.createdAt);
+      const currentCreatedAtTs = toTimestamp(createdAtValue);
+      if (existingCreatedAtTs === 0 || (currentCreatedAtTs > 0 && currentCreatedAtTs < existingCreatedAtTs)) {
+        existing.createdAt = createdAtValue;
+      }
+
+      const existingReasons = new Set(
+        String(existing.reason || "")
+          .split(" | ")
+          .map((item) => item.trim())
+          .filter(Boolean)
+      );
+      const currentReason = String(customer.reason || "").trim();
+      if (customer.status === "Inactive" && currentReason) {
+        existingReasons.add(currentReason);
+      }
+
+      if (existingReasons.size > 0) {
+        existing.reason = Array.from(existingReasons).join(" | ");
+      }
+
+      if (customer.status === "Inactive") {
+        existing.status = "Inactive";
+      }
+    });
+
+    return Array.from(grouped.values())
+      .map((customer) => ({
+        ...customer,
+        purchases: customer.purchases.sort((a, b) => toTimestamp(b.createdAt) - toTimestamp(a.createdAt)),
+      }))
+      .sort((a, b) => toTimestamp(b.createdAt) - toTimestamp(a.createdAt));
+  }, [customers]);
+
   const visibleCustomers = useMemo(() => {
     const byStatus =
       statusFilter === "all"
-        ? customers
-        : customers.filter((customer) => customer.status === statusFilter);
+        ? mergedCustomers
+        : mergedCustomers.filter((customer) => customer.status === statusFilter);
 
     const term = search.trim().toLowerCase();
     if (!term) return byStatus;
 
     return byStatus.filter((customer) => {
-      const source = getLeadSource(customer.leadId);
       return [
         customer.name,
         customer.company,
         customer.email,
         customer.phone,
-        getProductLabel(customer.product),
-        source,
         customer.reason,
       ]
         .filter(Boolean)
         .some((value) => String(value).toLowerCase().includes(term));
     });
-  }, [customers, statusFilter, search]);
+  }, [mergedCustomers, statusFilter, search]);
 
   return (
     <div className="dashboard-layout">
@@ -85,27 +179,16 @@ export default function Customers() {
               <p className="dashboard-subtitle">Converted leads are listed here.</p>
             </div>
             <div className="deal-status-filters">
-              <button
-                type="button"
-                className={`btn-filter ${statusFilter === "all" ? "active-status-filter" : ""}`}
-                onClick={() => setStatusFilter("all")}
+              <select
+                className="customers-filter-select"
+                value={statusFilter}
+                onChange={(event) => setStatusFilter(event.target.value)}
+                aria-label="Filter customers by status"
               >
-                All Customers
-              </button>
-              <button
-                type="button"
-                className={`btn-filter ${statusFilter === "Active" ? "active-status-filter" : ""}`}
-                onClick={() => setStatusFilter("Active")}
-              >
-                Active Customers
-              </button>
-              <button
-                type="button"
-                className={`btn-filter ${statusFilter === "Inactive" ? "active-status-filter" : ""}`}
-                onClick={() => setStatusFilter("Inactive")}
-              >
-                Inactive Customers
-              </button>
+                <option value="all">All Customers</option>
+                <option value="Active">Active Customers</option>
+                <option value="Inactive">Inactive Customers</option>
+              </select>
             </div>
           </div>
 
@@ -138,11 +221,6 @@ export default function Customers() {
                     <th>Company</th>
                     <th>Email</th>
                     <th>Phone</th>
-                    <th>Product</th>
-                    <th>Source</th>
-                    <th>Status</th>
-                    <th>Reason</th>
-                    <th>Created At</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -156,21 +234,6 @@ export default function Customers() {
                       <td data-label="Company">{customer.company || "-"}</td>
                       <td data-label="Email">{customer.email || "-"}</td>
                       <td data-label="Phone">{customer.phone || "-"}</td>
-                      <td data-label="Product">{getProductLabel(customer.product)}</td>
-                      <td data-label="Source">
-                        {getLeadSource(customer.leadId)}
-                      </td>
-                      <td data-label="Status">
-                        <span className={`deal-status-pill ${customer.status === "Inactive" ? "inactive" : "active"}`}>
-                          {customer.status || "Active"}
-                        </span>
-                      </td>
-                      <td data-label="Reason">
-                        {customer.status === "Inactive" ? customer.reason || "-" : "-"}
-                      </td>
-                      <td data-label="Created At">
-                        {customer.createdAt ? new Date(customer.createdAt).toLocaleString() : "-"}
-                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -181,50 +244,69 @@ export default function Customers() {
 
           {selectedCustomer ? (
             <div className="modal-overlay-zoho" onClick={() => setSelectedCustomer(null)}>
-              <div className="modal-box-zoho modal-view" onClick={(event) => event.stopPropagation()}>
+              <div className="modal-box-zoho modal-view customer-modal-dialog" onClick={(event) => event.stopPropagation()}>
                 <div className="modal-header-zoho">
                   <h2>{selectedCustomer.name}</h2>
                   <button className="modal-close" onClick={() => setSelectedCustomer(null)}>x</button>
                 </div>
-                <div className="lead-details-view">
-                  <div className="detail-row">
-                    <span className="detail-label">Company</span>
-                    <span className="detail-value">{selectedCustomer.company || "-"}</span>
-                  </div>
-                  <div className="detail-row">
-                    <span className="detail-label">Email</span>
-                    <span className="detail-value">{selectedCustomer.email || "-"}</span>
-                  </div>
-                  <div className="detail-row">
-                    <span className="detail-label">Phone</span>
-                    <span className="detail-value">{selectedCustomer.phone || "-"}</span>
-                  </div>
-                  <div className="detail-row">
-                    <span className="detail-label">Product</span>
-                    <span className="detail-value">{getProductLabel(selectedCustomer.product)}</span>
-                  </div>
-                  <div className="detail-row">
-                    <span className="detail-label">Source</span>
-                    <span className="detail-value">
-                      {getLeadSource(selectedCustomer.leadId)}
-                    </span>
-                  </div>
-                  <div className="detail-row">
-                    <span className="detail-label">Status</span>
-                    <span className="detail-value">{selectedCustomer.status || "Active"}</span>
-                  </div>
-                  {selectedCustomer.status === "Inactive" && (
+                <div className="customer-modal-content">
+                  <div className="lead-details-view customer-lead-details">
                     <div className="detail-row">
-                      <span className="detail-label">Reason</span>
-                      <span className="detail-value">{selectedCustomer.reason || "-"}</span>
+                      <span className="detail-label">Company</span>
+                      <span className="detail-value">{selectedCustomer.company || "-"}</span>
                     </div>
-                  )}
+                    <div className="detail-row">
+                      <span className="detail-label">Email</span>
+                      <span className="detail-value">{selectedCustomer.email || "-"}</span>
+                    </div>
+                    <div className="detail-row">
+                      <span className="detail-label">Phone</span>
+                      <span className="detail-value">{selectedCustomer.phone || "-"}</span>
+                    </div>
+                  </div>
+                  <div className="customers-table-wrapper customer-purchases-wrapper">
+                    <h3 className="customer-purchases-title">Purchases</h3>
+                    <table className="customers-table">
+                      <thead>
+                        <tr>
+                          <th>Product</th>
+                          <th>Source</th>
+                          <th>Stage</th>
+                          <th>Status</th>
+                          <th>Reason</th>
+                          <th>Created At</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(selectedCustomer.purchases || []).length === 0 ? (
+                          <tr>
+                            <td colSpan="6">-</td>
+                          </tr>
+                        ) : (
+                          selectedCustomer.purchases.map((purchase) => {
+                            const purchaseStatus = normalizeStatusLabel(purchase.status);
+                            return (
+                              <tr key={`${purchase.id}-${purchase.createdAt || "na"}`}>
+                                <td data-label="Product">{purchase.product || "-"}</td>
+                                <td data-label="Source">{purchase.source || "-"}</td>
+                                <td data-label="Stage">{purchase.stage || "-"}</td>
+                                <td data-label="Status">
+                                  <span className={`deal-status-pill ${purchaseStatus === "Inactive" ? "inactive" : "active"}`}>
+                                    {purchaseStatus}
+                                  </span>
+                                </td>
+                                <td data-label="Reason">
+                                  {purchaseStatus === "Inactive" ? purchase.reason || "-" : "-"}
+                                </td>
+                                <td data-label="Created At">{formatDateTime(purchase.createdAt)}</td>
+                              </tr>
+                            );
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
-                <RecordActivityPanel
-                  recordType="Customer"
-                  recordId={selectedCustomer._id}
-                  recordName={selectedCustomer.name}
-                />
               </div>
             </div>
           ) : null}
