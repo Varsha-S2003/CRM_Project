@@ -49,7 +49,7 @@ const leadSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ["new", "contacted", "qualified", "proposal", "converted", "lost"],
+      enum: ["new", "contacted", "qualified", "proposal", "proposal_sent", "converted", "lost"],
       default: "new",
     },
     notes: { type: String, trim: true },
@@ -88,11 +88,11 @@ const leadSchema = new mongoose.Schema(
       {
         fromStatus: {
           type: String,
-          enum: ["new", "contacted", "qualified", "proposal", "converted", "lost"],
+          enum: ["new", "contacted", "qualified", "proposal", "proposal_sent", "converted", "lost"],
         },
         toStatus: {
           type: String,
-          enum: ["new", "contacted", "qualified", "proposal", "converted", "lost"],
+          enum: ["new", "contacted", "qualified", "proposal", "proposal_sent", "converted", "lost"],
         },
         performedBy: {
           type: mongoose.Schema.Types.ObjectId,
@@ -115,11 +115,11 @@ const leadSchema = new mongoose.Schema(
     pendingTransitionApproval: {
       fromStatus: {
         type: String,
-        enum: ["new", "contacted", "qualified", "proposal", "converted", "lost"],
+        enum: ["new", "contacted", "qualified", "proposal", "proposal_sent", "converted", "lost"],
       },
       toStatus: {
         type: String,
-        enum: ["new", "contacted", "qualified", "proposal", "converted", "lost"],
+        enum: ["new", "contacted", "qualified", "proposal", "proposal_sent", "converted", "lost"],
       },
       requestedBy: {
         type: mongoose.Schema.Types.ObjectId,
@@ -138,8 +138,21 @@ const leadSchema = new mongoose.Schema(
       contactedAt: { type: Date, default: null },
       qualifiedAt: { type: Date, default: null },
       proposalAt: { type: Date, default: null },
+      proposalSentAt: { type: Date, default: null },
       convertedAt: { type: Date, default: null },
       lostAt: { type: Date, default: null },
+    },
+    latestProposal: {
+      subject: { type: String, trim: true, default: "" },
+      amount: { type: Number, min: 0, default: null },
+      currency: { type: String, trim: true, default: "INR" },
+      validUntil: { type: Date, default: null },
+      message: { type: String, trim: true, default: "" },
+      terms: { type: String, trim: true, default: "" },
+      sentTo: { type: String, trim: true, default: "" },
+      sentAt: { type: Date, default: null },
+      sentBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+      createdAt: { type: Date, default: null },
     },
   },
 

@@ -89,6 +89,54 @@
   padding: 14px 18px;
 }
 
+.activity-reminder-popups {
+  position: fixed;
+  top: 24px;
+  right: 24px;
+  z-index: 1400;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(360px, calc(100vw - 24px));
+}
+
+.activity-reminder-popup {
+  position: relative;
+  background: #0f172a;
+  color: #fff;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow: 0 14px 32px rgba(15, 23, 42, 0.32);
+  padding: 12px 36px 12px 14px;
+}
+
+.activity-reminder-title {
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.activity-reminder-meta,
+.activity-reminder-time {
+  margin-top: 4px;
+  font-size: 12px;
+  color: rgba(226, 232, 240, 0.95);
+}
+
+.activity-reminder-close {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.18);
+  color: #fff;
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+}
+
 .activity-shell {
   display: grid;
   grid-template-columns: 220px minmax(0, 1fr);
@@ -385,7 +433,7 @@
   justify-content: center;
   align-items: center;
   padding: 20px;
-  z-index: 50;
+  z-index: 1300;
 }
 
 .activity-modal {
@@ -415,9 +463,121 @@
   font-weight: 600;
 }
 
+.activity-form .activity-input-error {
+  border-color: #ef4444;
+  background: #fff1f2;
+}
+
+.activity-form-error {
+  margin-top: -2px;
+  color: #b91c1c;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.activity-form-hint {
+  margin-top: -2px;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.activity-inline-checkbox {
+  display: inline-flex !important;
+  flex-direction: row !important;
+  align-items: center;
+  gap: 10px;
+}
+
+.activity-inline-checkbox input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+}
+
+.activity-reminder-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.activity-reminder-presets button {
+  border: 1px solid #c9d6ea;
+  background: #eef4ff;
+  color: #1d4ed8;
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.activity-reminder-presets button:hover {
+  background: #dbeafe;
+}
+
 .activity-form .span-2,
 .activity-form .full-width {
   grid-column: 1 / -1;
+}
+
+.activity-proposal-email-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.activity-proposal-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  color: #334155;
+}
+
+.activity-proposal-submit-message {
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.activity-proposal-submit-message.error {
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  background: #fff1f2;
+  color: #b91c1c;
+}
+
+.activity-proposal-submit-message.success {
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  background: #ecfdf5;
+  color: #047857;
+}
+
+.activity-complete-modal {
+  width: min(760px, 100%);
+}
+
+.activity-complete-outcomes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.activity-complete-outcome-btn {
+  border: 1px solid #c9d6ea;
+  background: #f8fafc;
+  color: #334155;
+  border-radius: 12px;
+  padding: 10px 12px;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.activity-complete-outcome-btn.active {
+  border-color: #2563eb;
+  background: #dbeafe;
+  color: #1d4ed8;
 }
 
 .record-activity-panel {

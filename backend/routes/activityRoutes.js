@@ -6,6 +6,7 @@ const Lead = require("../models/lead");
 const Contact = require("../models/contact");
 const Deal = require("../models/deal");
 const { verifyToken } = require("../middleware/authMiddleware");
+const { sendActivityReminderEmail } = require("../utils/mailer");
 
 const router = express.Router();
 
@@ -22,6 +23,35 @@ const SIMPLE_TYPE_MAP = {
   email: "email",
   meeting: "meeting",
   task: "task",
+};
+
+const LEAD_ACTIVITY_REMINDER_MINUTES = 5;
+const LEAD_STAGE_FROM_ACTIVITY_TYPE = {
+  call: "contacted",
+  meeting: "qualified",
+};
+const OUTCOME_TO_LEAD_STATUS = {
+  not_interested: "lost",
+  no_response: "contacted",
+  follow_up_needed: "contacted",
+};
+const ACTIVITY_STAGE_TO_LEAD_STATUS = {
+  contacted: "contacted",
+  meeting: "contacted",
+  qualified: "qualified",
+};
+const AUTO_FOLLOW_UP_TYPE_BY_STAGE = {
+  contacted: "call",
+  meeting: "meeting",
+  qualified: "task",
+};
+const LEAD_STAGE_ORDER = {
+  new: 1,
+  contacted: 2,
+  qualified: 3,
+  proposal: 4,
+  converted: 5,
+  lost: 5,
 };
 
 const toLegacyStatus = (value, fallback = "Completed") => {
@@ -41,6 +71,49 @@ const toSimpleStatus = (value) => {
   if (normalized === "cancelled") return "completed";
   return "completed";
 };
+
+const normalizeOutcome = (value) => {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (["interested", "not_interested", "no_response", "follow_up_needed"].includes(normalized)) {
+    return normalized;
+  }
+  return "";
+};
+
+const normalizeStage = (value) => {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (["contacted", "meeting", "qualified"].includes(normalized)) {
+    return normalized;
+  }
+  return "";
+};
+
+const normalizeFollowUpType = (value) => {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (["task", "meeting", "call"].includes(normalized)) {
+    return normalized;
+  }
+  return "";
+};
+
+const coerceBoolean = (value, fallback = false) => {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (["true", "1", "yes", "on"].includes(normalized)) return true;
+    if (["false", "0", "no", "off", ""].includes(normalized)) return false;
+  }
+  if (typeof value === "number") return value === 1;
+  return fallback;
+};
+
+const coerceFollowUpDays = (value) => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return 1;
+  return Math.max(1, Math.min(30, Math.round(parsed)));
+};
+
+const normalizeReasonText = (value) => String(value || "").trim();
 
 const getStartOfDay = (value = new Date()) => {
   const date = new Date(value);
@@ -75,6 +148,157 @@ const asObjectId = (value) => {
 };
 
 const getActivityDate = (activity) => activity.startDateTime || activity.dueDate || activity.createdAt;
+
+const getLinkedLeadIdFromActivity = (activity) => {
+  if (!activity) return null;
+
+  const directLeadId = activity.leadId;
+  if (directLeadId) return directLeadId;
+
+  const relatedType = String(activity.relatedTo?.recordType || "").toLowerCase();
+  if (relatedType !== "lead") return null;
+
+  const relatedId = activity.relatedTo?.recordId;
+  if (!relatedId) return null;
+  if (typeof relatedId === "object" && relatedId._id) return relatedId._id;
+  return relatedId;
+};
+
+const resolveLeadStatusFromCompletedActivity = (activity, currentStatus = "new") => {
+  const normalizedOutcome = normalizeOutcome(activity?.outcome);
+  if (normalizedOutcome === "interested") {
+    const current = String(currentStatus || "new").toLowerCase();
+    if (current === "new") return "contacted";
+    if (current === "contacted") return "qualified";
+    return "qualified";
+  }
+
+  const outcomeStatus = OUTCOME_TO_LEAD_STATUS[normalizeOutcome(activity?.outcome)];
+  if (outcomeStatus) return outcomeStatus;
+
+  const stageStatus = ACTIVITY_STAGE_TO_LEAD_STATUS[normalizeStage(activity?.stage)];
+  if (stageStatus) return stageStatus;
+
+  const activityType = String(activity?.activityType || "").toLowerCase();
+  return LEAD_STAGE_FROM_ACTIVITY_TYPE[activityType] || null;
+};
+
+const buildTransitionReason = (activity, activityType, targetStatus) => {
+  const base = `Auto-updated from completed ${activityType} activity`;
+  const reasonText = normalizeReasonText(activity?.outcomeReason);
+
+  if (targetStatus === "lost" && reasonText) {
+    return `${base}. Lost reason: ${reasonText}`;
+  }
+
+  if (["no_response", "follow_up_needed"].includes(normalizeOutcome(activity?.outcome)) && reasonText) {
+    return `${base}. Follow-up reason: ${reasonText}`;
+  }
+
+  return base;
+};
+
+const createAutoFollowUpActivity = async (activity) => {
+  if (!activity) return null;
+
+  const completed = String(activity.status || "").toLowerCase() === "completed";
+  if (!completed) return null;
+
+  if (!coerceBoolean(activity.requiresFollowUp, false)) return null;
+  if (activity.followUpGeneratedAt) return null;
+
+  const stage = normalizeStage(activity.stage);
+  const defaultType = AUTO_FOLLOW_UP_TYPE_BY_STAGE[stage] || String(activity.activityType || "task").toLowerCase() || "task";
+  const followUpType = normalizeFollowUpType(activity.followUpType) || defaultType;
+  const followUpInDays = coerceFollowUpDays(activity.followUpInDays);
+  const baseDate = getActivityDate(activity) || activity.completedAt || new Date();
+  const nextStart = addDays(baseDate, followUpInDays);
+  const nextStatus = followUpType === "task" ? "Pending" : "Scheduled";
+  const sourceTitle = String(activity.title || "Activity").trim();
+
+  const followUpPayload = {
+    leadId: activity.leadId,
+    type: followUpType,
+    notes: activity.notes || activity.description || "",
+    nextFollowUpDate: null,
+    createdBy: activity.createdBy || activity.owner,
+    activityType: followUpType,
+    title: `Follow-up: ${sourceTitle}`,
+    description: activity.description || activity.notes || "",
+    owner: activity.owner,
+    status: nextStatus,
+    priority: activity.priority || "Medium",
+    location: activity.location || "",
+    participants: Array.isArray(activity.participants) ? activity.participants : [],
+    reminderChannels: {
+      popup: true,
+      email: false,
+    },
+    recurrence: "none",
+    relatedTo: activity.relatedTo,
+    outcome: "",
+    requiresFollowUp: false,
+    stage,
+    followUpType: "",
+    followUpInDays: 1,
+    followUpGeneratedAt: null,
+  };
+
+  if (followUpType === "task") {
+    followUpPayload.dueDate = nextStart;
+    followUpPayload.reminderTime = new Date(nextStart.getTime() - LEAD_ACTIVITY_REMINDER_MINUTES * 60 * 1000);
+    followUpPayload.task = { taskTitle: `Follow-up: ${sourceTitle}` };
+  }
+
+  if (followUpType === "meeting") {
+    const durationMs = 30 * 60 * 1000;
+    followUpPayload.startDateTime = nextStart;
+    followUpPayload.endDateTime = new Date(nextStart.getTime() + durationMs);
+    followUpPayload.reminderTime = new Date(nextStart.getTime() - LEAD_ACTIVITY_REMINDER_MINUTES * 60 * 1000);
+    followUpPayload.meeting = {
+      meetingTitle: `Follow-up: ${sourceTitle}`,
+      reminder: followUpPayload.reminderTime,
+    };
+  }
+
+  if (followUpType === "call") {
+    followUpPayload.startDateTime = nextStart;
+    followUpPayload.reminderTime = new Date(nextStart.getTime() - LEAD_ACTIVITY_REMINDER_MINUTES * 60 * 1000);
+    followUpPayload.call = {
+      callSubject: `Follow-up: ${sourceTitle}`,
+      callType: activity.call?.callType || "Outbound",
+      callDuration: Number(activity.call?.callDuration) || 15,
+      callNotes: "Auto-created follow-up from completed activity",
+      callStatus: "Scheduled",
+    };
+  }
+
+  const created = await Activity.create(enforceLeadCallMeetingReminder(followUpPayload));
+  activity.followUpGeneratedAt = new Date();
+  await activity.save();
+  await updateLeadLastActivityAt(created);
+  return created;
+};
+
+const enforceLeadCallMeetingReminder = (activity) => {
+  if (!activity) return activity;
+
+  const isLeadRecord = String(activity.relatedTo?.recordType || "").toLowerCase() === "lead";
+  const isCallOrMeeting = ["call", "meeting"].includes(String(activity.activityType || "").toLowerCase());
+  if (!isLeadRecord || !isCallOrMeeting) return activity;
+
+  const start = activity.startDateTime ? new Date(activity.startDateTime) : null;
+  if (!start || Number.isNaN(start.getTime())) return activity;
+
+  const reminderTime = new Date(start.getTime() - LEAD_ACTIVITY_REMINDER_MINUTES * 60 * 1000);
+  activity.reminderTime = reminderTime;
+
+  if (activity.activityType === "meeting") {
+    activity.meeting = { ...(activity.meeting || {}), reminder: reminderTime };
+  }
+
+  return activity;
+};
 
 const computeNextRecurrence = (activity) => {
   if (!activity || !activity.recurrence || activity.recurrence === "none") return null;
@@ -188,6 +412,13 @@ const normalizeActivityPayload = async (payload, userId) => {
     throw new Error("Invalid activity status");
   }
 
+  const requiresFollowUp = coerceBoolean(payload.requiresFollowUp, false);
+  const followUpInDays = coerceFollowUpDays(payload.followUpInDays);
+  const stage = normalizeStage(payload.stage);
+  const outcome = normalizeOutcome(payload.outcome);
+  const outcomeReason = normalizeReasonText(payload.outcomeReason);
+  const followUpType = requiresFollowUp ? normalizeFollowUpType(payload.followUpType) : "";
+
   const base = {
     leadId: relatedType === "Lead" ? relatedRecord._id : undefined,
     type: activityType,
@@ -229,6 +460,13 @@ const normalizeActivityPayload = async (payload, userId) => {
       email: payload.reminderChannels?.email ?? Boolean(payload.emailReminder),
     },
     recurrence: payload.recurrence || "none",
+    outcome,
+    outcomeReason,
+    requiresFollowUp,
+    stage,
+    followUpType,
+    followUpInDays,
+    followUpGeneratedAt: payload.followUpGeneratedAt || null,
     relatedTo: {
       recordType: relatedType,
       recordId: relatedRecord._id,
@@ -260,19 +498,72 @@ const normalizeActivityPayload = async (payload, userId) => {
     throw new Error("Title is required");
   }
 
-  return base;
+  return enforceLeadCallMeetingReminder(base);
 };
 
 const updateLeadLastActivityAt = async (activity) => {
   if (!activity) return;
 
-  const leadId = activity.leadId || (activity.relatedTo?.recordType === "Lead" ? activity.relatedTo.recordId : null);
+  const leadId = getLinkedLeadIdFromActivity(activity);
   if (!leadId) return;
 
   await Lead.findByIdAndUpdate(leadId, {
     lastActivityAt: new Date(),
     lastActivityDate: new Date(),
   });
+};
+
+const updateLeadStageFromCompletedActivity = async (activity, actorId = null) => {
+  if (!activity) return;
+
+  const activityType = String(activity.activityType || "").toLowerCase();
+
+  const leadId = getLinkedLeadIdFromActivity(activity);
+  if (!leadId) return;
+
+  const lead = await Lead.findById(leadId);
+  if (!lead) return;
+
+  const currentStatus = String(lead.status || "new").toLowerCase();
+  if (["converted", "lost"].includes(currentStatus)) return;
+
+  const targetStatus = resolveLeadStatusFromCompletedActivity(activity, currentStatus);
+  if (!targetStatus) return;
+
+  const currentOrder = LEAD_STAGE_ORDER[currentStatus] || 0;
+  const targetOrder = LEAD_STAGE_ORDER[targetStatus] || 0;
+  if (currentOrder >= targetOrder) return;
+
+  lead.status = targetStatus;
+  lead.stageTimestamps = lead.stageTimestamps || {};
+  if (targetStatus === "contacted" && !lead.stageTimestamps.contactedAt) {
+    lead.stageTimestamps.contactedAt = new Date();
+  }
+  if (targetStatus === "qualified" && !lead.stageTimestamps.qualifiedAt) {
+    lead.stageTimestamps.qualifiedAt = new Date();
+  }
+
+  lead.transitionHistory = Array.isArray(lead.transitionHistory) ? lead.transitionHistory : [];
+  lead.transitionHistory.push({
+    fromStatus: currentStatus,
+    toStatus: targetStatus,
+    performedBy: actorId || null,
+    performedAt: new Date(),
+    reason: buildTransitionReason(activity, activityType, targetStatus),
+    approvalRequired: false,
+    approvalState: "none",
+  });
+
+  const reasonText = normalizeReasonText(activity?.outcomeReason);
+  if (targetStatus === "lost" && reasonText) {
+    const priorNotes = normalizeReasonText(lead.notes);
+    lead.notes = priorNotes
+      ? `${priorNotes}\nLost reason: ${reasonText}`
+      : `Lost reason: ${reasonText}`;
+  }
+
+  lead.pendingTransitionApproval = undefined;
+  await lead.save();
 };
 
 const buildFilters = (query) => {
@@ -482,16 +773,109 @@ router.get("/reports", verifyToken, async (req, res) => {
 
 router.get("/notifications", verifyToken, async (req, res) => {
   try {
+    const mode = String(req.query.mode || "popup").toLowerCase();
+    const isDashboardMode = mode === "dashboard";
     const now = new Date();
-    const windowEnd = new Date(now.getTime() + 1000 * 60 * 60 * 24);
-    const activities = await populateActivity(
-      Activity.find({
+    const windowStart = isDashboardMode
+      ? new Date(now.getTime() - 1000 * 60 * 30)
+      : new Date(now.getTime() - 1000 * 60);
+    const windowEnd = isDashboardMode
+      ? new Date(now.getTime() + 1000 * 60 * 60)
+      : new Date(now.getTime() + 1000 * 60 * 5);
+
+    const notificationFilter = {
+        owner: req.user._id,
         status: { $nin: ["Completed", "Cancelled"] },
-        reminderTime: { $gte: now, $lte: windowEnd },
-      }).sort({ reminderTime: 1 })
+        reminderTime: { $gte: windowStart, $lte: windowEnd },
+    };
+
+    if (!isDashboardMode) {
+      notificationFilter.$or = [
+        { "notificationState.popupNotifiedAt": { $exists: false } },
+        { "notificationState.popupNotifiedAt": null },
+        {
+          $and: [
+            { "reminderChannels.email": true },
+            {
+              $or: [
+                { "notificationState.emailNotifiedAt": { $exists: false } },
+                { "notificationState.emailNotifiedAt": null },
+              ],
+            },
+          ],
+        },
+      ];
+    }
+
+    const activities = await populateActivity(
+      Activity.find(notificationFilter).sort({ reminderTime: 1 })
     );
 
-    const notifications = activities.map((activity) => ({
+    const emailSendMap = new Map();
+    const emailNotifiedActivityIds = [];
+
+    const emailCandidates = activities.filter((activity) => {
+      const emailEnabled = activity.reminderChannels?.email === true;
+      const emailAlreadySent = Boolean(activity.notificationState?.emailNotifiedAt);
+      const ownerEmail = activity.owner?.email;
+      return emailEnabled && !emailAlreadySent && ownerEmail;
+    });
+
+    await Promise.all(
+      emailCandidates.map(async (activity) => {
+        const activityId = String(activity._id);
+        try {
+          const emailResponse = await sendActivityReminderEmail({
+            to: activity.owner.email,
+            ownerName: activity.owner?.name || activity.owner?.username,
+            activity,
+          });
+
+          emailNotifiedActivityIds.push(activity._id);
+          emailSendMap.set(activityId, {
+            sent: true,
+            preview: emailResponse?.preview || null,
+          });
+        } catch (emailErr) {
+          emailSendMap.set(activityId, {
+            sent: false,
+            error: emailErr.message,
+          });
+        }
+      })
+    );
+
+    if (emailNotifiedActivityIds.length > 0) {
+      await Activity.updateMany(
+        { _id: { $in: emailNotifiedActivityIds } },
+        { $set: { "notificationState.emailNotifiedAt": now } }
+      );
+    }
+
+    const notifications = activities.map((activity) => {
+      const activityId = String(activity._id);
+      const emailEnabled = activity.reminderChannels?.email === true;
+      const emailAlreadySent = Boolean(activity.notificationState?.emailNotifiedAt);
+      const emailAttempt = emailSendMap.get(activityId);
+
+      let emailStatus = "Popup only";
+      if (emailEnabled) {
+        if (emailAttempt?.sent) {
+          emailStatus = emailAttempt.preview
+            ? `Email sent (preview available)`
+            : "Email sent";
+        } else if (emailAttempt?.sent === false) {
+          emailStatus = `Email failed: ${emailAttempt.error}`;
+        } else if (emailAlreadySent) {
+          emailStatus = "Email already sent";
+        } else if (!activity.owner?.email) {
+          emailStatus = "Email skipped: owner email missing";
+        } else {
+          emailStatus = "Queued for email reminder";
+        }
+      }
+
+      return {
       id: activity._id,
       title: activity.title,
       type: activity.activityType,
@@ -500,8 +884,22 @@ router.get("/notifications", verifyToken, async (req, res) => {
       relatedTo: activity.relatedTo,
       popup: activity.reminderChannels?.popup ?? true,
       email: activity.reminderChannels?.email ?? false,
-      emailStatus: activity.reminderChannels?.email ? "Queued for email reminder" : "Popup only",
-    }));
+      emailStatus,
+      };
+    });
+
+    if (!isDashboardMode && activities.length > 0) {
+      const popupCandidateIds = activities
+        .filter((activity) => activity.reminderChannels?.popup !== false)
+        .map((activity) => activity._id);
+
+      if (popupCandidateIds.length > 0) {
+      await Activity.updateMany(
+        { _id: { $in: popupCandidateIds } },
+        { $set: { "notificationState.popupNotifiedAt": now } }
+      );
+      }
+    }
 
     res.json({
       unreadCount: notifications.length,
@@ -517,6 +915,10 @@ router.post("/", verifyToken, async (req, res) => {
     const payload = await normalizeActivityPayload(req.body, req.user._id);
     const activity = await Activity.create(payload);
     await updateLeadLastActivityAt(activity);
+    if (activity.status === "Completed") {
+      await updateLeadStageFromCompletedActivity(activity, req.user._id);
+      await createAutoFollowUpActivity(activity);
+    }
     const saved = await populateActivity(Activity.findById(activity._id));
     res.status(201).json(saved);
   } catch (err) {
@@ -559,7 +961,7 @@ router.put("/:id", verifyToken, async (req, res) => {
 
     const onlyStatusUpdate =
       Object.keys(req.body || {}).length > 0 &&
-      Object.keys(req.body || {}).every((key) => ["status", "notes", "nextFollowUpDate"].includes(key));
+      Object.keys(req.body || {}).every((key) => ["status", "notes", "nextFollowUpDate", "outcome", "outcomeReason", "requiresFollowUp", "stage", "followUpType", "followUpInDays"].includes(key));
 
     if (onlyStatusUpdate) {
       if (req.body.status !== undefined) {
@@ -572,6 +974,24 @@ router.put("/:id", verifyToken, async (req, res) => {
       if (req.body.nextFollowUpDate !== undefined) {
         existing.nextFollowUpDate = req.body.nextFollowUpDate ? new Date(req.body.nextFollowUpDate) : null;
       }
+      if (req.body.outcome !== undefined) {
+        existing.outcome = normalizeOutcome(req.body.outcome);
+      }
+      if (req.body.outcomeReason !== undefined) {
+        existing.outcomeReason = normalizeReasonText(req.body.outcomeReason);
+      }
+      if (req.body.requiresFollowUp !== undefined) {
+        existing.requiresFollowUp = coerceBoolean(req.body.requiresFollowUp, existing.requiresFollowUp);
+      }
+      if (req.body.stage !== undefined) {
+        existing.stage = normalizeStage(req.body.stage);
+      }
+      if (req.body.followUpType !== undefined) {
+        existing.followUpType = normalizeFollowUpType(req.body.followUpType);
+      }
+      if (req.body.followUpInDays !== undefined) {
+        existing.followUpInDays = coerceFollowUpDays(req.body.followUpInDays);
+      }
 
       existing.type = existing.activityType;
       existing.createdBy = existing.createdBy || req.user._id;
@@ -583,6 +1003,11 @@ router.put("/:id", verifyToken, async (req, res) => {
       }
 
       await existing.save();
+      await updateLeadLastActivityAt(existing);
+      if (existing.status === "Completed") {
+        await updateLeadStageFromCompletedActivity(existing, req.user._id);
+        await createAutoFollowUpActivity(existing);
+      }
       const savedSimple = await populateActivity(Activity.findById(existing._id));
       return res.json(savedSimple);
     }
@@ -600,6 +1025,11 @@ router.put("/:id", verifyToken, async (req, res) => {
       existing.cancelledAt = null;
     }
     await existing.save();
+    await updateLeadLastActivityAt(existing);
+    if (existing.status === "Completed") {
+      await updateLeadStageFromCompletedActivity(existing, req.user._id);
+      await createAutoFollowUpActivity(existing);
+    }
     const saved = await populateActivity(Activity.findById(existing._id));
     res.json(saved);
   } catch (err) {
@@ -626,12 +1056,119 @@ router.post("/:id/complete", verifyToken, async (req, res) => {
       return res.status(404).json({ message: "Activity not found" });
     }
 
+    const outcome = normalizeOutcome(req.body?.outcome);
+    const stage = normalizeStage(req.body?.stage || activity.stage);
+    const outcomeReason = normalizeReasonText(req.body?.outcomeReason);
+    const requiresReschedule = ["no_response", "follow_up_needed"].includes(outcome);
+
+    if (!outcome) {
+      return res.status(400).json({ message: "Outcome is required to complete activity" });
+    }
+
+    if (outcome === "not_interested" && !outcomeReason) {
+      return res.status(400).json({ message: "Reason is required for Not Interested" });
+    }
+
+    if (requiresReschedule && !outcomeReason) {
+      return res.status(400).json({ message: "Follow-up reason is required" });
+    }
+
+    let rescheduleDate = null;
+    if (requiresReschedule) {
+      rescheduleDate = req.body?.rescheduleDateTime ? new Date(req.body.rescheduleDateTime) : null;
+      if (!rescheduleDate || Number.isNaN(rescheduleDate.getTime())) {
+        return res.status(400).json({ message: "Valid reschedule date and time is required" });
+      }
+    }
+
     activity.status = "Completed";
     activity.completedAt = new Date();
+    activity.outcome = outcome;
+    activity.stage = stage;
+    activity.outcomeReason = outcomeReason;
+    if (requiresReschedule) {
+      activity.requiresFollowUp = false;
+      activity.followUpGeneratedAt = null;
+      activity.nextFollowUpDate = rescheduleDate;
+    }
     if (activity.activityType === "call") {
       activity.call = { ...activity.call?.toObject?.(), ...activity.call, callStatus: "Completed" };
     }
     await activity.save();
+
+    if (requiresReschedule) {
+      const followUpTitle = `Follow-up: ${String(activity.title || "Activity")}`;
+      const followUpDesc = outcomeReason
+        ? `${String(activity.description || activity.notes || "").trim()}\nFollow-up reason: ${outcomeReason}`.trim()
+        : (activity.description || activity.notes || "");
+      const nextStatus = activity.activityType === "task" ? "Pending" : "Scheduled";
+      const nextPayload = {
+        leadId: activity.leadId,
+        type: activity.activityType,
+        notes: followUpDesc,
+        nextFollowUpDate: null,
+        createdBy: activity.createdBy || activity.owner,
+        activityType: activity.activityType,
+        title: followUpTitle,
+        description: followUpDesc,
+        owner: activity.owner,
+        status: nextStatus,
+        priority: activity.priority || "Medium",
+        location: activity.location || "",
+        participants: Array.isArray(activity.participants) ? activity.participants : [],
+        reminderChannels: {
+          popup: true,
+          email: false,
+        },
+        recurrence: "none",
+        relatedTo: activity.relatedTo,
+        outcome: "",
+        outcomeReason: "",
+        requiresFollowUp: false,
+        stage: stage || activity.stage || "",
+        followUpType: "",
+        followUpInDays: 1,
+        followUpGeneratedAt: null,
+      };
+
+      if (activity.activityType === "task") {
+        nextPayload.dueDate = rescheduleDate;
+        nextPayload.reminderTime = new Date(rescheduleDate.getTime() - LEAD_ACTIVITY_REMINDER_MINUTES * 60 * 1000);
+        nextPayload.task = { taskTitle: followUpTitle };
+      }
+
+      if (activity.activityType === "meeting") {
+        const currentDuration = activity.endDateTime && activity.startDateTime
+          ? new Date(activity.endDateTime).getTime() - new Date(activity.startDateTime).getTime()
+          : 30 * 60 * 1000;
+        nextPayload.startDateTime = rescheduleDate;
+        nextPayload.endDateTime = new Date(rescheduleDate.getTime() + Math.max(15 * 60 * 1000, currentDuration));
+        nextPayload.reminderTime = new Date(rescheduleDate.getTime() - LEAD_ACTIVITY_REMINDER_MINUTES * 60 * 1000);
+        nextPayload.meeting = {
+          meetingTitle: followUpTitle,
+          reminder: nextPayload.reminderTime,
+        };
+      }
+
+      if (activity.activityType === "call") {
+        nextPayload.startDateTime = rescheduleDate;
+        nextPayload.reminderTime = new Date(rescheduleDate.getTime() - LEAD_ACTIVITY_REMINDER_MINUTES * 60 * 1000);
+        nextPayload.call = {
+          callSubject: followUpTitle,
+          callType: activity.call?.callType || "Outbound",
+          callDuration: Number(activity.call?.callDuration) || 15,
+          callNotes: followUpDesc,
+          callStatus: "Scheduled",
+        };
+      }
+
+      const createdFollowUp = await Activity.create(enforceLeadCallMeetingReminder(nextPayload));
+      await updateLeadLastActivityAt(createdFollowUp);
+    }
+
+    await updateLeadLastActivityAt(activity);
+    await updateLeadStageFromCompletedActivity(activity, req.user._id);
+    await createAutoFollowUpActivity(activity);
 
     if (activity.recurrence && activity.recurrence !== "none") {
       const nextActivity = computeNextRecurrence(activity.toObject());
@@ -659,6 +1196,8 @@ router.post("/:id/reschedule", verifyToken, async (req, res) => {
     if (req.body.endDateTime) activity.endDateTime = new Date(req.body.endDateTime);
     if (req.body.reminderTime) activity.reminderTime = new Date(req.body.reminderTime);
     activity.status = activity.activityType === "task" ? "Pending" : "Scheduled";
+
+    enforceLeadCallMeetingReminder(activity);
 
     await activity.save();
     const saved = await populateActivity(Activity.findById(activity._id));

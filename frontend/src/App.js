@@ -12,6 +12,7 @@ import Customers from "./Customers";
 import Employees from "./Employees";
 import Reports from "./Reports";
 import Settings from "./Settings";
+import LeadRequests from "./LeadRequests";
 
 import ActivityModule from "./ActivityModule";
 
@@ -337,6 +338,7 @@ function App() {
         <Route path="/employees" element={<Employees />} />
         <Route path="/reports" element={<Reports />} />
         <Route path="/settings" element={<Settings />} />
+        <Route path="/requests" element={<LeadRequests />} />
         <Route path="/activities" element={<ActivityModule />} />
         <Route path="/products" element={<Products />} />
         <Route path="/inventory" element={<Inventory />} />

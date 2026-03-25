@@ -86,7 +86,53 @@
 .dashboard-header-actions {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 12px;
+}
+
+.assignment-view-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px;
+  border-radius: 14px;
+  border: 1px solid var(--theme-border);
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: var(--theme-shadow-sm);
+}
+
+.assignment-view-toggle-btn {
+  border: none;
+  background: transparent;
+  color: var(--theme-text-muted);
+  font-size: 13px;
+  font-weight: 700;
+  padding: 8px 12px;
+  border-radius: 10px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.assignment-view-toggle-btn.active {
+  background: rgba(37, 99, 235, 0.12);
+  color: #1e56c0;
+}
+
+.assignment-view-toggle-count {
+  min-width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  background: rgba(37, 99, 235, 0.18);
+  color: #1e56c0;
+  font-size: 11px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 6px;
 }
 
 .dashboard-assigned-wrap {
@@ -232,6 +278,10 @@
   background: rgba(0, 123, 255, 0.05);
 }
 
+.dashboard-notification-item.reminder {
+  background: rgba(245, 158, 11, 0.1);
+}
+
 .dashboard-notification-item.read {
   background: #fff;
 }
@@ -242,6 +292,18 @@
   gap: 8px;
   color: var(--theme-ink);
   font-size: 14px;
+}
+
+.dashboard-notification-pill {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(245, 158, 11, 0.2);
+  color: #a16207;
+  font-size: 11px;
+  font-weight: 700;
 }
 
 .dashboard-notification-link {
@@ -428,6 +490,20 @@
   color: var(--theme-text-muted);
 }
 
+.assignment-compact-note {
+  margin-top: 14px;
+  border: 1px dashed var(--theme-border-strong);
+  border-radius: 12px;
+  padding: 12px 14px;
+  color: var(--theme-text-muted);
+  background: rgba(248, 250, 252, 0.88);
+  font-size: 13px;
+}
+
+.assignment-compact-note-actions {
+  margin-top: 10px;
+}
+
 .assignment-lead-list {
   display: flex;
   flex-direction: column;
@@ -452,6 +528,59 @@
   color: var(--theme-ink);
 }
 
+.assignment-lead-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.assignment-status-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  padding: 4px 8px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.assignment-status-badge.new {
+  background: rgba(59, 130, 246, 0.12);
+  color: #1d4ed8;
+}
+
+.assignment-status-badge.contacted {
+  background: rgba(6, 182, 212, 0.14);
+  color: #0e7490;
+}
+
+.assignment-status-badge.qualified {
+  background: rgba(16, 185, 129, 0.14);
+  color: #047857;
+}
+
+.assignment-status-badge.proposal {
+  background: rgba(234, 179, 8, 0.16);
+  color: #a16207;
+}
+
+.assignment-status-badge.lost {
+  background: rgba(239, 68, 68, 0.14);
+  color: #b91c1c;
+}
+
+.assignment-status-badge.converted {
+  background: rgba(37, 99, 235, 0.12);
+  color: #1e40af;
+}
+
+.assignment-status-badge.unknown {
+  background: rgba(148, 163, 184, 0.2);
+  color: #475569;
+}
+
 .assignment-lead-meta {
   margin-top: 2px;
   font-size: 12px;
@@ -468,6 +597,11 @@
   padding: 0 10px;
   font-size: 12px;
   font-weight: 700;
+}
+
+.assignment-next-action-btn {
+  border: none;
+  cursor: pointer;
 }
 
 .assignment-next-action.call {
@@ -933,6 +1067,15 @@ button.nav-item {
     right: auto;
     left: 0;
     width: min(94vw, 760px);
+  }
+
+  .dashboard-header-actions {
+    width: 100%;
+  }
+
+  .assignment-view-toggle {
+    width: 100%;
+    justify-content: space-between;
   }
 
   .stats-grid,

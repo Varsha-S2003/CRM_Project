@@ -215,7 +215,8 @@ function Leads() {
     { id: "new", name: "New", color: "#2563eb" },
     { id: "contacted", name: "Contacted", color: "#0ea5e9" },
     { id: "qualified", name: "Qualified", color: "#6366f1" },
-    { id: "proposal", name: "Proposal", color: "#14b8a6" },
+    { id: "proposal", name: "Proposal", color: "#0d9488" },
+    { id: "proposal_sent", name: "Proposal Sent", color: "#14b8a6" },
     { id: "converted", name: "Converted", color: "#10b981" },
     { id: "lost", name: "Lost", color: "#ef4444" },
   ];
@@ -224,8 +225,9 @@ function Leads() {
   const allowedTransitions = {
     new: ["contacted"],
     contacted: ["qualified", "new", "lost"],
-    qualified: ["proposal", "contacted", "lost"],
-    proposal: ["converted", "qualified", "lost"],
+    qualified: ["proposal_sent", "contacted", "lost"],
+    proposal: ["proposal_sent", "qualified", "lost"],
+    proposal_sent: ["qualified"],
     converted: [],
     lost: []
   };
@@ -938,8 +940,8 @@ function Leads() {
       return;
     }
 
-    if (!["qualified", "proposal"].includes(selectedLead.status)) {
-      alert("Lead must be in Qualified or Proposal stage before conversion.");
+    if (!["qualified", "proposal", "proposal_sent"].includes(selectedLead.status)) {
+      alert("Lead must be in Qualified, Proposal, or Proposal Sent stage before conversion.");
       return;
     }
 
@@ -2884,22 +2886,24 @@ ET`;
                 </div>
               )}
 
-              <div className="convert-section">
-                <button
-                  className="btn-convert-lead"
-                  onClick={handleConvertLead}
-                  disabled={selectedLead.isConverted || selectedLead.status === "converted"}
-                >
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M17 14V2h-5M15 2v14"></path>
-                    <path d="M15 10h4v4h-4V10z"></path>
-                    <path d="M7 10H3v4h4v-4z"></path>
-                    <path d="M7 22H3v-4h4v4z"></path>
-                    <path d="M15 22h4v-4h-4v4z"></path>
-                  </svg>
-                  {selectedLead.isConverted || selectedLead.status === "converted" ? "Already Converted" : "Convert Lead"}
-                </button>
-              </div>
+              {selectedLead.status !== "proposal_sent" && (
+                <div className="convert-section">
+                  <button
+                    className="btn-convert-lead"
+                    onClick={handleConvertLead}
+                    disabled={selectedLead.isConverted || selectedLead.status === "converted"}
+                  >
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M17 14V2h-5M15 2v14"></path>
+                      <path d="M15 10h4v4h-4V10z"></path>
+                      <path d="M7 10H3v4h4v-4z"></path>
+                      <path d="M7 22H3v-4h4v4z"></path>
+                      <path d="M15 22h4v-4h-4v4z"></path>
+                    </svg>
+                    {selectedLead.isConverted || selectedLead.status === "converted" ? "Already Converted" : "Convert Lead"}
+                  </button>
+                </div>
+              )}
 
               <RecordActivityPanel
                 recordType="Lead"

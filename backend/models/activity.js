@@ -136,6 +136,43 @@ const activitySchema = new mongoose.Schema(
         enum: ["Scheduled", "Completed"],
       },
     },
+    outcome: {
+      type: String,
+      enum: ["interested", "not_interested", "no_response", "follow_up_needed", ""],
+      default: "",
+      index: true,
+    },
+    outcomeReason: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    requiresFollowUp: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+    stage: {
+      type: String,
+      enum: ["contacted", "meeting", "qualified", ""],
+      default: "",
+      index: true,
+    },
+    followUpType: {
+      type: String,
+      enum: ["task", "meeting", "call", ""],
+      default: "",
+    },
+    followUpInDays: {
+      type: Number,
+      min: 1,
+      max: 30,
+      default: 1,
+    },
+    followUpGeneratedAt: {
+      type: Date,
+      default: null,
+    },
     completedAt: Date,
     cancelledAt: Date,
     notificationState: {

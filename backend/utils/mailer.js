@@ -162,6 +162,158 @@ async function sendPasswordResetEmail({ to, resetUrl, name }) {
   return { result, preview };
 }
 
+async function sendLeadProposalEmail({ to, leadName, company, proposal = {} }) {
+  const mailer = await getTransporter();
+  const appName = "Elogixa CRM";
+  const emailConfig = await getEmailConfig();
+  const sender = emailConfig.auth?.user || "";
+
+  const amountValue = Number(proposal.amount);
+  const hasAmount = Number.isFinite(amountValue) && amountValue >= 0;
+  const currency = String(proposal.currency || "INR").trim().toUpperCase() || "INR";
+  const subject = String(proposal.subject || "").trim() || `Proposal for ${company || leadName || "your requirement"}`;
+  const message = String(proposal.message || "").trim();
+  const terms = String(proposal.terms || "").trim();
+  const validUntil = proposal.validUntil ? new Date(proposal.validUntil) : null;
+  const validUntilLabel = validUntil && !Number.isNaN(validUntil.getTime())
+    ? validUntil.toLocaleDateString()
+    : "Not specified";
+
+  const result = await mailer.sendMail({
+    from: `"${appName}" <${sender}>`,
+    to,
+    subject,
+    text: [
+      `Hello ${leadName || "Customer"},`,
+      "",
+      "Please find our proposal details below:",
+      hasAmount ? `Amount: ${currency} ${amountValue.toFixed(2)}` : "Amount: Not specified",
+      `Valid Until: ${validUntilLabel}`,
+      "",
+      message || "No additional message provided.",
+      "",
+      terms ? `Terms: ${terms}` : "",
+      "",
+      `Regards,`,
+      appName,
+    ].filter(Boolean).join("\n"),
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 620px; margin: 0 auto; border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden;">
+        <div style="background: #0f766e; padding: 16px 20px; color: #ffffff;">
+          <h2 style="margin: 0; font-size: 20px;">${appName} Proposal</h2>
+        </div>
+        <div style="padding: 20px; background: #ffffff; color: #111827;">
+          <p style="margin: 0 0 12px;">Hello ${leadName || "Customer"},</p>
+          <p style="margin: 0 0 16px;">Please find our proposal details below.</p>
+          <table style="width: 100%; border-collapse: collapse; margin-bottom: 16px;">
+            <tr>
+              <td style="padding: 8px; border: 1px solid #e5e7eb; font-weight: 600; width: 160px;">Subject</td>
+              <td style="padding: 8px; border: 1px solid #e5e7eb;">${subject}</td>
+            </tr>
+            <tr>
+              <td style="padding: 8px; border: 1px solid #e5e7eb; font-weight: 600;">Amount</td>
+              <td style="padding: 8px; border: 1px solid #e5e7eb;">${hasAmount ? `${currency} ${amountValue.toFixed(2)}` : "Not specified"}</td>
+            </tr>
+            <tr>
+              <td style="padding: 8px; border: 1px solid #e5e7eb; font-weight: 600;">Valid Until</td>
+              <td style="padding: 8px; border: 1px solid #e5e7eb;">${validUntilLabel}</td>
+            </tr>
+          </table>
+          <p style="margin: 0 0 12px; white-space: pre-line;">${message || "No additional message provided."}</p>
+          ${terms ? `<p style="margin: 0; white-space: pre-line;"><strong>Terms:</strong><br/>${terms}</p>` : ""}
+        </div>
+      </div>
+    `,
+  });
+
+  const preview = isEtherealConfig(emailConfig) ? nodemailer.getTestMessageUrl(result) : null;
+  if (preview) {
+    console.log("Ethereal proposal preview URL:", preview);
+  }
+
+  return { result, preview };
+}
+
+async function sendActivityReminderEmail({
+  to,
+  ownerName,
+  activity = {},
+}) {
+  const mailer = await getTransporter();
+  const appName = "Elogixa CRM";
+  const emailConfig = await getEmailConfig();
+  const sender = emailConfig.auth?.user || "";
+
+  const activityType = String(activity.activityType || "activity").toUpperCase();
+  const title = String(activity.title || "Upcoming activity").trim();
+  const relatedName = String(activity.relatedTo?.recordName || "CRM record").trim();
+  const relatedType = String(activity.relatedTo?.recordType || "Record").trim();
+  const reminderTime = activity.reminderTime ? new Date(activity.reminderTime) : null;
+  const reminderLabel = reminderTime && !Number.isNaN(reminderTime.getTime())
+    ? reminderTime.toLocaleString()
+    : "Soon";
+  const description = String(activity.description || activity.notes || "").trim();
+
+  const result = await mailer.sendMail({
+    from: `"${appName}" <${sender}>`,
+    to,
+    subject: `${appName} Reminder: ${title}`,
+    text: [
+      `Hello ${ownerName || "there"},`,
+      "",
+      "This is your upcoming CRM activity reminder.",
+      `Type: ${activityType}`,
+      `Title: ${title}`,
+      `Related: ${relatedType} - ${relatedName}`,
+      `Reminder Time: ${reminderLabel}`,
+      description ? "" : null,
+      description ? `Notes: ${description}` : null,
+      "",
+      "Please follow up on time.",
+      appName,
+    ].filter(Boolean).join("\n"),
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 620px; margin: 0 auto; border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden;">
+        <div style="background: #1d4ed8; padding: 16px 20px; color: #ffffff;">
+          <h2 style="margin: 0; font-size: 20px;">${appName} Activity Reminder</h2>
+        </div>
+        <div style="padding: 20px; background: #ffffff; color: #111827;">
+          <p style="margin: 0 0 12px;">Hello ${ownerName || "there"},</p>
+          <p style="margin: 0 0 16px;">This is your upcoming CRM activity reminder.</p>
+          <table style="width: 100%; border-collapse: collapse; margin-bottom: 16px;">
+            <tr>
+              <td style="padding: 8px; border: 1px solid #e5e7eb; font-weight: 600; width: 160px;">Type</td>
+              <td style="padding: 8px; border: 1px solid #e5e7eb;">${activityType}</td>
+            </tr>
+            <tr>
+              <td style="padding: 8px; border: 1px solid #e5e7eb; font-weight: 600;">Title</td>
+              <td style="padding: 8px; border: 1px solid #e5e7eb;">${title}</td>
+            </tr>
+            <tr>
+              <td style="padding: 8px; border: 1px solid #e5e7eb; font-weight: 600;">Related</td>
+              <td style="padding: 8px; border: 1px solid #e5e7eb;">${relatedType} - ${relatedName}</td>
+            </tr>
+            <tr>
+              <td style="padding: 8px; border: 1px solid #e5e7eb; font-weight: 600;">Reminder Time</td>
+              <td style="padding: 8px; border: 1px solid #e5e7eb;">${reminderLabel}</td>
+            </tr>
+          </table>
+          ${description ? `<p style="margin: 0; white-space: pre-line;"><strong>Notes:</strong><br/>${description}</p>` : ""}
+        </div>
+      </div>
+    `,
+  });
+
+  const preview = isEtherealConfig(emailConfig) ? nodemailer.getTestMessageUrl(result) : null;
+  if (preview) {
+    console.log("Ethereal activity reminder preview URL:", preview);
+  }
+
+  return { result, preview };
+}
+
 module.exports = {
-  sendPasswordResetEmail
+  sendPasswordResetEmail,
+  sendLeadProposalEmail,
+  sendActivityReminderEmail,
 };

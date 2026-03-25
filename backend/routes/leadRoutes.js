@@ -7,9 +7,11 @@ const Lead = require("../models/lead");
 const Contact = require("../models/contact");
 const Customer = require("../models/customer");
 const Deal = require("../models/deal");
+const Product = require("../models/product");
 const Activity = require("../models/activity");
 const User = require("../models/user");
 const { applyLeadScoring } = require("../utils/leadScoring");
+const { sendLeadProposalEmail } = require("../utils/mailer");
 
 const normalizeText = (value) => String(value || "").trim();
 const normalizeOptionalNumber = (value) => {
@@ -101,21 +103,11 @@ const getDuplicateKeys = (payload = {}) => {
 };
 
 const buildDuplicateConditions = (payload = {}) => {
-  const { email, phone, name, company } = getDuplicateKeys(payload);
+  const { email, name, company } = getDuplicateKeys(payload);
   const conditions = [];
 
   if (email) {
     conditions.push({ email: { $regex: `^${escapeRegex(email)}$`, $options: "i" } });
-  }
-
-  if (phone) {
-    const phonePattern = buildPhoneFlexibleRegex(phone);
-    conditions.push({
-      $or: [
-        { phone: { $regex: phonePattern } },
-        { mobile: { $regex: phonePattern } },
-      ],
-    });
   }
 
   if (name && company) {
@@ -152,10 +144,6 @@ const getDuplicateReason = (payload = {}, duplicateLead = null) => {
     return "email";
   }
 
-  if (candidate.phone && existing.phone && candidate.phone === existing.phone) {
-    return "phone";
-  }
-
   if (candidate.nameCompany && existing.nameCompany && candidate.nameCompany === existing.nameCompany) {
     return "name_company";
   }
@@ -174,7 +162,6 @@ const hasMeaningfulValue = (value) => {
 
 const getDuplicateMessage = (reason) => {
   if (reason === "email") return "Duplicate lead detected: same email found";
-  if (reason === "phone") return "Duplicate lead detected: same phone found";
   if (reason === "name_company") return "Duplicate lead detected: same name and company found";
   return "Duplicate lead detected";
 };
@@ -287,7 +274,7 @@ const buildMergedLeadPayload = (primaryLead, secondaryLeads, overrides = {}) => 
 };
 
 // Lead stage movement blueprint rules
-const STATUS_VALUES = ["new", "contacted", "qualified", "proposal", "converted", "lost"];
+const STATUS_VALUES = ["new", "contacted", "qualified", "proposal", "proposal_sent", "converted", "lost"];
 
 const TRANSITION_RULES = {
   new: {
@@ -318,8 +305,8 @@ const TRANSITION_RULES = {
     },
   },
   qualified: {
-    proposal: {
-      allowedRoles: ["ADMIN", "MANAGER"],
+    proposal_sent: {
+      allowedRoles: ["ADMIN", "MANAGER", "EMPLOYEE"],
       requiredAll: ["company", "industry", "source"],
       requireApproval: false,
     },
@@ -338,6 +325,30 @@ const TRANSITION_RULES = {
     },
   },
   proposal: {
+    proposal_sent: {
+      allowedRoles: ["ADMIN", "MANAGER", "EMPLOYEE"],
+      requireApproval: false,
+    },
+    converted: {
+      allowedRoles: ["ADMIN", "MANAGER"],
+      requiredAll: ["company"],
+      requireApproval: false,
+    },
+    qualified: {
+      allowedRoles: ["ADMIN", "MANAGER"],
+      requiredAll: ["notes"],
+      requireApproval: true,
+      approverRole: "MANAGER",
+    },
+    lost: {
+      allowedRoles: ["ADMIN", "MANAGER", "EMPLOYEE"],
+      requiredAll: ["notes"],
+      requireApproval: true,
+      approverRole: "MANAGER",
+      reasonRequired: true,
+    },
+  },
+  proposal_sent: {
     converted: {
       allowedRoles: ["ADMIN", "MANAGER"],
       requiredAll: ["company"],
@@ -411,11 +422,11 @@ const getLeadNextAction = (status, role, options = {}) => {
   }
 
   const normalizedStatus = String(status || "").toLowerCase();
-  if (["new", "contacted"].includes(normalizedStatus)) {
+  if (normalizedStatus === "new") {
     return { type: "call", label: "Call Lead" };
   }
-  if (["qualified", "proposal"].includes(normalizedStatus)) {
-    return { type: "meeting", label: "Conduct Meeting" };
+  if (["contacted", "qualified", "proposal", "proposal_sent"].includes(normalizedStatus)) {
+    return { type: "meeting", label: "Schedule Meeting" };
   }
   return { type: "none", label: "No Immediate Action" };
 };
@@ -462,8 +473,21 @@ const setStageTimestamp = (lead, status) => {
   if (normalizedStatus === "contacted") lead.stageTimestamps.contactedAt = new Date();
   if (normalizedStatus === "qualified") lead.stageTimestamps.qualifiedAt = new Date();
   if (normalizedStatus === "proposal") lead.stageTimestamps.proposalAt = new Date();
+  if (normalizedStatus === "proposal_sent") lead.stageTimestamps.proposalSentAt = new Date();
   if (normalizedStatus === "converted") lead.stageTimestamps.convertedAt = new Date();
   if (normalizedStatus === "lost") lead.stageTimestamps.lostAt = new Date();
+};
+
+const PROPOSAL_REJECTION_REASONS = [
+  "Too Expensive",
+  "Not Interested",
+  "Competitor Chosen",
+  "No Response",
+];
+
+const resolveDefaultProductId = async (session) => {
+  const defaultProduct = await Product.findOne({}).select("_id").session(session);
+  return defaultProduct?._id || null;
 };
 
 
@@ -652,11 +676,49 @@ router.get("/assignment-dashboard", verifyToken, permit("MANAGER", "EMPLOYEE"), 
     }
 
     const leads = await Lead.find(filter)
-      .select("name firstName lastName company status assignedTo assignedBy assignedByRole assignedAt updatedAt")
+      .select("name firstName lastName company email phone mobile status assignedTo assignedBy assignedByRole assignedAt updatedAt")
       .populate("assignedBy", "username name role employee_id")
       .populate("assignedTo", "username name role employee_id")
       .sort({ assignedAt: -1, updatedAt: -1 })
       .limit(100);
+
+    const leadIds = leads.map((lead) => lead._id);
+    const completedActionByLead = new Map();
+
+    if (leadIds.length > 0) {
+      const completedActivities = await Activity.find({
+        status: "Completed",
+        activityType: { $in: ["call", "meeting"] },
+        $or: [
+          { leadId: { $in: leadIds } },
+          {
+            "relatedTo.recordType": "Lead",
+            "relatedTo.recordId": { $in: leadIds },
+          },
+        ],
+      })
+        .select("leadId activityType completedAt updatedAt createdAt relatedTo")
+        .sort({ completedAt: -1, updatedAt: -1, createdAt: -1 });
+
+      completedActivities.forEach((activity) => {
+        const leadId = String(activity.leadId || activity.relatedTo?.recordId || "");
+        if (!leadId) return;
+
+        const type = String(activity.activityType || "").toLowerCase();
+        if (!type) return;
+
+        const completedAt = activity.completedAt || activity.updatedAt || activity.createdAt || new Date(0);
+        const current = completedActionByLead.get(leadId) || {};
+        const currentTime = current[type] || new Date(0);
+
+        if (completedAt > currentTime) {
+          completedActionByLead.set(leadId, {
+            ...current,
+            [type]: completedAt,
+          });
+        }
+      });
+    }
 
     const items = leads.map((lead) => {
       const canAssign = role === "MANAGER" && String(lead.assignedTo?._id || lead.assignedTo || "") === String(req.user._id);
@@ -669,13 +731,27 @@ router.get("/assignment-dashboard", verifyToken, permit("MANAGER", "EMPLOYEE"), 
         ? (lead.assignedTo.name || lead.assignedTo.username || "")
         : "";
 
-      const nextAction = getLeadNextAction(lead.status, role, { canAssign, assignedToName });
+      let nextAction = getLeadNextAction(lead.status, role, { canAssign, assignedToName });
+
+      if (role === "EMPLOYEE" && ["call", "meeting"].includes(nextAction.type)) {
+        const completedMap = completedActionByLead.get(String(lead._id)) || {};
+        const actionCompletedAt = completedMap[nextAction.type] || null;
+        const assignedAt = lead.assignedAt || lead.updatedAt || new Date(0);
+
+        if (actionCompletedAt && actionCompletedAt >= assignedAt) {
+          nextAction = { type: "none", label: "Action Completed" };
+        }
+      }
+
       return {
         _id: lead._id,
         name: lead.name,
         firstName: lead.firstName,
         lastName: lead.lastName,
         company: lead.company,
+        email: lead.email,
+        phone: lead.phone,
+        mobile: lead.mobile,
         status: lead.status,
         assignedAt: lead.assignedAt || lead.updatedAt,
         assignedByRole: lead.assignedByRole || null,
@@ -785,7 +861,7 @@ router.post("/merge", verifyToken, permit("ADMIN", "MANAGER"), async (req, res, 
 
       if (Object.prototype.hasOwnProperty.call(overrides, "status")) {
         const status = normalizeText(overrides.status).toLowerCase();
-        if (!["new", "contacted", "qualified", "proposal", "converted", "lost"].includes(status)) {
+        if (!["new", "contacted", "qualified", "proposal", "proposal_sent", "converted", "lost"].includes(status)) {
           throw Object.assign(new Error("Invalid status override"), { statusCode: 400 });
         }
         primaryLead.status = status;
@@ -942,15 +1018,6 @@ router.post("/bulk", verifyToken, async (req, res, next) => {
         continue;
       }
 
-      if (keys.phone && seenEmails.has(`phone:${keys.phone}`)) {
-        skipped.push({
-          row: index + 1,
-          reason: "duplicate_phone_in_file",
-          lead,
-        });
-        continue;
-      }
-
       if (keys.nameCompany && seenNameCompany.has(keys.nameCompany)) {
         skipped.push({
           row: index + 1,
@@ -972,7 +1039,6 @@ router.post("/bulk", verifyToken, async (req, res, next) => {
       }
 
       if (keys.email) seenEmails.add(keys.email);
-      if (keys.phone) seenEmails.add(`phone:${keys.phone}`);
       if (keys.nameCompany) seenNameCompany.add(keys.nameCompany);
       leadsToCreate.push(lead);
     }
@@ -1122,8 +1188,6 @@ router.put("/:id", verifyToken, permit("ADMIN", "MANAGER", "EMPLOYEE"), async (r
 
     const dedupeFieldsTouched =
       Object.prototype.hasOwnProperty.call(req.body, "email") ||
-      Object.prototype.hasOwnProperty.call(req.body, "phone") ||
-      Object.prototype.hasOwnProperty.call(req.body, "mobile") ||
       Object.prototype.hasOwnProperty.call(req.body, "firstName") ||
       Object.prototype.hasOwnProperty.call(req.body, "lastName") ||
       Object.prototype.hasOwnProperty.call(req.body, "name") ||
@@ -1133,8 +1197,6 @@ router.put("/:id", verifyToken, permit("ADMIN", "MANAGER", "EMPLOYEE"), async (r
       const duplicateLead = await findDuplicateLead(
         {
           email: lead.email,
-          phone: lead.phone,
-          mobile: lead.mobile,
           firstName: lead.firstName,
           lastName: lead.lastName,
           name: lead.name,
@@ -1348,6 +1410,361 @@ router.post("/:id/events/form-submission", verifyToken, permit("ADMIN", "MANAGER
   }
 });
 
+router.post("/:id/proposal", verifyToken, permit("ADMIN", "MANAGER", "EMPLOYEE"), async (req, res, next) => {
+  try {
+    const lead = await Lead.findById(req.params.id);
+    if (!lead) return res.status(404).json({ message: "Lead not found" });
+
+    const userRole = normalizeRole(req.user.role);
+    if (userRole === "EMPLOYEE") {
+      if (!lead.assignedTo || String(lead.assignedTo) !== String(req.user._id)) {
+        return res.status(403).json({ message: "Forbidden - not assigned to you" });
+      }
+    }
+
+    const currentStatus = String(lead.status || "new").toLowerCase();
+    if (!["qualified", "proposal", "proposal_sent"].includes(currentStatus)) {
+      return res.status(400).json({ message: "Lead must be in Qualified or Proposal stage before creating proposal" });
+    }
+
+    if (["qualified", "proposal"].includes(currentStatus)) {
+      const nextStatus = "proposal_sent";
+      const rule = getTransitionRule(currentStatus, nextStatus);
+      if (!rule) {
+        return res.status(400).json({ message: "Cannot move lead to proposal sent stage" });
+      }
+
+      if (Array.isArray(rule.allowedRoles) && !rule.allowedRoles.includes(userRole)) {
+        return res.status(403).json({ message: "You are not allowed to move this lead to Proposal Sent" });
+      }
+
+      const shouldEnforceChecklist = userRole !== "EMPLOYEE";
+      if (shouldEnforceChecklist) {
+        const missingFields = validateTransitionChecklist(lead, rule);
+        if (missingFields.length > 0) {
+          return res.status(400).json({
+            message: "Cannot move lead. Required lifecycle checklist is incomplete.",
+            missingFields,
+          });
+        }
+      }
+
+      lead.status = nextStatus;
+      setStageTimestamp(lead, nextStatus);
+      appendTransitionHistory(lead, {
+        fromStatus: currentStatus,
+        toStatus: nextStatus,
+        performedBy: req.user._id,
+        reason: userRole === "EMPLOYEE"
+          ? "Proposal created by employee (checklist override)"
+          : "Proposal sent",
+        approvalRequired: false,
+        approvalState: "none",
+      });
+    }
+
+    const proposalSubject = normalizeText(req.body?.subject) || `Proposal for ${normalizeText(lead.company) || normalizeText(lead.name) || "Customer"}`;
+    const proposalMessage = normalizeText(req.body?.message);
+    const proposalTerms = normalizeText(req.body?.terms);
+    const proposalCurrency = normalizeText(req.body?.currency || "INR").toUpperCase();
+    const proposalAmount = req.body?.amount === "" || req.body?.amount === undefined || req.body?.amount === null
+      ? null
+      : Number(req.body.amount);
+    const proposalValidUntil = req.body?.validUntil ? new Date(req.body.validUntil) : null;
+
+    if (proposalAmount !== null && !Number.isFinite(proposalAmount)) {
+      return res.status(400).json({ message: "Proposal amount must be a valid number" });
+    }
+
+    if (proposalValidUntil && Number.isNaN(proposalValidUntil.getTime())) {
+      return res.status(400).json({ message: "Invalid proposal validUntil date" });
+    }
+
+    const shouldSendEmail = req.body?.sendEmail !== false;
+    const proposalEmail = normalizeText(req.body?.email || lead.email || lead.secondaryEmail);
+
+    if (shouldSendEmail && !proposalEmail) {
+      return res.status(400).json({ message: "Customer email is required to send proposal" });
+    }
+
+    lead.latestProposal = {
+      subject: proposalSubject,
+      amount: proposalAmount,
+      currency: proposalCurrency || "INR",
+      validUntil: proposalValidUntil,
+      message: proposalMessage,
+      terms: proposalTerms,
+      sentTo: shouldSendEmail ? proposalEmail : "",
+      sentAt: new Date(),
+      sentBy: req.user._id,
+      createdAt: new Date(),
+    };
+
+    let emailPreviewUrl = null;
+    if (shouldSendEmail) {
+      const emailResult = await sendLeadProposalEmail({
+        to: proposalEmail,
+        leadName: normalizeText(lead.name),
+        company: normalizeText(lead.company),
+        proposal: {
+          subject: proposalSubject,
+          amount: proposalAmount,
+          currency: proposalCurrency,
+          validUntil: proposalValidUntil,
+          message: proposalMessage,
+          terms: proposalTerms,
+        },
+      });
+
+      emailPreviewUrl = emailResult?.preview || null;
+      lead.latestProposal.sentAt = new Date();
+      lead.latestProposal.sentTo = proposalEmail;
+      lead.latestProposal.sentBy = req.user._id;
+    }
+
+    applyLeadScoring(lead);
+    await lead.save();
+
+    return res.json({
+      message: shouldSendEmail ? "Proposal created and sent to customer" : "Proposal created",
+      emailPreviewUrl,
+      proposal: lead.latestProposal,
+      lead,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post("/:id/proposal/accept", verifyToken, permit("ADMIN", "MANAGER", "EMPLOYEE"), async (req, res, next) => {
+  const session = await mongoose.startSession();
+  try {
+    const requestedValue = req.body?.value;
+    const normalizedValue =
+      requestedValue === undefined || requestedValue === null || requestedValue === ""
+        ? null
+        : Number(requestedValue);
+
+    if (normalizedValue !== null && !Number.isFinite(normalizedValue)) {
+      return res.status(400).json({ message: "Deal value must be a valid number" });
+    }
+
+    let responsePayload = null;
+
+    await session.withTransaction(async () => {
+      const lead = await Lead.findById(req.params.id).session(session);
+      if (!lead) {
+        throw Object.assign(new Error("Lead not found"), { statusCode: 404 });
+      }
+
+      const userRole = normalizeRole(req.user.role);
+      if (userRole === "EMPLOYEE") {
+        if (!lead.assignedTo || String(lead.assignedTo) !== String(req.user._id)) {
+          throw Object.assign(new Error("Forbidden - not assigned to you"), { statusCode: 403 });
+        }
+      }
+
+      if (lead.isConverted || String(lead.status || "").toLowerCase() === "converted") {
+        throw Object.assign(new Error("Lead already converted"), { statusCode: 400 });
+      }
+
+      const currentStatus = String(lead.status || "new").toLowerCase();
+      if (currentStatus !== "proposal_sent") {
+        throw Object.assign(new Error("Proposal must be in Proposal Sent stage before acceptance"), { statusCode: 400 });
+      }
+
+      if (!lead.latestProposal?.createdAt) {
+        throw Object.assign(new Error("No proposal found for this lead"), { statusCode: 400 });
+      }
+
+      const conversionName = buildConversionName(lead);
+      const conversionEmail = normalizeEmailForStorage(lead.email);
+      const dealValue = normalizedValue !== null ? normalizedValue : (Number(lead.latestProposal?.amount) || 0);
+      const defaultProductId = await resolveDefaultProductId(session);
+
+      if (!defaultProductId) {
+        throw Object.assign(new Error("No product found. Please create at least one product before accepting proposal."), {
+          statusCode: 400,
+        });
+      }
+
+      const customer = await Customer.create(
+        [
+          {
+            name: conversionName,
+            email: conversionEmail,
+            phone: lead.phone || lead.mobile,
+            company: lead.company,
+            leadId: lead._id,
+            status: "Active",
+            reason: "",
+          },
+        ],
+        { session }
+      ).then((docs) => docs[0]);
+
+      const deal = await Deal.create(
+        [
+          {
+            customerId: customer._id,
+            sourceLeadId: lead._id,
+            product: defaultProductId,
+            name: `${conversionName} - Proposal Accepted`,
+            company: lead.company,
+            contact: customer.name,
+            email: customer.email,
+            phone: customer.phone,
+            stage: "Closed Won",
+            status: "Active",
+            reason: "",
+            value: dealValue,
+            amount: dealValue,
+            assignedTo: lead.assignedTo || req.user._id,
+          },
+        ],
+        { session }
+      ).then((docs) => docs[0]);
+
+      let contact = await Contact.findOne({ sourceLeadId: lead._id }).session(session);
+      if (!contact && customer.email) {
+        contact = await Contact.findOne({ email: customer.email }).session(session);
+      }
+
+      if (contact) {
+        contact.sourceLeadId = lead._id;
+        contact.sourceDealId = deal._id;
+        contact.name = customer.name;
+        contact.company = customer.company;
+        contact.email = customer.email;
+        contact.phone = customer.phone;
+        contact.source = lead.source || "Lead Conversion";
+        await contact.save({ session });
+      } else {
+        contact = await Contact.create(
+          [
+            {
+              sourceLeadId: lead._id,
+              sourceDealId: deal._id,
+              name: customer.name,
+              company: customer.company,
+              email: normalizeEmailForStorage(customer.email),
+              phone: customer.phone,
+              source: lead.source || "Lead Conversion",
+              convertedAt: new Date(),
+            },
+          ],
+          { session }
+        ).then((docs) => docs[0]);
+      }
+
+      const previousStatus = String(lead.status || "proposal_sent").toLowerCase();
+      lead.status = "converted";
+      lead.isConverted = true;
+      lead.convertedCustomerId = customer._id;
+      lead.convertedContactId = contact?._id || null;
+      lead.convertedDealId = deal._id;
+      setStageTimestamp(lead, "converted");
+      lead.pendingTransitionApproval = undefined;
+
+      appendTransitionHistory(lead, {
+        fromStatus: previousStatus,
+        toStatus: "converted",
+        performedBy: req.user?._id || null,
+        reason: normalizeText(req.body?.transitionReason || "Proposal accepted by customer"),
+        approvalRequired: false,
+        approvalState: "none",
+      });
+
+      applyLeadScoring(lead);
+      await lead.save({ session });
+
+      responsePayload = {
+        message: "Proposal accepted. Lead converted with customer, contact, and closed-won deal.",
+        lead,
+        customer,
+        contact,
+        deal,
+      };
+    });
+
+    return res.json(responsePayload);
+  } catch (err) {
+    if (err?.code === 11000) {
+      return res.status(409).json({
+        message: "Duplicate data conflict while accepting proposal. Please verify email/contact uniqueness and try again.",
+      });
+    }
+    if (err.statusCode) {
+      return res.status(err.statusCode).json({ message: err.message });
+    }
+    return next(err);
+  } finally {
+    await session.endSession();
+  }
+});
+
+router.post("/:id/proposal/reject", verifyToken, permit("ADMIN", "MANAGER", "EMPLOYEE"), async (req, res, next) => {
+  try {
+    const lead = await Lead.findById(req.params.id);
+    if (!lead) return res.status(404).json({ message: "Lead not found" });
+
+    const userRole = normalizeRole(req.user.role);
+    if (userRole === "EMPLOYEE") {
+      if (!lead.assignedTo || String(lead.assignedTo) !== String(req.user._id)) {
+        return res.status(403).json({ message: "Forbidden - not assigned to you" });
+      }
+    }
+
+    const currentStatus = String(lead.status || "new").toLowerCase();
+    if (currentStatus !== "proposal_sent") {
+      return res.status(400).json({ message: "Proposal must be in Proposal Sent stage before rejection" });
+    }
+
+    const rejectionReason = normalizeText(req.body?.reason);
+    if (!rejectionReason) {
+      return res.status(400).json({
+        message: "Rejection reason is required",
+        allowedReasons: PROPOSAL_REJECTION_REASONS,
+      });
+    }
+
+    if (!PROPOSAL_REJECTION_REASONS.includes(rejectionReason)) {
+      return res.status(400).json({
+        message: "Invalid rejection reason",
+        allowedReasons: PROPOSAL_REJECTION_REASONS,
+      });
+    }
+
+    const previousStatus = currentStatus;
+    lead.status = "lost";
+    lead.isConverted = true;
+    lead.pendingTransitionApproval = undefined;
+    lead.notes = [normalizeText(lead.notes), `Proposal rejected: ${rejectionReason}`]
+      .filter(Boolean)
+      .join("\n");
+    setStageTimestamp(lead, "lost");
+
+    appendTransitionHistory(lead, {
+      fromStatus: previousStatus,
+      toStatus: "lost",
+      performedBy: req.user._id,
+      reason: rejectionReason,
+      approvalRequired: false,
+      approvalState: "none",
+    });
+
+    applyLeadScoring(lead);
+    await lead.save();
+
+    return res.json({
+      message: "Proposal rejected and lead moved to Lost",
+      lead,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.post("/:id/transition-approval", verifyToken, permit("ADMIN", "MANAGER"), async (req, res, next) => {
   try {
     const lead = await Lead.findById(req.params.id);
@@ -1478,6 +1895,13 @@ const convertLeadToCustomerDeal = async (req, res, next) => {
 
       const conversionName = buildConversionName(lead);
       const conversionEmail = normalizeEmailForStorage(lead.email);
+      const defaultProductId = await resolveDefaultProductId(session);
+
+      if (!defaultProductId) {
+        throw Object.assign(new Error("No product found. Please create at least one product before converting lead."), {
+          statusCode: 400,
+        });
+      }
 
       const customer = await Customer.create(
         [
@@ -1499,6 +1923,7 @@ const convertLeadToCustomerDeal = async (req, res, next) => {
           {
             customerId: customer._id,
             sourceLeadId: lead._id,
+            product: defaultProductId,
             name: `${conversionName} - Deal`,
             company: lead.company,
             contact: customer.name,

@@ -1,0 +1,296 @@
+.lead-requests-page {
+  background: rgba(255, 255, 255, 0.98);
+  border: 1px solid var(--theme-border);
+  border-radius: 20px;
+  box-shadow: var(--theme-shadow-sm);
+  padding: 20px;
+}
+
+.lead-requests-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.lead-requests-header h2 {
+  margin: 0;
+  color: var(--theme-ink);
+}
+
+.lead-requests-header p {
+  margin: 6px 0 0;
+  color: var(--theme-text-muted);
+  font-size: 14px;
+}
+
+.lead-requests-summary-grid {
+  margin-top: 6px;
+}
+
+.lead-requests-status-tabs {
+  margin-top: 14px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.lead-requests-status-tab {
+  border: 1px solid var(--theme-border);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--theme-ink);
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.lead-requests-status-tab span {
+  min-width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  background: rgba(37, 99, 235, 0.12);
+  color: #1e56c0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 6px;
+  font-size: 11px;
+}
+
+.lead-requests-status-tab.active {
+  background: var(--theme-surface-accent);
+  color: var(--theme-green-strong);
+  border-color: rgba(111, 66, 193, 0.24);
+}
+
+.lead-request-item {
+  align-items: center;
+}
+
+.lead-requests-kanban {
+  margin-top: 14px;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(260px, 1fr));
+  gap: 12px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.lead-requests-kanban-column {
+  border: 1px solid var(--theme-border);
+  border-radius: 14px;
+  background: #fff;
+  min-height: 300px;
+  display: flex;
+  flex-direction: column;
+}
+
+.lead-requests-kanban-header {
+  padding: 10px 12px;
+  border-bottom: 1px solid #edf2fb;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-weight: 700;
+  color: var(--theme-ink);
+}
+
+.lead-requests-kanban-header strong {
+  min-width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: rgba(37, 99, 235, 0.12);
+  color: #1e56c0;
+  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.lead-requests-kanban-body {
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 540px;
+  overflow-y: auto;
+}
+
+.lead-requests-card {
+  border: 1px solid #e5edf8;
+  border-radius: 12px;
+  padding: 10px;
+  background: #f8fbff;
+}
+
+.lead-requests-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.lead-requests-card-badges {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.lead-status-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.lead-status-badge.new {
+  background: rgba(59, 130, 246, 0.12);
+  color: #1d4ed8;
+}
+
+.lead-status-badge.contacted {
+  background: rgba(6, 182, 212, 0.14);
+  color: #0e7490;
+}
+
+.lead-status-badge.qualified {
+  background: rgba(16, 185, 129, 0.14);
+  color: #047857;
+}
+
+.lead-status-badge.proposal {
+  background: rgba(234, 179, 8, 0.16);
+  color: #a16207;
+}
+
+.lead-status-badge.proposal_sent {
+  background: rgba(20, 184, 166, 0.16);
+  color: #0f766e;
+}
+
+.lead-status-badge.lost {
+  background: rgba(239, 68, 68, 0.14);
+  color: #b91c1c;
+}
+
+.lead-status-badge.unknown {
+  background: rgba(148, 163, 184, 0.2);
+  color: #475569;
+}
+
+.lead-assignment-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  padding: 4px 8px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+}
+
+.lead-assignment-badge.assigned {
+  background: rgba(16, 185, 129, 0.14);
+  color: #047857;
+}
+
+.lead-assignment-badge.unassigned {
+  background: rgba(239, 68, 68, 0.14);
+  color: #b91c1c;
+}
+
+.lead-requests-card-action {
+  margin-top: 10px;
+}
+
+.lead-requests-card .assignment-manager-action {
+  width: 100%;
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.lead-requests-card .assignment-employee-select {
+  width: 100%;
+  min-width: 0;
+}
+
+.lead-requests-card .assignment-submit-btn,
+.lead-requests-card .assignment-delete-btn,
+.lead-requests-card .assignment-next-action-btn,
+.lead-requests-card .assignment-next-action {
+  width: 100%;
+  justify-content: center;
+}
+
+.lead-requests-card .proposal-btn {
+  background: linear-gradient(135deg, #7c3aed, #6d28d9);
+  color: #fff;
+}
+
+.lead-requests-kanban-empty {
+  min-height: 100px;
+  border: 1px dashed #d6e3f7;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--theme-text-muted);
+  font-size: 13px;
+  background: #fbfdff;
+}
+
+.lead-requests-kanban-column.new .lead-requests-kanban-header {
+  background: rgba(59, 130, 246, 0.08);
+}
+
+.lead-requests-kanban-column.contacted .lead-requests-kanban-header {
+  background: rgba(6, 182, 212, 0.1);
+}
+
+.lead-requests-kanban-column.qualified .lead-requests-kanban-header {
+  background: rgba(16, 185, 129, 0.1);
+}
+
+.lead-requests-kanban-column.proposal .lead-requests-kanban-header {
+  background: rgba(234, 179, 8, 0.14);
+}
+
+.lead-requests-kanban-column.proposal_sent .lead-requests-kanban-header {
+  background: rgba(20, 184, 166, 0.14);
+}
+
+.lead-requests-kanban-column.lost .lead-requests-kanban-header {
+  background: rgba(239, 68, 68, 0.12);
+}
+
+@media (max-width: 768px) {
+  .lead-requests-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .lead-requests-status-tabs {
+    width: 100%;
+  }
+
+  .lead-requests-status-tab {
+    flex: 1 1 calc(50% - 8px);
+    justify-content: space-between;
+  }
+
+  .lead-requests-kanban {
+    grid-template-columns: 1fr;
+  }
+}

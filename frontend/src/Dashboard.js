@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import axios from "axios";
+import { useNavigate } from "react-router-dom";
 import {
   AreaChart,
   Area,
@@ -19,6 +20,14 @@ import "./Dashboard.css";
 import Sidebar from "./Sidebar";
 
 function Dashboard() {
+  const getAssignmentStatusClass = (value) => {
+    const status = String(value || "").toLowerCase();
+    if (["new", "contacted", "qualified", "proposal", "lost", "converted"].includes(status)) {
+      return status;
+    }
+    return "unknown";
+  };
+
   const role = localStorage.getItem("role");
   const storedName = localStorage.getItem("name");
   const storedUsername = localStorage.getItem("username");
@@ -31,6 +40,7 @@ function Dashboard() {
   const employee_id = localStorage.getItem("employee_id") || "";
   const [stats, setStats] = useState(null);
   const [notifications, setNotifications] = useState([]);
+  const [activityNotifications, setActivityNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [showNotifications, setShowNotifications] = useState(false);
   const [notificationsLoading, setNotificationsLoading] = useState(false);
@@ -42,6 +52,7 @@ function Dashboard() {
   const [showAssignedByMePanel, setShowAssignedByMePanel] = useState(false);
   const notificationRef = useRef(null);
   const assignedByMeRef = useRef(null);
+  const navigate = useNavigate();
 
   // Make role check case-insensitive
   const userRole = role ? role.toUpperCase() : "";
@@ -64,11 +75,28 @@ function Dashboard() {
     try {
       const token = localStorage.getItem("token");
       setNotificationsLoading(true);
-      const res = await axios.get("http://localhost:5000/api/deals/notifications", {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      setNotifications(res.data.notifications || []);
-      setUnreadCount(res.data.unreadCount || 0);
+      const [dealRes, activityRes] = await Promise.all([
+        axios.get("http://localhost:5000/api/deals/notifications", {
+          headers: { Authorization: `Bearer ${token}` },
+        }),
+        axios.get("http://localhost:5000/api/activities/notifications", {
+          params: { mode: "dashboard" },
+          headers: { Authorization: `Bearer ${token}` },
+        }),
+      ]);
+
+      const dealNotifications = dealRes.data.notifications || [];
+      const activityReminderNotifications = (activityRes.data.notifications || []).map((item) => ({
+        _id: item.id || item._id,
+        title: item.title,
+        type: item.type,
+        reminderTime: item.reminderTime,
+        relatedTo: item.relatedTo,
+      }));
+
+      setNotifications(dealNotifications);
+      setActivityNotifications(activityReminderNotifications);
+      setUnreadCount((dealRes.data.unreadCount || 0) + activityReminderNotifications.length);
     } catch (err) {
       console.error("Dashboard notifications fetch error:", err);
     } finally {
@@ -247,9 +275,14 @@ function Dashboard() {
   const renderAssignmentItem = (item) => (
     <div key={item._id} className="assignment-lead-item">
       <div>
-        <div className="assignment-lead-name">{item.name || "Unnamed Lead"}</div>
+        <div className="assignment-lead-title-row">
+          <div className="assignment-lead-name">{item.name || "Unnamed Lead"}</div>
+          <span className={`assignment-status-badge ${getAssignmentStatusClass(item.status)}`}>
+            {String(item.status || "Unknown").toUpperCase()}
+          </span>
+        </div>
         <div className="assignment-lead-meta">
-          {item.company || "No Company"} | Status: {String(item.status || "").toUpperCase()}
+          {item.company || "No Company"}
         </div>
         <div className="assignment-lead-meta">
           Assigned by: {item.assignedBy?.name || item.assignedBy?.username || "System"}
@@ -300,7 +333,7 @@ function Dashboard() {
         </div>
       ) : (
         <div className={`assignment-next-action ${item.nextAction?.type || "none"}`}>
-          {item.nextAction?.label || "No Immediate Action"}
+          {item.nextAction?.label || "Take Action"}
         </div>
       )}
     </div>
@@ -328,6 +361,20 @@ function Dashboard() {
               </p>
             </div>
             <div className="dashboard-header-actions">
+              {!isAdmin && (
+                <div className="assignment-view-toggle" aria-label="Lead request view">
+                  <button
+                    type="button"
+                    className="assignment-view-toggle-btn active"
+                    onClick={() => navigate("/requests")}
+                  >
+                    Open Requests Page
+                    <span className="assignment-view-toggle-count">
+                      {isManager ? managerIncomingItems.length : assignmentItems.length}
+                    </span>
+                  </button>
+                </div>
+              )}
               {isManager && (
                 <div className="dashboard-assigned-wrap" ref={assignedByMeRef}>
                   <button
@@ -397,10 +444,25 @@ function Dashboard() {
                     </div>
                     {notificationsLoading ? (
                       <div className="dashboard-notification-empty">Loading...</div>
-                    ) : notifications.length === 0 ? (
+                    ) : notifications.length === 0 && activityNotifications.length === 0 ? (
                       <div className="dashboard-notification-empty">No notifications</div>
                     ) : (
                       <div className="dashboard-notification-list">
+                        {activityNotifications.slice(0, 6).map((notif) => (
+                          <div key={notif._id} className="dashboard-notification-item unread reminder">
+                            <div className="dashboard-notification-message">
+                              <span className="dashboard-notification-pill">Reminder</span>
+                              {notif.title}
+                              {notif.relatedTo?.recordName && (
+                                <span>Lead: {notif.relatedTo.recordName}</span>
+                              )}
+                            </div>
+                            <div className="dashboard-notification-time">
+                              {new Date(notif.reminderTime).toLocaleString()}
+                            </div>
+                          </div>
+                        ))}
+
                         {notifications.slice(0, 10).map((notif) => (
                           <div
                             key={notif._id}
@@ -487,32 +549,18 @@ function Dashboard() {
                 </div>
               </div>
 
-              {isManager ? (
-                <div className="assignment-list-card">
-                  <div className="assignment-list-title">New From Admin</div>
-                  {assignmentLoading ? (
-                    <div className="assignment-empty">Loading assigned leads...</div>
-                  ) : !managerIncomingItems.length ? (
-                    <div className="assignment-empty">No new leads assigned by admin.</div>
-                  ) : (
-                    <div className="assignment-lead-list">
-                      {managerIncomingItems.slice(0, 8).map((item) => renderAssignmentItem(item))}
-                    </div>
-                  )}
+              <div className="assignment-compact-note">
+                Lead requests are now available on a separate page for clearer handling by status.
+                <div className="assignment-compact-note-actions">
+                  <button
+                    type="button"
+                    className="assignment-submit-btn"
+                    onClick={() => navigate("/requests")}
+                  >
+                    Go To Requests
+                  </button>
                 </div>
-              ) : (
-                <div className="assignment-list-card">
-                  {assignmentLoading ? (
-                    <div className="assignment-empty">Loading assigned leads...</div>
-                  ) : !assignmentItems.length ? (
-                    <div className="assignment-empty">No assigned leads found.</div>
-                  ) : (
-                    <div className="assignment-lead-list">
-                      {assignmentItems.slice(0, 8).map((item) => renderAssignmentItem(item))}
-                    </div>
-                  )}
-                </div>
-              )}
+              </div>
             </div>
           )}
 
