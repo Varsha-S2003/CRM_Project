@@ -4,6 +4,131 @@ const { verifyToken } = require("../middleware/authMiddleware");
 const { permit } = require("../middleware/authorize");
 const Product = require("../models/product");
 
+const SERVICE_CATEGORIES = ["license", "storage", "subscription"];
+
+const parseOptionalNumber = (value) => {
+  if (value === undefined || value === null || value === "") return undefined;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : NaN;
+};
+
+const parseOptionalDate = (value) => {
+  if (!value) return undefined;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
+const getValidatedTypePayload = (body) => {
+  const errors = [];
+  const payload = {};
+
+  const type = body.type === "service" ? "service" : "product";
+  payload.type = type;
+  payload.vendor = (body.vendor || "").trim();
+
+  const lowStockThreshold = parseOptionalNumber(body.lowStockThreshold);
+  if (Number.isNaN(lowStockThreshold) || (lowStockThreshold !== undefined && lowStockThreshold < 0)) {
+    errors.push("Low stock threshold must be a non-negative number");
+  } else if (lowStockThreshold !== undefined) {
+    payload.lowStockThreshold = lowStockThreshold;
+  }
+
+  if (type === "product") {
+    return { errors, payload };
+  }
+
+  const { serviceCategory } = body;
+  if (!SERVICE_CATEGORIES.includes(serviceCategory)) {
+    errors.push("Valid service category is required for services");
+    return { errors, payload };
+  }
+
+  payload.serviceCategory = serviceCategory;
+
+  if (serviceCategory === "license") {
+    const totalLicenses = parseOptionalNumber(body.totalLicenses);
+    const usedLicenses = parseOptionalNumber(body.usedLicenses ?? 0);
+    const licenseAlertThreshold = parseOptionalNumber(body.licenseAlertThreshold ?? 5);
+    const expiryDate = parseOptionalDate(body.expiryDate);
+
+    if (totalLicenses === undefined || Number.isNaN(totalLicenses) || totalLicenses < 0) {
+      errors.push("totalLicenses is required and must be a non-negative number");
+    }
+    if (Number.isNaN(usedLicenses) || usedLicenses < 0) {
+      errors.push("usedLicenses must be a non-negative number");
+    }
+    if (Number.isNaN(licenseAlertThreshold) || licenseAlertThreshold < 0) {
+      errors.push("licenseAlertThreshold must be a non-negative number");
+    }
+    if (expiryDate === null) {
+      errors.push("expiryDate must be a valid date");
+    }
+    if (
+      totalLicenses !== undefined &&
+      !Number.isNaN(totalLicenses) &&
+      !Number.isNaN(usedLicenses) &&
+      usedLicenses > totalLicenses
+    ) {
+      errors.push("usedLicenses cannot be greater than totalLicenses");
+    }
+
+    payload.totalLicenses = totalLicenses;
+    payload.usedLicenses = usedLicenses;
+    payload.licenseAlertThreshold = licenseAlertThreshold;
+    payload.expiryDate = expiryDate;
+  }
+
+  if (serviceCategory === "storage") {
+    const totalCapacity = parseOptionalNumber(body.totalCapacity);
+    const usedCapacity = parseOptionalNumber(body.usedCapacity ?? 0);
+
+    if (totalCapacity === undefined || Number.isNaN(totalCapacity) || totalCapacity <= 0) {
+      errors.push("totalCapacity is required and must be greater than 0");
+    }
+    if (Number.isNaN(usedCapacity) || usedCapacity < 0) {
+      errors.push("usedCapacity must be a non-negative number");
+    }
+    if (
+      totalCapacity !== undefined &&
+      !Number.isNaN(totalCapacity) &&
+      !Number.isNaN(usedCapacity) &&
+      usedCapacity > totalCapacity
+    ) {
+      errors.push("usedCapacity cannot be greater than totalCapacity");
+    }
+
+    payload.totalCapacity = totalCapacity;
+    payload.usedCapacity = usedCapacity;
+    payload.capacityUnit = body.capacityUnit === "TB" ? "TB" : "GB";
+  }
+
+  if (serviceCategory === "subscription") {
+    const startDate = parseOptionalDate(body.startDate);
+    const endDate = parseOptionalDate(body.endDate);
+
+    if (!["monthly", "yearly"].includes(body.billingCycle)) {
+      errors.push("billingCycle is required and must be monthly or yearly");
+    }
+    if (startDate === null) {
+      errors.push("startDate must be a valid date");
+    }
+    if (endDate === null) {
+      errors.push("endDate must be a valid date");
+    }
+    if (startDate && endDate && startDate > endDate) {
+      errors.push("startDate cannot be later than endDate");
+    }
+
+    payload.billingCycle = body.billingCycle;
+    payload.startDate = startDate;
+    payload.endDate = endDate;
+    payload.expiryDate = endDate;
+    payload.autoRenew = Boolean(body.autoRenew);
+  }
+
+  return { errors, payload };
+};
+
 // GET /api/products -- all products
 router.get("/", verifyToken, permit("ADMIN", "MANAGER", "EMPLOYEE"), async (req, res) => {
   try {
@@ -59,9 +184,16 @@ router.get("/:id", verifyToken, permit("ADMIN", "MANAGER", "EMPLOYEE"), async (r
 router.post("/", verifyToken, permit("ADMIN", "MANAGER"), async (req, res) => {
   try {
     const { name, category, price, description } = req.body;
+    const { errors, payload: typePayload } = getValidatedTypePayload(req.body);
     
-    if (!name || !category || !price) {
+    if (!name || !category || price === undefined || price === null || price === "") {
       return res.status(400).json({ message: "Name, category and price are required" });
+    }
+    if (Number.isNaN(Number(price)) || Number(price) < 0) {
+      return res.status(400).json({ message: "Price must be a non-negative number" });
+    }
+    if (errors.length) {
+      return res.status(400).json({ message: errors.join(". ") });
     }
     
     const prefix = category.substring(0, 3).toUpperCase();
@@ -89,9 +221,10 @@ router.post("/", verifyToken, permit("ADMIN", "MANAGER"), async (req, res) => {
       name,
       sku,
       category,
-      price,
+      price: Number(price),
       description: description || "",
-      stock: 0
+      stock: 0,
+      ...typePayload
     });
     
     res.status(201).json(product);
@@ -158,11 +291,21 @@ router.post("/fix-skus", verifyToken, permit("ADMIN"), async (req, res) => {
 // PUT /api/products/:id -- update product
 router.put("/:id", verifyToken, permit("ADMIN", "MANAGER"), async (req, res) => {
   try {
-    let { name, sku, category, price, description } = req.body;
+    let { name, sku, category, price, description, type, vendor, lowStockThreshold } = req.body;
     
     const product = await Product.findById(req.params.id);
     if (!product) {
       return res.status(404).json({ message: "Product not found" });
+    }
+
+    const incomingType = type || product.type || "product";
+    const { errors, payload: typePayload } = getValidatedTypePayload({
+      ...product.toObject(),
+      ...req.body,
+      type: incomingType
+    });
+    if (errors.length) {
+      return res.status(400).json({ message: errors.join(". ") });
     }
     
     // Check if SKU is being changed and if it already exists
@@ -178,8 +321,22 @@ router.put("/:id", verifyToken, permit("ADMIN", "MANAGER"), async (req, res) => 
     if (name) product.name = name;
     if (sku) product.sku = sku.trim();
     if (category) product.category = category;
-    if (price !== undefined) product.price = price;
+    if (price !== undefined) {
+      if (Number.isNaN(Number(price)) || Number(price) < 0) {
+        return res.status(400).json({ message: "Price must be a non-negative number" });
+      }
+      product.price = Number(price);
+    }
     if (description !== undefined) product.description = description;
+    if (type !== undefined) product.type = typePayload.type;
+    if (vendor !== undefined) product.vendor = (vendor || "").trim();
+    if (lowStockThreshold !== undefined) product.lowStockThreshold = typePayload.lowStockThreshold;
+
+    // Service/Product specific fields
+    Object.keys(typePayload).forEach((key) => {
+      if (["type", "vendor", "lowStockThreshold"].includes(key)) return;
+      product[key] = typePayload[key];
+    });
     
     await product.save();
     res.json(product);

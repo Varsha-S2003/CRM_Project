@@ -3,162 +3,232 @@ import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import "./Inventory.css";
 import Sidebar from "./Sidebar";
+import ItemForm from "./components/ItemForm";
+
+const PRODUCT_CATEGORIES = [
+  "Networking Equipment",
+  "Storage Devices",
+  "End User Devices",
+  "Accessories",
+  "Security Devices"
+];
+const SERVICE_CATEGORIES = [
+  "Managed Services",
+  "Licensing",
+  "Cloud Services",
+  "Security",
+  "Infrastructure"
+];
+
+const formatShortDate = (dateString) => {
+  if (!dateString) return "-";
+  return new Date(dateString).toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric"
+  });
+};
+
+const getInventoryStatus = (item) => {
+  const type = item.type === "service" ? "service" : "product";
+
+  if (type === "product") {
+    const quantity = item.quantity ?? item.stock ?? 0;
+    const threshold = item.lowStockThreshold ?? 5;
+
+    if (quantity === 0) return { text: "Out of Stock", className: "out-of-stock" };
+    if (quantity <= threshold) return { text: `Low Stock (${quantity})`, className: "low-stock" };
+    return { text: `In Stock (${quantity})`, className: "in-stock" };
+  }
+
+  if (item.serviceType === "license") {
+    if (item.status === "Expired") return { text: "Expired", className: "out-of-stock" };
+    const expiryDate = item.expiryDate ? new Date(item.expiryDate) : null;
+    if (!expiryDate) return { text: "Active", className: "in-stock" };
+    const daysLeft = Math.ceil((expiryDate.getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
+    if (daysLeft <= 30) return { text: `Expiring Soon (${Math.max(daysLeft, 0)}d)`, className: "low-stock" };
+    return { text: "Active", className: "in-stock" };
+  }
+
+  if (item.serviceType === "storage") {
+    const total = item.totalStorage || 0;
+    const available = item.availableStorage ?? 0;
+    const freeRatio = total > 0 ? (available / total) * 100 : 0;
+    if (freeRatio < 20) return { text: `Low Capacity (${freeRatio.toFixed(0)}%)`, className: "low-stock" };
+    return { text: `Available Storage (${available} ${item.storageUnit || "GB"})`, className: "in-stock" };
+  }
+
+  if (item.serviceType === "subscription") {
+    if (item.status === "Expired") return { text: "Expired", className: "out-of-stock" };
+    const nextBillingDate = item.nextBillingDate ? new Date(item.nextBillingDate) : null;
+    if (!nextBillingDate) return { text: "No Billing Date", className: "out-of-stock" };
+
+    const daysLeft = Math.ceil((nextBillingDate.getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
+    if (daysLeft <= 7) return { text: `Billing Soon (${Math.max(daysLeft, 0)}d)`, className: "low-stock" };
+    return { text: `Active (${daysLeft}d to bill)`, className: "in-stock" };
+  }
+
+  return { text: "-", className: "in-stock" };
+};
+
+const formatInventoryInfo = (item) => {
+  if ((item.type || "product") === "product") {
+    return item.quantity ?? item.stock ?? 0;
+  }
+
+  if (item.serviceType === "license") {
+    if (item.seats) return `${item.seats} seats`;
+    return item.expiryDate ? `Expires ${new Date(item.expiryDate).toLocaleDateString("en-US")}` : "-";
+  }
+
+  if (item.serviceType === "storage") {
+    const used = item.usedStorage ?? 0;
+    const total = item.totalStorage ?? 0;
+    const unit = item.storageUnit || "GB";
+    return `${used}${unit} / ${total}${unit}`;
+  }
+
+  if (item.serviceType === "subscription") {
+    return item.nextBillingDate
+      ? formatShortDate(item.nextBillingDate)
+      : "-";
+  }
+
+  return "-";
+};
 
 function Inventory() {
-  const [inventory, setInventory] = useState([]);
-  const [products, setProducts] = useState([]);
+  const [items, setItems] = useState([]);
   const [search, setSearch] = useState("");
-  const [stats, setStats] = useState({ totalRecords: 0, todayStock: 0 });
+  const [categoryFilter, setCategoryFilter] = useState("All Categories");
+  const [typeFilter, setTypeFilter] = useState("all");
   const [showModal, setShowModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
-  const [selectedInventory, setSelectedInventory] = useState(null);
-  const [newInventory, setNewInventory] = useState({
-    product: "",
-    quantity: ""
-  });
-  
+  const [selectedItem, setSelectedItem] = useState(null);
+
   const navigate = useNavigate();
-  
+
   const role = localStorage.getItem("role")?.toUpperCase();
   const isAdmin = role === "ADMIN";
   const isManager = role === "MANAGER";
   const canEdit = isAdmin || isManager;
+  const visibleCategories = typeFilter === "product"
+    ? PRODUCT_CATEGORIES
+    : typeFilter === "service"
+      ? SERVICE_CATEGORIES
+      : [...PRODUCT_CATEGORIES, ...SERVICE_CATEGORIES];
 
-  const fetchProducts = useCallback(async () => {
+  const fetchItems = useCallback(async () => {
     try {
       const token = localStorage.getItem("token");
-      const res = await axios.get("http://localhost:5000/api/products", {
-        headers: { Authorization: `Bearer ${token}` },
+      const res = await axios.get("http://localhost:5000/api/items", {
+        headers: { Authorization: `Bearer ${token}` }
       });
-      setProducts(res.data);
-    } catch (err) {
-      console.error(err);
-    }
-  }, []);
 
-  const fetchInventory = useCallback(async () => {
-    try {
-      const token = localStorage.getItem("token");
-      
-      const res = await axios.get("http://localhost:5000/api/inventory", {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      
-      let filteredInventory = res.data;
-      if (search) {
-        filteredInventory = res.data.filter(record =>
-          (record.product?.name && record.product.name.toLowerCase().includes(search.toLowerCase())) ||
-          (record.product?.sku && record.product.sku.toLowerCase().includes(search.toLowerCase())) ||
-          new Date(record.createdAt).toISOString().split('T')[0].includes(search)
-        );
+      let filtered = res.data;
+
+      if (categoryFilter !== "All Categories") {
+        filtered = filtered.filter((item) => item.category === categoryFilter);
       }
-      setInventory(filteredInventory);
-      
-      const today = new Date().toISOString().split('T')[0];
-      const todayStock = res.data
-        .filter(record => new Date(record.createdAt).toISOString().split('T')[0] === today)
-        .reduce((sum, record) => sum + record.quantity, 0);
-      
-      setStats({
-        totalRecords: res.data.length,
-        todayStock: todayStock
-      });
+
+      if (typeFilter !== "all") {
+        filtered = filtered.filter((item) => (item.type || "product") === typeFilter);
+      }
+
+      if (search.trim()) {
+        const q = search.toLowerCase();
+        filtered = filtered.filter((item) => {
+          const type = item.type || "product";
+          return (
+            (item.name || "").toLowerCase().includes(q) ||
+            (item.sku || "").toLowerCase().includes(q) ||
+            (item.category || "").toLowerCase().includes(q) ||
+            (item.serviceType || "").toLowerCase().includes(q) ||
+            type.toLowerCase().includes(q)
+          );
+        });
+      }
+
+      setItems(filtered);
     } catch (err) {
       console.error(err);
     }
-  }, [search]);
+  }, [search, categoryFilter, typeFilter]);
 
   useEffect(() => {
-    const role = localStorage.getItem("role")?.toUpperCase();
     if (!role) {
       navigate("/login");
     }
-  }, [navigate]);
+  }, [navigate, role]);
 
   useEffect(() => {
-    fetchProducts();
-  }, [fetchProducts]);
+    if (categoryFilter !== "All Categories" && !visibleCategories.includes(categoryFilter)) {
+      setCategoryFilter("All Categories");
+    }
+  }, [categoryFilter, visibleCategories]);
 
   useEffect(() => {
-    fetchInventory();
-  }, [fetchInventory]);
+    fetchItems();
+  }, [fetchItems]);
 
   const handleAddInventory = () => {
-    setNewInventory({
-      product: "",
-      quantity: ""
-    });
     setShowModal(true);
   };
 
-  const handleEditInventory = (record) => {
-    setSelectedInventory({
-      ...record,
-      product: record.product?._id || record.product,
-      quantity: record.quantity.toString()
-    });
+  const handleCreateItem = async (payload) => {
+    try {
+      const token = localStorage.getItem("token");
+
+      const res = await axios.post("http://localhost:5000/api/items", payload, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      setShowModal(false);
+      fetchItems();
+      alert(res.data?.message || "Item created successfully");
+    } catch (err) {
+      console.error(err);
+      alert(err.response?.data?.message || "Failed to create item");
+    }
+  };
+
+  const handleEditInventory = (item) => {
+    setSelectedItem(item);
     setShowEditModal(true);
   };
 
-  const submitNewInventory = async (e) => {
-    e.preventDefault();
-    try {
-      const token = localStorage.getItem("token");
-      const inventoryData = {
-        product: newInventory.product,
-        quantity: parseInt(newInventory.quantity)
-      };
-      
-      await axios.post(
-        "http://localhost:5000/api/inventory",
-        inventoryData,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      setShowModal(false);
-      fetchInventory();
-      fetchProducts();
-    } catch (err) {
-      console.error(err);
-      alert(err.response?.data?.message || "Failed to add inventory");
-    }
-  };
+  const handleUpdateItem = async (payload) => {
+    if (!selectedItem) return;
 
-  const submitEditInventory = async (e) => {
-    e.preventDefault();
     try {
       const token = localStorage.getItem("token");
-      const inventoryData = {
-        product: selectedInventory.product,
-        quantity: parseInt(selectedInventory.quantity)
-      };
-      
-      await axios.put(
-        `http://localhost:5000/api/inventory/${selectedInventory._id}`,
-        inventoryData,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      setShowEditModal(false);
-      setSelectedInventory(null);
-      fetchInventory();
-      fetchProducts();
-    } catch (err) {
-      console.error(err);
-      alert(err.response?.data?.message || "Failed to update inventory");
-    }
-  };
 
-  const handleDeleteInventory = async (inventoryId) => {
-    if (!window.confirm("Are you sure you want to delete this inventory record? This will also reduce the product stock.")) return;
-    try {
-      const token = localStorage.getItem("token");
-      await axios.delete(`http://localhost:5000/api/inventory/${inventoryId}`, {
-        headers: { Authorization: `Bearer ${token}` },
+      await axios.put(`http://localhost:5000/api/items/${selectedItem._id}`, payload, {
+        headers: { Authorization: `Bearer ${token}` }
       });
-      fetchInventory();
-      fetchProducts();
+
+      setShowEditModal(false);
+      setSelectedItem(null);
+      fetchItems();
     } catch (err) {
       console.error(err);
-      alert("Failed to delete inventory record");
+      alert(err.response?.data?.message || "Failed to update item");
+    }
+  };
+
+  const handleDeleteInventory = async (itemId) => {
+    if (!window.confirm("Are you sure you want to delete this item?")) return;
+
+    try {
+      const token = localStorage.getItem("token");
+      await axios.delete(`http://localhost:5000/api/items/${itemId}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      fetchItems();
+    } catch (err) {
+      console.error(err);
+      alert(err.response?.data?.message || "Failed to delete item");
     }
   };
 
@@ -171,16 +241,6 @@ function Inventory() {
     });
   };
 
-  const getProductName = (product) => {
-    if (!product) return "-";
-    return product.name || "-";
-  };
-
-  const getProductSku = (product) => {
-    if (!product) return "-";
-    return product.sku || "-";
-  };
-
   return (
     <div className="dashboard-layout">
       <Sidebar />
@@ -189,17 +249,7 @@ function Inventory() {
           <div className="inventory-header-section">
             <div className="inventory-header-left">
               <h1>Inventory</h1>
-              <p>Manage stock additions</p>
-            </div>
-            <div className="inventory-stats">
-              <div className="stat-card">
-                <span className="stat-label">Total Records</span>
-                <span className="stat-value">{stats.totalRecords}</span>
-              </div>
-              <div className="stat-card">
-                <span className="stat-label">Stock Added Today</span>
-                <span className="stat-value">+{stats.todayStock}</span>
-              </div>
+              <p>Manage items here. Products & Services will reflect the same database records.</p>
             </div>
             <div className="inventory-header-right">
               {canEdit && (
@@ -208,7 +258,7 @@ function Inventory() {
                     <line x1="12" y1="5" x2="12" y2="19"></line>
                     <line x1="5" y1="12" x2="19" y2="12"></line>
                   </svg>
-                  Add Stock
+                  Add Item
                 </button>
               )}
             </div>
@@ -222,11 +272,34 @@ function Inventory() {
               </svg>
               <input
                 type="text"
-                placeholder="Search by product name, SKU or date..."
+                placeholder="Search by name, category, type..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
             </div>
+
+            <select
+              className="category-filter"
+              value={categoryFilter}
+              onChange={(e) => setCategoryFilter(e.target.value)}
+            >
+              <option value="All Categories">All Categories</option>
+              {visibleCategories.map((category) => (
+                <option key={category} value={category}>
+                  {category}
+                </option>
+              ))}
+            </select>
+
+            <select
+              className="category-filter"
+              value={typeFilter}
+              onChange={(e) => setTypeFilter(e.target.value)}
+            >
+              <option value="all">All Types</option>
+              <option value="product">Product</option>
+              <option value="service">Service</option>
+            </select>
           </div>
         </div>
 
@@ -235,55 +308,69 @@ function Inventory() {
             <table className="inventory-table">
               <thead>
                 <tr>
-                  <th>Date</th>
-                  <th>Product</th>
+                  <th>Created</th>
+                  <th>Name</th>
+                  <th>Type</th>
                   <th>SKU</th>
-                  <th>Quantity</th>
-                  {isAdmin && <th>Actions</th>}
+                  <th>Category</th>
+                  <th>Quantity / Info</th>
+                  <th>Status</th>
+                  {canEdit && <th>Actions</th>}
                 </tr>
               </thead>
               <tbody>
-                {inventory.length === 0 ? (
+                {items.length === 0 ? (
                   <tr>
-                    <td colSpan={isAdmin ? 5 : 4} className="no-data">
-                      No inventory records found. {canEdit && "Add your first stock!"}
+                    <td colSpan={canEdit ? 8 : 7} className="no-data">
+                      No items found. {canEdit ? "Add your first item here." : ""}
                     </td>
                   </tr>
                 ) : (
-                  inventory.map((record) => (
-                    <tr key={record._id}>
-                      <td>{formatDate(record.createdAt)}</td>
-                      <td className="product-name">{getProductName(record.product)}</td>
-                      <td><span className="sku-badge">{getProductSku(record.product)}</span></td>
-                      <td className="quantity-in">+{record.quantity}</td>
-                      {isAdmin && (
+                  items.map((item) => {
+                    const status = getInventoryStatus(item);
+
+                    return (
+                      <tr key={item._id}>
+                        <td>{formatDate(item.createdAt)}</td>
+                        <td className="product-name">{item.name}</td>
+                        <td>{(item.type || "product") === "service" ? "Service" : "Product"}</td>
+                        <td><span className="sku-badge">{item.sku || "-"}</span></td>
+                        <td>{item.category || "-"}</td>
+                        <td className="quantity-in">{formatInventoryInfo(item)}</td>
                         <td>
-                          <div className="action-buttons">
-                            <button 
-                              className="action-btn edit-btn"
-                              onClick={() => handleEditInventory(record)}
-                              title="Edit"
-                            >
-                              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
-                                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
-                              </svg>
-                            </button>
-                            <button 
-                              className="action-btn delete-btn"
-                              onClick={() => handleDeleteInventory(record._id)}
-                              title="Delete"
-                            >
-                              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                <polyline points="3 6 5 6 21 6"></polyline>
-                                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                              </svg>
-                            </button>
-                          </div>
+                          <span className={`stock-badge ${status.className}`}>{status.text}</span>
                         </td>
-                      )}
-                    </tr>
-                  ))
+                        {canEdit && (
+                          <td>
+                            <div className="action-buttons">
+                              <button
+                                className="action-btn edit-btn"
+                                onClick={() => handleEditInventory(item)}
+                                title="Edit"
+                              >
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                                  <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                                </svg>
+                              </button>
+                              {isAdmin && (
+                                <button
+                                  className="action-btn delete-btn"
+                                  onClick={() => handleDeleteInventory(item._id)}
+                                  title="Delete"
+                                >
+                                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                    <polyline points="3 6 5 6 21 6"></polyline>
+                                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                                  </svg>
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        )}
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </table>
@@ -294,7 +381,7 @@ function Inventory() {
           <div className="modal-overlay-zoho" onClick={() => setShowModal(false)}>
             <div className="modal-box-zoho" onClick={(e) => e.stopPropagation()}>
               <div className="modal-header-zoho">
-                <h2>Add Stock</h2>
+                <h2>Add Item</h2>
                 <button className="modal-close" onClick={() => setShowModal(false)}>
                   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <line x1="18" y1="6" x2="6" y2="18"></line>
@@ -302,54 +389,20 @@ function Inventory() {
                   </svg>
                 </button>
               </div>
-              <form onSubmit={submitNewInventory} className="modal-form-zoho">
-                <div className="form-section">
-                  <h3>Stock Information</h3>
-                  <div className="form-row-zoho">
-                    <div className="form-group">
-                      <label>Product *</label>
-                      <select
-                        value={newInventory.product}
-                        onChange={(e) => setNewInventory({ ...newInventory, product: e.target.value })}
-                        required
-                      >
-                        <option value="">Select product</option>
-                        {products.map((product) => (
-                          <option key={product._id} value={product._id}>
-                            {product.name} ({product.sku}) - Stock: {product.stock}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-                  <div className="form-row-zoho">
-                    <div className="form-group">
-                      <label>Quantity *</label>
-                      <input
-                        type="number"
-                        placeholder="Enter quantity"
-                        value={newInventory.quantity}
-                        onChange={(e) => setNewInventory({ ...newInventory, quantity: e.target.value })}
-                        min="1"
-                        required
-                      />
-                    </div>
-                  </div>
-                </div>
-                <div className="modal-actions">
-                  <button type="button" className="btn-cancel" onClick={() => setShowModal(false)}>Cancel</button>
-                  <button type="submit" className="btn-submit">Add Stock</button>
-                </div>
-              </form>
+              <ItemForm
+                onSubmit={handleCreateItem}
+                onCancel={() => setShowModal(false)}
+                submitLabel="Create"
+              />
             </div>
           </div>
         )}
 
-        {showEditModal && selectedInventory && (
+        {showEditModal && selectedItem && (
           <div className="modal-overlay-zoho" onClick={() => setShowEditModal(false)}>
             <div className="modal-box-zoho" onClick={(e) => e.stopPropagation()}>
               <div className="modal-header-zoho">
-                <h2>Edit Stock</h2>
+                <h2>Edit Item</h2>
                 <button className="modal-close" onClick={() => setShowEditModal(false)}>
                   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <line x1="18" y1="6" x2="6" y2="18"></line>
@@ -357,45 +410,12 @@ function Inventory() {
                   </svg>
                 </button>
               </div>
-              <form onSubmit={submitEditInventory} className="modal-form-zoho">
-                <div className="form-section">
-                  <h3>Stock Information</h3>
-                  <div className="form-row-zoho">
-                    <div className="form-group">
-                      <label>Product *</label>
-                      <select
-                        value={selectedInventory.product}
-                        onChange={(e) => setSelectedInventory({ ...selectedInventory, product: e.target.value })}
-                        required
-                      >
-                        <option value="">Select product</option>
-                        {products.map((product) => (
-                          <option key={product._id} value={product._id}>
-                            {product.name} ({product.sku}) - Stock: {product.stock}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-                  <div className="form-row-zoho">
-                    <div className="form-group">
-                      <label>Quantity *</label>
-                      <input
-                        type="number"
-                        placeholder="Enter quantity"
-                        value={selectedInventory.quantity}
-                        onChange={(e) => setSelectedInventory({ ...selectedInventory, quantity: e.target.value })}
-                        min="1"
-                        required
-                      />
-                    </div>
-                  </div>
-                </div>
-                <div className="modal-actions">
-                  <button type="button" className="btn-cancel" onClick={() => setShowEditModal(false)}>Cancel</button>
-                  <button type="submit" className="btn-submit">Update Stock</button>
-                </div>
-              </form>
+              <ItemForm
+                initialItem={selectedItem}
+                onSubmit={handleUpdateItem}
+                onCancel={() => setShowEditModal(false)}
+                submitLabel="Update"
+              />
             </div>
           </div>
         )}
@@ -405,4 +425,3 @@ function Inventory() {
 }
 
 export default Inventory;
-

@@ -56,9 +56,12 @@ router.post("/", verifyToken, permit("ADMIN", "MANAGER"), async (req, res) => {
     }
     
     // Find the product
-    const productDoc = await Product.findById(product);
+    const productDoc = await Product.findById(product).lean();
     if (!productDoc) {
       return res.status(404).json({ message: "Product not found" });
+    }
+    if (productDoc.type === "service") {
+      return res.status(400).json({ message: "Quantity tracking is only available for product type items" });
     }
     
     // Create inventory record
@@ -68,9 +71,8 @@ router.post("/", verifyToken, permit("ADMIN", "MANAGER"), async (req, res) => {
       date: date || Date.now()
     });
     
-    // Increase product stock
-    productDoc.stock += quantity;
-    await productDoc.save();
+    // Increase product stock without triggering full document validation.
+    await Product.findByIdAndUpdate(product, { $inc: { stock: quantity } });
     
     // Populate product details for response
     await inventory.populate("product", "name sku");
@@ -90,6 +92,20 @@ router.put("/:id", verifyToken, permit("ADMIN", "MANAGER"), async (req, res) => 
     if (!inventory) {
       return res.status(404).json({ message: "Inventory record not found" });
     }
+
+    if (quantity !== undefined && quantity < 1) {
+      return res.status(400).json({ message: "Quantity must be at least 1" });
+    }
+
+    if (product) {
+      const productDoc = await Product.findById(product);
+      if (!productDoc) {
+        return res.status(404).json({ message: "Product not found" });
+      }
+      if (productDoc.type === "service") {
+        return res.status(400).json({ message: "Quantity tracking is only available for product type items" });
+      }
+    }
     
     // Get the old product and quantity
     const oldProductId = inventory.product;
@@ -105,10 +121,10 @@ router.put("/:id", verifyToken, permit("ADMIN", "MANAGER"), async (req, res) => 
     // Adjust product stock accordingly
     // First, restore the old product stock
     if (oldProductId) {
-      const oldProduct = await Product.findById(oldProductId);
-      if (oldProduct) {
-        oldProduct.stock = Math.max(0, oldProduct.stock - oldQuantity);
-        await oldProduct.save();
+      const oldProduct = await Product.findById(oldProductId).lean();
+      if (oldProduct && oldProduct.type !== "service") {
+        const restoredStock = Math.max(0, (oldProduct.stock || 0) - oldQuantity);
+        await Product.findByIdAndUpdate(oldProductId, { $set: { stock: restoredStock } });
       }
     }
     
@@ -116,10 +132,9 @@ router.put("/:id", verifyToken, permit("ADMIN", "MANAGER"), async (req, res) => 
     const newProductId = product || oldProductId;
     const newQuantity = quantity || oldQuantity;
     if (newProductId) {
-      const newProduct = await Product.findById(newProductId);
-      if (newProduct) {
-        newProduct.stock += newQuantity;
-        await newProduct.save();
+      const newProduct = await Product.findById(newProductId).lean();
+      if (newProduct && newProduct.type !== "service") {
+        await Product.findByIdAndUpdate(newProductId, { $inc: { stock: newQuantity } });
       }
     }
     
@@ -141,11 +156,11 @@ router.delete("/:id", verifyToken, permit("ADMIN"), async (req, res) => {
     }
     
     // Find and update the product stock
-    const product = await Product.findById(inventory.product);
-    if (product) {
-      // Decrease product stock (ensure it doesn't go below 0)
-      product.stock = Math.max(0, product.stock - inventory.quantity);
-      await product.save();
+    const product = await Product.findById(inventory.product).lean();
+    if (product && product.type !== "service") {
+      // Decrease product stock without triggering full document validation.
+      const nextStock = Math.max(0, (product.stock || 0) - inventory.quantity);
+      await Product.findByIdAndUpdate(inventory.product, { $set: { stock: nextStock } });
     }
     
     // Delete the inventory record

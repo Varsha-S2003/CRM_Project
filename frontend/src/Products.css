@@ -42,6 +42,44 @@
   gap: 16px;
 }
 
+.search-box-zoho {
+  position: relative;
+  flex: 1;
+  max-width: 720px;
+}
+
+.search-box-zoho svg {
+  position: absolute;
+  top: 50%;
+  left: 22px;
+  transform: translateY(-50%);
+  color: #98a2b3;
+  pointer-events: none;
+}
+
+.search-box-zoho input {
+  width: 100%;
+  height: 56px;
+  border: 1px solid #d6dde8;
+  border-radius: 18px;
+  background: #ffffff;
+  padding: 0 20px 0 62px;
+  font-size: 15px;
+  color: #334155;
+  outline: none;
+  box-shadow: 0 0 0 1px rgba(214, 221, 232, 0.45);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.search-box-zoho input::placeholder {
+  color: #667085;
+}
+
+.search-box-zoho input:focus {
+  border-color: #c3ccd9;
+  box-shadow: 0 0 0 3px rgba(214, 221, 232, 0.28);
+}
+
 .products-scroll-content {
   flex: 1;
   min-height: 0;
@@ -281,5 +319,37 @@
 .delete-btn:hover {
   background: #ffe1dd;
   color: #b63d3d;
+}
+
+/* Linked Product Styling */
+.linked-product-cell {
+  font-size: 13px;
+  color: #6366f1;
+  font-weight: 500;
+}
+
+.linked-product-info {
+  margin-top: 8px;
+  padding: 12px;
+  background: #f0f4ff;
+  border-left: 3px solid #6366f1;
+  border-radius: 4px;
+}
+
+.linked-product-details {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.detail-row {
+  font-size: 13px;
+  color: #334155;
+}
+
+.detail-row strong {
+  font-weight: 600;
+  color: #1a1a2e;
+  margin-right: 6px;
 }
 

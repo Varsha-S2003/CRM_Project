@@ -44,6 +44,10 @@ app.use("/api/stats", statsRoutes);
 const productRoutes = require("./routes/productRoutes");
 app.use("/api/products", productRoutes);
 
+// unified items endpoint for products + services
+const itemRoutes = require("./routes/itemRoutes");
+app.use("/api/items", itemRoutes);
+
 // inventory endpoint for managing inventory
 const inventoryRoutes = require("./routes/inventoryRoutes");
 app.use("/api/inventory", inventoryRoutes);
@@ -55,6 +59,15 @@ app.use("/api/settings", settingsRoutes);
 mongoose.connect(process.env.MONGO_URI)
 .then(async () => {
   console.log("MongoDB Atlas Connected");
+  try {
+    const { dedupeItems } = require("./utils/dedupeItems");
+    const mergedItems = await dedupeItems();
+    if (mergedItems.length > 0) {
+      console.log(`Collapsed ${mergedItems.length} duplicate item groups on startup`);
+    }
+  } catch (e) {
+    console.error("Failed to dedupe items:", e.message);
+  }
   // make sure we have a settings document; admins may not have visited the settings page yet
   try {
     const AppSettings = require("./models/appSettings");

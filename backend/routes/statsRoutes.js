@@ -17,9 +17,31 @@ router.get("/", verifyToken, isAdmin, async (req, res) => {
 
     // Product statistics
     const totalProducts = await Product.countDocuments();
-    const allProducts = await Product.find({}, 'stock');
-    const totalStock = allProducts.reduce((sum, p) => sum + (p.stock || 0), 0);
-    const lowStockItems = allProducts.filter(p => p.stock < 5).length;
+    const allProducts = await Product.find({}, "type stock lowStockThreshold serviceCategory availableLicenses licenseAlertThreshold totalCapacity availableCapacity endDate expiryDate");
+    const productItems = allProducts.filter((p) => (p.type || "product") !== "service");
+    const serviceItems = allProducts.filter((p) => p.type === "service");
+    const totalStock = productItems.reduce((sum, p) => sum + (p.stock || 0), 0);
+    const lowStockItems = productItems.filter((p) => p.stock < (p.lowStockThreshold ?? 5)).length;
+
+    const today = new Date();
+    const serviceAlerts = serviceItems.filter((item) => {
+      if (item.serviceCategory === "license") {
+        return (item.availableLicenses ?? 0) < (item.licenseAlertThreshold ?? 5);
+      }
+      if (item.serviceCategory === "storage") {
+        const total = item.totalCapacity || 0;
+        if (total <= 0) return true;
+        const availablePercent = ((item.availableCapacity ?? 0) / total) * 100;
+        return availablePercent < 20;
+      }
+      if (item.serviceCategory === "subscription") {
+        const expiry = item.endDate || item.expiryDate;
+        if (!expiry) return true;
+        const daysLeft = (new Date(expiry).getTime() - today.getTime()) / (1000 * 60 * 60 * 24);
+        return daysLeft <= 30;
+      }
+      return false;
+    }).length;
 
     // prepare employee creation trend for last six months
     const now = new Date();
@@ -69,6 +91,7 @@ router.get("/", verifyToken, isAdmin, async (req, res) => {
       totalProducts,
       totalStock,
       lowStockItems,
+      serviceAlerts,
       // additional fields for charts
       revenueTrend: [45000, 52000, 48000, 61000, 55000, 68000],
       dealsByStage: { proposal: 1, negotiation: 1, closedWon: 0, closedLost: 0 },
