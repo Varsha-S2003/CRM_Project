@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import Sidebar from "./Sidebar";
 import "./Leads.css";
@@ -35,6 +35,12 @@ const formatDateTime = (value) => {
   return new Date(timestamp).toLocaleString();
 };
 
+const formatDate = (value) => {
+  const timestamp = toTimestamp(value);
+  if (!timestamp) return "-";
+  return new Date(timestamp).toLocaleDateString();
+};
+
 const normalizeStatusLabel = (value) => {
   const normalized = String(value || "").trim().toLowerCase();
   return normalized === "inactive" ? "Inactive" : "Active";
@@ -47,31 +53,39 @@ export default function Customers() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [search, setSearch] = useState("");
 
-  useEffect(() => {
-    const fetchCustomers = async () => {
-      try {
-        const token = localStorage.getItem("token");
-        const params = statusFilter === "all" ? {} : { status: statusFilter };
-        const res = await axios.get("http://localhost:5000/api/customers", {
-          headers: { Authorization: `Bearer ${token}` },
-          params,
-        });
-        setCustomers(
-          (res.data || []).map((customer) => ({
-            ...customer,
-            status: customer.status || "Active",
-            reason: customer.status === "Inactive" ? String(customer.reason || "").trim() : "",
-          }))
-        );
-      } catch (err) {
-        console.error(err);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchCustomers();
+  const fetchCustomers = useCallback(async () => {
+    setLoading(true);
+    try {
+      const token = localStorage.getItem("token");
+      const params = statusFilter === "all" ? {} : { status: statusFilter };
+      const res = await axios.get("http://localhost:5000/api/customers", {
+        headers: { Authorization: `Bearer ${token}` },
+        params,
+      });
+      setCustomers(
+        (res.data || []).map((customer) => ({
+          ...customer,
+          status: customer.status || "Active",
+          reason: customer.status === "Inactive" ? String(customer.reason || "").trim() : "",
+          serviceSubscriptions: customer.serviceSubscriptions || [],
+        }))
+      );
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
   }, [statusFilter]);
+
+  useEffect(() => {
+    fetchCustomers();
+  }, [fetchCustomers]);
+
+  useEffect(() => {
+    const refresh = () => fetchCustomers();
+    window.addEventListener("customer-updated", refresh);
+    return () => window.removeEventListener("customer-updated", refresh);
+  }, [fetchCustomers]);
 
   const mergedCustomers = useMemo(() => {
     const grouped = new Map();
@@ -79,6 +93,7 @@ export default function Customers() {
     customers.forEach((customer) => {
       const key = buildCustomerMergeKey(customer);
       const createdAtValue = customer.createdAt || customer.created_at || null;
+      const incomingSubscriptions = Array.isArray(customer.serviceSubscriptions) ? customer.serviceSubscriptions : [];
       const purchase = {
         id: customer._id,
         product: getProductLabel(customer.product),
@@ -100,6 +115,7 @@ export default function Customers() {
           status: customer.status || "Active",
           reason: customer.status === "Inactive" ? String(customer.reason || "").trim() : "",
           createdAt: createdAtValue,
+          serviceSubscriptions: [...incomingSubscriptions],
           purchases: [purchase],
         });
         return;
@@ -136,12 +152,23 @@ export default function Customers() {
       if (customer.status === "Inactive") {
         existing.status = "Inactive";
       }
+
+      const subscriptionIds = new Set((existing.serviceSubscriptions || []).map((subscription) => String(subscription.dealId)));
+      incomingSubscriptions.forEach((subscription) => {
+        if (!subscriptionIds.has(String(subscription.dealId))) {
+          existing.serviceSubscriptions.push(subscription);
+          subscriptionIds.add(String(subscription.dealId));
+        }
+      });
     });
 
     return Array.from(grouped.values())
       .map((customer) => ({
         ...customer,
         purchases: customer.purchases.sort((a, b) => toTimestamp(b.createdAt) - toTimestamp(a.createdAt)),
+        serviceSubscriptions: (customer.serviceSubscriptions || []).sort(
+          (a, b) => toTimestamp(a.expiryDate) - toTimestamp(b.expiryDate)
+        ),
       }))
       .sort((a, b) => toTimestamp(b.createdAt) - toTimestamp(a.createdAt));
   }, [customers]);
@@ -305,6 +332,51 @@ export default function Customers() {
                         )}
                       </tbody>
                     </table>
+                  </div>
+                  <div className="customers-table-wrapper customer-purchases-wrapper">
+                    <h3 className="customer-purchases-title">Service Subscriptions</h3>
+                    {(selectedCustomer.serviceSubscriptions || []).length === 0 ? (
+                      <p className="dashboard-subtitle">No service subscriptions found.</p>
+                    ) : (
+                      <table className="customers-table">
+                        <thead>
+                          <tr>
+                            <th>Service</th>
+                            <th>Plan</th>
+                            <th>Start Date</th>
+                            <th>Expiry Date</th>
+                            <th>Days Remaining</th>
+                            <th>Status</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {selectedCustomer.serviceSubscriptions.map((subscription) => (
+                            <tr key={subscription.dealId}>
+                              <td data-label="Service">{subscription.serviceName || "-"}</td>
+                              <td data-label="Plan">{subscription.plan || "-"}</td>
+                              <td data-label="Start Date">{formatDate(subscription.startDate)}</td>
+                              <td data-label="Expiry Date">{formatDate(subscription.expiryDate)}</td>
+                              <td data-label="Days Remaining">
+                                {subscription.daysRemaining === null ? "-" : `${subscription.daysRemaining} days`}
+                              </td>
+                              <td data-label="Status">
+                                <span
+                                  className={`deal-status-pill ${
+                                    subscription.alertStatus === "Expired"
+                                      ? "inactive"
+                                      : subscription.alertStatus === "Expiring Soon"
+                                        ? "warning"
+                                        : "active"
+                                  }`}
+                                >
+                                  {subscription.alertStatus || "Active"}
+                                </span>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
                   </div>
                 </div>
               </div>

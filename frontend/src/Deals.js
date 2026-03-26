@@ -74,6 +74,11 @@ const getItemType = (item) => {
   return item.type === "service" ? "service" : "product";
 };
 
+const emitDealDataRefresh = () => {
+  window.dispatchEvent(new Event("inventory-updated"));
+  window.dispatchEvent(new Event("customer-updated"));
+};
+
 const normalizeDeal = (deal) => {
   const stage = normalizeStageForUi(deal.stage);
   const status = deal.status || (stage === "lost" ? "Inactive" : "Active");
@@ -598,12 +603,13 @@ function Deals() {
   const submitNewDeal = async (e) => {
     e.preventDefault();
     try {
-      const formData = new FormData(e.currentTarget);
+      const selectedNewDealItem = products.find((item) => String(item._id) === String(newDeal.product));
+      const selectedNewDealItemType = getItemType(selectedNewDealItem);
       const trimmedName = [String(newDeal.firstName || "").trim(), String(newDeal.lastName || "").trim()]
         .filter(Boolean)
         .join(" ")
         .trim();
-      const trimmedSalutation = String(formData.get("salutation") || newDeal.salutation || "").trim();
+      const trimmedSalutation = String(newDeal.salutation || "").trim();
       const trimmedFirstName = String(newDeal.firstName || "").trim();
       const trimmedLastName = String(newDeal.lastName || "").trim();
       const trimmedTitle = String(newDeal.title || "").trim();
@@ -616,24 +622,12 @@ function Deals() {
       const closingDateValue = String(newDeal.closingDate || "").trim();
       const probabilityValue = parseOptionalNumberInput(newDeal.probability);
 
-      if (!trimmedSalutation) {
-        alert("Salutation is required");
-        return;
-      }
       if (!trimmedName) {
         alert("First Name or Last Name is required");
         return;
       }
       if (!trimmedFirstName) {
         alert("First Name is required");
-        return;
-      }
-      if (!trimmedLastName) {
-        alert("Last Name is required");
-        return;
-      }
-      if (!trimmedTitle) {
-        alert("Title is required");
         return;
       }
       if (amountValue === null || amountValue <= 0) {
@@ -658,13 +652,13 @@ function Deals() {
     }
     if (selectedNewDealItemType === "product") {
       const quantityValue = parseOptionalNumberInput(newDeal.quantity);
-      if (quantityValue === null || quantityValue < 0) {
+      if (quantityValue === null || quantityValue <= 0) {
         alert("Quantity is required for selected products");
         return;
       }
     }
     if (selectedNewDealItemType === "service") {
-      if (!String(newDeal.billingCycle || "").trim()) {
+      if (String(selectedNewDealItem?.status || "").trim() !== "Inactive" && !String(newDeal.billingCycle || "").trim()) {
         alert("Plan / Billing Cycle is required for selected services");
         return;
       }
@@ -686,11 +680,27 @@ function Deals() {
         return;
       }
 
+      const availableStock = Number(selectedNewDealItem?.stock ?? selectedNewDealItem?.quantity ?? 0);
+      const requestedQuantity = Number(newDeal.quantity || 0);
+      const isInactiveService = selectedNewDealItemType === "service" && String(selectedNewDealItem?.status || "").trim() === "Inactive";
+      const isOutOfStockProduct = selectedNewDealItemType === "product" && availableStock <= 0;
+      const isLowStockProduct = selectedNewDealItemType === "product" && availableStock > 0 && requestedQuantity > availableStock;
+      const forceLost = isInactiveService || isOutOfStockProduct || isLowStockProduct;
+      const effectiveStage = forceLost ? "lost" : normalizeStageForUi(newDeal.stage);
+      const effectiveProbability = forceLost ? Number(DEFAULT_PROBABILITY_BY_STAGE.lost) : probabilityValue;
+      const effectiveReason = isOutOfStockProduct
+        ? "Out of stock"
+        : isLowStockProduct
+          ? "Low stock"
+        : isInactiveService
+          ? "Service is inactive"
+          : "";
+
       const token = localStorage.getItem("token");
       const expectedRevenueValue =
-        probabilityValue === null
+        effectiveProbability === null
           ? parseOptionalNumberInput(newDeal.expectedRevenue)
-          : Number(((amountValue * probabilityValue) / 100).toFixed(2));
+          : Number(((amountValue * effectiveProbability) / 100).toFixed(2));
       const res = await axios.post(
         "http://localhost:5000/api/deals",
         {
@@ -698,17 +708,29 @@ function Deals() {
           salutation: trimmedSalutation,
           name: trimmedName,
           amount: amountValue,
-          probability: probabilityValue,
-      expectedRevenue: expectedRevenueValue,
-      closingDate: newDeal.closingDate || null,
-      product: newDeal.product || null,
-      quantity: selectedNewDealItemType === "product" ? parseOptionalNumberInput(newDeal.quantity) : undefined,
-      billingCycle: selectedNewDealItemType === "service" ? newDeal.billingCycle || "" : undefined,
-    },
+          probability: effectiveProbability,
+          expectedRevenue: expectedRevenueValue,
+          closingDate: newDeal.closingDate || null,
+          product: newDeal.product || null,
+          quantity: selectedNewDealItemType === "product" ? parseOptionalNumberInput(newDeal.quantity) : undefined,
+          billingCycle: selectedNewDealItemType === "service" ? newDeal.billingCycle || "" : undefined,
+          stage: effectiveStage,
+          reason: effectiveReason,
+        },
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      setDeals((prev) => [normalizeDeal(res.data), ...prev]);
+      const normalizedCreatedDeal = normalizeDeal(res.data);
+      setDeals((prev) => [normalizedCreatedDeal, ...prev]);
       setShowModal(false);
+      if (forceLost || res.data?.warningMessage) {
+        const localWarningMessage = isOutOfStockProduct
+          ? "Out of stock. Deal moved to Lost."
+          : isLowStockProduct
+            ? "Low stock. Deal moved to Lost."
+            : "Service is inactive. Deal moved to Lost.";
+        alert(forceLost ? localWarningMessage : res.data?.warningMessage || localWarningMessage);
+      }
+      emitDealDataRefresh();
     } catch (err) {
       console.error(err);
       const errorMessage =
@@ -737,6 +759,7 @@ function Deals() {
       setShowImportModal(false);
       setImportRows([]);
       setImportFileName("");
+      emitDealDataRefresh();
     } catch (err) {
       console.error(err);
       alert(err.response?.data?.message || "Failed to import deals from CSV");
@@ -756,6 +779,10 @@ function Deals() {
         prev.map((deal) => (deal._id === dealId ? normalizedDeal : deal))
       );
       setSelectedDeal((prev) => (prev && prev._id === dealId ? normalizedDeal : prev));
+      if (res.data?.warningMessage) {
+        alert(res.data.warningMessage);
+      }
+      emitDealDataRefresh();
     } catch (err) {
       console.error(err);
       alert(err.response?.data?.message || err.message || "Failed to update deal stage");
@@ -995,7 +1022,7 @@ function Deals() {
     }
     if (selectedEditDealItemType === "product") {
       const quantityValue = parseOptionalNumberInput(editDealForm.quantity);
-      if (quantityValue === null || quantityValue < 0) {
+      if (quantityValue === null || quantityValue <= 0) {
         alert("Quantity is required for selected products");
         return;
       }
@@ -1049,6 +1076,10 @@ function Deals() {
       setDeals((prev) => prev.map((deal) => (deal._id === normalized._id ? normalized : deal)));
       setSelectedDeal(normalized);
       setIsEditingSelectedDeal(false);
+      if (res.data?.warningMessage) {
+        alert(res.data.warningMessage);
+      }
+      emitDealDataRefresh();
     } catch (err) {
       console.error(err);
       alert(err.response?.data?.message || "Failed to update deal");
@@ -1958,9 +1989,12 @@ ET`;
                       onChange={(e) => setNewDeal((prev) => ({ ...prev, salutation: e.target.value }))}
                       required
                     >
-                      {salutations.map((salutation) => (
-                        <option key={salutation || "blank"} value={salutation}>
-                          {salutation || "Salutation"}
+                      <option value="" disabled>
+                        Select salutation
+                      </option>
+                      {salutations.filter(Boolean).map((salutation) => (
+                        <option key={salutation} value={salutation}>
+                          {salutation}
                         </option>
                       ))}
                     </select>
@@ -1975,23 +2009,21 @@ ET`;
                     />
                   </div>
                   <div className="form-group">
-                    <label>Last Name *</label>
+                    <label>Last Name</label>
                     <input
                       type="text"
                       value={newDeal.lastName}
                       onChange={(e) => setNewDeal((prev) => ({ ...prev, lastName: e.target.value }))}
-                      required
                     />
                   </div>
                 </div>
                 <div className="form-row-zoho">
                   <div className="form-group">
-                    <label>Title *</label>
+                    <label>Title</label>
                     <input
                       type="text"
                       value={newDeal.title}
                       onChange={(e) => setNewDeal((prev) => ({ ...prev, title: e.target.value }))}
-                      required
                     />
                   </div>
                   <div className="form-group">

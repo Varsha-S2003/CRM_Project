@@ -132,6 +132,12 @@ function Inventory() {
     fetchItems();
   }, [fetchItems]);
 
+  useEffect(() => {
+    const refresh = () => fetchItems();
+    window.addEventListener("inventory-updated", refresh);
+    return () => window.removeEventListener("inventory-updated", refresh);
+  }, [fetchItems]);
+
   const handleAddInventory = () => {
     setShowModal(true);
   };

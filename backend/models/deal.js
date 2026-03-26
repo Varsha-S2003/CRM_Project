@@ -62,9 +62,32 @@ const dealSchema = new mongoose.Schema(
     },
     product: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "Product",
+      ref: "Item",
       required: true,
       index: true,
+    },
+    quantity: {
+      type: Number,
+      min: 0,
+      default: null,
+    },
+    billingCycle: {
+      type: String,
+      enum: ["", "monthly", "6_months", "yearly"],
+      default: "",
+      trim: true,
+    },
+    startDate: {
+      type: Date,
+      default: null,
+    },
+    expiryDate: {
+      type: Date,
+      default: null,
+    },
+    nextBillingDate: {
+      type: Date,
+      default: null,
     },
     closingDate: {
       type: Date,

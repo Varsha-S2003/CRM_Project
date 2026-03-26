@@ -31,6 +31,33 @@ const getDealSortTimestamp = (deal) => {
   return Math.max(updatedAt || 0, createdAt || 0);
 };
 
+const getExpiryState = (expiryDate) => {
+  if (!expiryDate) return "";
+  const expiry = new Date(expiryDate);
+  if (Number.isNaN(expiry.getTime())) return "";
+
+  const now = new Date();
+  const diffDays = Math.ceil((expiry.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+  if (diffDays < 0) return "Expired";
+  if (diffDays <= 7) return "Expiring Soon";
+  return "Active";
+};
+
+const getDaysRemaining = (expiryDate) => {
+  if (!expiryDate) return null;
+  const expiry = new Date(expiryDate);
+  if (Number.isNaN(expiry.getTime())) return null;
+  const diff = expiry.getTime() - Date.now();
+  return Math.ceil(diff / (1000 * 60 * 60 * 24));
+};
+
+const formatPlanLabel = (value) => {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (!normalized) return "-";
+  if (normalized === "6_months") return "6 Months";
+  return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+};
+
 router.get("/", verifyToken, async (req, res) => {
   try {
     const requestedStatus = String(req.query.status || "").trim();
@@ -48,7 +75,7 @@ router.get("/", verifyToken, async (req, res) => {
 
     const customers = await Customer.find()
       .populate("leadId", "name email phone status source")
-      .populate("product", "name sku category price")
+      .populate("product", "name sku category price type status serviceType billingCycle")
       .sort({ createdAt: -1 });
 
     const customerIds = customers.map((customer) => customer._id);
@@ -62,9 +89,9 @@ router.get("/", verifyToken, async (req, res) => {
         { sourceLeadId: { $in: leadIds } },
       ],
     })
-      .populate("product", "name sku category price")
       .sort({ updatedAt: -1, createdAt: -1 })
-      .select("customerId sourceLeadId stage status reason product leadSource updatedAt createdAt");
+      .populate("product", "name sku category price type status serviceType billingCycle")
+      .select("customerId sourceLeadId stage status reason product leadSource updatedAt createdAt quantity billingCycle startDate expiryDate nextBillingDate");
 
     const customerIdToCustomerKey = new Map(
       customers.map((customer) => [String(customer._id), String(customer._id)])
@@ -101,6 +128,34 @@ router.get("/", verifyToken, async (req, res) => {
           ? String(latestDeal?.reason || customer.reason || "").trim()
           : "";
 
+      const serviceSubscriptions = relevantDeals
+        .filter((deal) => {
+          const customerKeyFromCustomerId = customerIdToCustomerKey.get(String(deal.customerId || ""));
+          const customerKeyFromLeadId = leadIdToCustomerKey.get(String(deal.sourceLeadId || ""));
+          return (customerKeyFromCustomerId || customerKeyFromLeadId) === String(customer._id);
+        })
+        .filter((deal) => normalizeDealStage(deal.stage) === "won" && deal.product && deal.product.type === "service")
+        .map((deal) => {
+          const expiryDate = deal.expiryDate || deal.nextBillingDate || null;
+          const daysRemaining = getDaysRemaining(expiryDate);
+          return {
+            dealId: deal._id,
+            productId: deal.product?._id || null,
+            serviceName: deal.product?.name || deal.name || "-",
+            plan: formatPlanLabel(deal.billingCycle || deal.product?.billingCycle),
+            startDate: deal.startDate || deal.createdAt || null,
+            expiryDate,
+            nextBillingDate: deal.nextBillingDate || expiryDate || null,
+            daysRemaining,
+            alertStatus: getExpiryState(expiryDate),
+          };
+        })
+        .sort((a, b) => {
+          const aExpiry = new Date(a.expiryDate || 0).getTime();
+          const bExpiry = new Date(b.expiryDate || 0).getTime();
+          return aExpiry - bExpiry;
+        });
+
       return {
         ...customer.toObject(),
         product: customer.product || latestDeal?.product || null,
@@ -113,6 +168,7 @@ router.get("/", verifyToken, async (req, res) => {
         dealCreatedAt: latestDeal?.createdAt || null,
         status: derivedStatus,
         reason: derivedReason,
+        serviceSubscriptions,
       };
     });
 

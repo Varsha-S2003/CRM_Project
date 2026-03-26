@@ -5,7 +5,7 @@ const { permitDealAccess, getUserDealsFilter, getTeamMembers } = require("../mid
 const Deal = require("../models/deal");
 const Customer = require("../models/customer");
 const Contact = require("../models/contact");
-const Product = require("../models/product");
+const Item = require("../models/item");
 const Notification = require("../models/notification");
 const User = require("../models/user");
 const DealView = require("../models/dealView");
@@ -97,6 +97,41 @@ const normalizeOptionalDate = (value) => {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 };
 
+const normalizeBillingCycle = (value) => String(value || "").trim().toLowerCase();
+
+const addMonths = (date, months) => {
+  const next = new Date(date);
+  next.setMonth(next.getMonth() + months);
+  return next;
+};
+
+const computeServiceLifecycle = (billingCycle, startDate = new Date()) => {
+  const normalizedBillingCycle = normalizeBillingCycle(billingCycle);
+  const durations = {
+    monthly: 1,
+    "6_months": 6,
+    yearly: 12,
+  };
+  const durationMonths = durations[normalizedBillingCycle] || 1;
+  const expiryDate = addMonths(startDate, durationMonths);
+  return {
+    startDate,
+    expiryDate,
+    nextBillingDate: expiryDate,
+  };
+};
+
+const resolveDealItem = async (itemId) => {
+  if (!itemId) {
+    return null;
+  }
+
+  const item = await Item.findById(itemId).select(
+    "_id name type status stock quantity serviceType billingCycle"
+  );
+  return item;
+};
+
 const normalizeDealBusinessFields = (payload) => {
   const normalized = { ...payload };
 
@@ -134,6 +169,27 @@ const normalizeDealBusinessFields = (payload) => {
 
   if (Object.prototype.hasOwnProperty.call(normalized, "product")) {
     normalized.product = normalized.product || null;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(normalized, "quantity")) {
+    const quantity = parseOptionalNumber(normalized.quantity);
+    normalized.quantity = Number.isNaN(quantity) ? null : quantity;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(normalized, "billingCycle")) {
+    normalized.billingCycle = normalizeBillingCycle(normalized.billingCycle);
+  }
+
+  if (Object.prototype.hasOwnProperty.call(normalized, "startDate")) {
+    normalized.startDate = normalizeOptionalDate(normalized.startDate);
+  }
+
+  if (Object.prototype.hasOwnProperty.call(normalized, "expiryDate")) {
+    normalized.expiryDate = normalizeOptionalDate(normalized.expiryDate);
+  }
+
+  if (Object.prototype.hasOwnProperty.call(normalized, "nextBillingDate")) {
+    normalized.nextBillingDate = normalizeOptionalDate(normalized.nextBillingDate);
   }
 
   if (Object.prototype.hasOwnProperty.call(normalized, "employeeCount")) {
@@ -181,35 +237,24 @@ const validateCreateDealInput = (payload) => {
   const name = String(payload.name || "").trim();
   const salutation = String(payload.salutation || "").trim();
   const firstName = String(payload.firstName || "").trim();
-  const lastName = String(payload.lastName || "").trim();
-  const title = String(payload.title || "").trim();
   const company = String(payload.company || "").trim();
   const contact = String(payload.contact || "").trim();
   const email = String(payload.email || "").trim();
   const product = String(payload.product || "").trim();
+  const quantity = parseOptionalNumber(payload.quantity);
+  const billingCycle = normalizeBillingCycle(payload.billingCycle);
   const dealType = String(payload.dealType || "").trim();
   const dealSource = String(payload.leadSource || "").trim();
   const amount = Number(payload.amount);
   const closingDate = payload.closingDate ? new Date(payload.closingDate) : null;
+  const isInactiveService = payload.itemType === "service" && String(payload.itemStatus || "").trim() === "Inactive";
 
   if (!name) {
     return "Deal Name is required";
   }
 
-  if (!salutation) {
-    return "Salutation is required";
-  }
-
   if (!firstName) {
     return "First Name is required";
-  }
-
-  if (!lastName) {
-    return "Last Name is required";
-  }
-
-  if (!title) {
-    return "Title is required";
   }
 
   if (!Number.isFinite(amount) || amount <= 0) {
@@ -232,6 +277,18 @@ const validateCreateDealInput = (payload) => {
     return "Product is required";
   }
 
+  if (payload.itemType === "product") {
+    if (quantity === null || quantity <= 0) {
+      return "Quantity is required for selected products";
+    }
+  }
+
+  if (payload.itemType === "service" && !isInactiveService) {
+    if (!billingCycle) {
+      return "Plan / Billing Cycle is required for selected services";
+    }
+  }
+
   if (!dealType) {
     return "Deal Type is required";
   }
@@ -252,6 +309,61 @@ const validateCreateDealInput = (payload) => {
   }
 
   return null;
+};
+
+const validateWonDealAgainstItem = ({ item, quantity, billingCycle }) => {
+  if (!item) {
+    return "Selected product not found";
+  }
+
+  const itemType = item.type === "service" ? "service" : "product";
+  if (itemType === "product") {
+    const requestedQuantity = parseOptionalNumber(quantity);
+    const availableQuantity = Number(item.stock ?? item.quantity ?? 0);
+    if (requestedQuantity === null || requestedQuantity <= 0) {
+      return "Quantity is required for selected products";
+    }
+    if (requestedQuantity > availableQuantity) {
+      return "Insufficient stock";
+    }
+    return null;
+  }
+
+  if (String(item.status || "").trim() === "Inactive") {
+    return "Service is inactive";
+  }
+
+  if (!normalizeBillingCycle(billingCycle)) {
+    return "Plan / Billing Cycle is required for selected services";
+  }
+
+  return null;
+};
+
+const getInactiveServiceLossReason = () => "Service is inactive";
+const getOutOfStockLossReason = () => "Out of stock";
+const getLowStockLossReason = () => "Low stock";
+
+const shouldDowngradeWonServiceToLost = (item, stage) =>
+  normalizeDealStage(stage) === "won" && item?.type === "service" && String(item.status || "").trim() === "Inactive";
+
+const applyWonDealEffects = async ({ deal, item }) => {
+  const itemType = item.type === "service" ? "service" : "product";
+
+  if (itemType === "product") {
+    const quantity = Number(deal.quantity ?? 0);
+    await Item.findByIdAndUpdate(item._id, {
+      $inc: { stock: -quantity },
+    });
+    return {
+      startDate: null,
+      expiryDate: null,
+      nextBillingDate: null,
+    };
+  }
+
+  const lifecycle = computeServiceLifecycle(deal.billingCycle || item.billingCycle || "monthly");
+  return lifecycle;
 };
 
 const syncCustomerStatusFromLatestDeal = async (customerId) => {
@@ -361,19 +473,6 @@ const syncCustomerFromDeal = async (deal) => {
   return customer;
 };
 
-const resolveProduct = async (productId) => {
-  if (!productId) {
-    return null;
-  }
-
-  const product = await Product.findById(productId).select("_id");
-  if (!product) {
-    throw new Error("Selected product not found");
-  }
-
-  return product._id;
-};
-
 const buildAdvancedDealFilter = (filters, user) => {
   if (!filters || !Array.isArray(filters.conditions) || filters.conditions.length === 0) {
     return {};
@@ -472,7 +571,7 @@ router.post("/filter", verifyToken, async (req, res) => {
 
     const deals = await Deal.find(finalFilter)
       .populate("assignedTo", "name username role employee_id")
-      .populate("product", "name sku category price")
+      .populate("product", "name sku category price type status stock serviceType billingCycle")
       .sort(sort)
       .limit(limit)
       .skip(skip);
@@ -578,7 +677,7 @@ router.get("/", verifyToken, permitDealAccess(), async (req, res) => {
     
     const deals = await Deal.find(filter)
       .populate('assignedTo', 'name username role employee_id')
-      .populate("product", "name sku category price")
+      .populate("product", "name sku category price type status stock serviceType billingCycle")
       .sort({ createdAt: -1 });
     res.json(deals);
   } catch (err) {
@@ -587,6 +686,8 @@ router.get("/", verifyToken, permitDealAccess(), async (req, res) => {
 });
 
 router.post("/", verifyToken, async (req, res) => {
+  let createdDeal = null;
+  let createdDealStockRollback = null;
   try {
     const {
       sourceLeadId,
@@ -619,7 +720,13 @@ router.post("/", verifyToken, async (req, res) => {
       industry,
       employeeCount,
       address,
+      quantity,
+      billingCycle,
     } = req.body;
+    const resolvedItem = await resolveDealItem(product);
+    if (product && !resolvedItem) {
+      return res.status(400).json({ message: "Selected product not found" });
+    }
     const validationError = validateCreateDealInput({
       name,
       salutation,
@@ -636,6 +743,10 @@ router.post("/", verifyToken, async (req, res) => {
       closingDate,
       probability,
       product,
+      quantity,
+      billingCycle,
+      itemType: resolvedItem?.type || "",
+      itemStatus: resolvedItem?.status || "",
     });
     if (validationError) {
       return res.status(400).json({ message: validationError });
@@ -652,14 +763,27 @@ router.post("/", verifyToken, async (req, res) => {
     }
 
     const finalStage = stage || "qualification";
-    const derived = deriveStatusAndReason({ stage: finalStage, reason });
+    const itemType = resolvedItem?.type === "service" ? "service" : "product";
+    const requestedQuantity = parseOptionalNumber(quantity) ?? 0;
+    const availableQuantity = Number(resolvedItem?.stock ?? resolvedItem?.quantity ?? 0);
+    const inactiveServiceOnCreate = itemType === "service" && String(resolvedItem?.status || "").trim() === "Inactive";
+    const outOfStockOnCreate = itemType === "product" && availableQuantity <= 0;
+    const lowStockOnCreate = itemType === "product" && availableQuantity > 0 && requestedQuantity > availableQuantity;
+    const forceLostOnCreate = inactiveServiceOnCreate || outOfStockOnCreate || lowStockOnCreate;
+    const effectiveStage = forceLostOnCreate ? "lost" : finalStage;
+    const finalReason = inactiveServiceOnCreate
+      ? String(reason || "").trim() || getInactiveServiceLossReason()
+      : outOfStockOnCreate
+        ? String(reason || "").trim() || getOutOfStockLossReason()
+        : lowStockOnCreate
+          ? String(reason || "").trim() || getLowStockLossReason()
+          : reason;
+    const derived = deriveStatusAndReason({ stage: effectiveStage, reason: finalReason });
     if (derived.error) {
       return res.status(400).json({ message: derived.error });
     }
 
-    const resolvedProduct = await resolveProduct(product);
-
-    deal = await Deal.create(applyForecastFields(normalizeDealBusinessFields({
+    const normalizedDealPayload = applyForecastFields(normalizeDealBusinessFields({
       sourceLeadId: sourceLeadId || null,
       name,
       company,
@@ -685,12 +809,55 @@ router.post("/", verifyToken, async (req, res) => {
       leadSource,
       campaignSource,
       description,
-      product: resolvedProduct,
-      stage: finalStage,
+      product: resolvedItem?._id || null,
+      quantity: resolvedItem?.type === "product" ? parseOptionalNumber(quantity) : null,
+      billingCycle: resolvedItem?.type === "service" ? normalizeBillingCycle(billingCycle) : "",
+      stage: effectiveStage,
       status: derived.status,
       reason: derived.reason,
       assignedTo: effectiveAssignedTo,
-    })));
+    }));
+
+    if (!forceLostOnCreate && derived.status === "Active" && normalizeDealStage(finalStage) === "won" && itemType === "service") {
+      const wonValidationError = validateWonDealAgainstItem({
+        item: resolvedItem,
+        quantity: normalizedDealPayload.quantity,
+        billingCycle: normalizedDealPayload.billingCycle,
+      });
+      if (wonValidationError) {
+        return res.status(400).json({ message: wonValidationError });
+      }
+      const lifecycle = computeServiceLifecycle(normalizedDealPayload.billingCycle || resolvedItem.billingCycle || "monthly");
+      normalizedDealPayload.startDate = lifecycle.startDate;
+      normalizedDealPayload.expiryDate = lifecycle.expiryDate;
+      normalizedDealPayload.nextBillingDate = lifecycle.nextBillingDate;
+    }
+
+    deal = await Deal.create(normalizedDealPayload);
+    createdDeal = deal;
+
+    if (!forceLostOnCreate && derived.status === "Active" && normalizeDealStage(finalStage) === "won" && itemType === "product") {
+      const wonValidationError = validateWonDealAgainstItem({
+        item: resolvedItem,
+        quantity: normalizedDealPayload.quantity,
+        billingCycle: normalizedDealPayload.billingCycle,
+      });
+      if (wonValidationError) {
+        await Deal.findByIdAndDelete(deal._id);
+        return res.status(400).json({ message: wonValidationError });
+      }
+
+      try {
+        const quantityValue = Number(normalizedDealPayload.quantity) || 0;
+        await Item.findByIdAndUpdate(resolvedItem._id, {
+          $inc: { stock: -quantityValue },
+        });
+        createdDealStockRollback = { itemId: resolvedItem._id, quantity: quantityValue };
+      } catch (stockErr) {
+        await Deal.findByIdAndDelete(deal._id);
+        throw stockErr;
+      }
+    }
 
     await syncDealContact(deal);
     await syncCustomerFromDeal(deal);
@@ -698,10 +865,35 @@ router.post("/", verifyToken, async (req, res) => {
 
     const populatedDeal = await Deal.findById(deal._id)
       .populate("assignedTo", "name username role employee_id")
-      .populate("product", "name sku category price");
+      .populate("product", "name sku category price type status stock serviceType billingCycle");
 
-    res.status(201).json(populatedDeal);
+    const responseDeal = populatedDeal.toObject ? populatedDeal.toObject() : populatedDeal;
+    if (inactiveServiceOnCreate) {
+      responseDeal.warningMessage = "Service is inactive. Deal moved to Lost.";
+    } else if (outOfStockOnCreate) {
+      responseDeal.warningMessage = "Out of stock. Deal moved to Lost.";
+    } else if (lowStockOnCreate) {
+      responseDeal.warningMessage = "Low stock. Deal moved to Lost.";
+    }
+
+    res.status(201).json(responseDeal);
   } catch (err) {
+    if (createdDealStockRollback?.itemId && createdDealStockRollback.quantity > 0) {
+      try {
+        await Item.findByIdAndUpdate(createdDealStockRollback.itemId, {
+          $inc: { stock: createdDealStockRollback.quantity },
+        });
+      } catch (rollbackErr) {
+        console.error("Failed to rollback inventory after deal create error:", rollbackErr);
+      }
+    }
+    if (createdDeal?._id) {
+      try {
+        await Deal.findByIdAndDelete(createdDeal._id);
+      } catch (cleanupErr) {
+        console.error("Failed to cleanup deal after create error:", cleanupErr);
+      }
+    }
     res.status(500).json({ message: err.message });
   }
 });
@@ -774,6 +966,7 @@ router.post("/bulk", verifyToken, async (req, res) => {
 });
 
 const updateDealHandler = async (req, res) => {
+  let stockRollback = null;
   try {
     const { authorizeDealAccess } = require("../middleware/dealAuth");
     
@@ -782,9 +975,22 @@ const updateDealHandler = async (req, res) => {
       return res.status(403).json({ message: "Forbidden - insufficient permissions for this deal" });
     }
 
+    const currentStageKey = normalizeDealStage(req.deal.stage);
+    if (
+      currentStageKey === "won" &&
+      (Object.prototype.hasOwnProperty.call(req.body, "product") ||
+        Object.prototype.hasOwnProperty.call(req.body, "quantity") ||
+        Object.prototype.hasOwnProperty.call(req.body, "billingCycle"))
+    ) {
+      return res.status(400).json({
+        message: "Won deals cannot change product, quantity, or billing cycle",
+      });
+    }
+
     let stageChanged = false;
     const oldStage = req.deal.stage;
     let nextStage = oldStage;
+    let warningMessage = "";
     
     if (req.body.stage !== undefined) {
       const newStage = req.body.stage;
@@ -806,7 +1012,20 @@ const updateDealHandler = async (req, res) => {
     const updates = normalizeDealBusinessFields({ ...req.body });
     delete updates.status;
     if (Object.prototype.hasOwnProperty.call(req.body, "product")) {
-      updates.product = await resolveProduct(req.body.product);
+      const resolvedItem = await resolveDealItem(req.body.product);
+      if (req.body.product && !resolvedItem) {
+        return res.status(400).json({ message: "Selected product not found" });
+      }
+      updates.product = resolvedItem?._id || null;
+    }
+
+    const itemForValidation = await resolveDealItem(updates.product || req.deal.product);
+    if (shouldDowngradeWonServiceToLost(itemForValidation, nextStage)) {
+      nextStage = "lost";
+      updates.stage = "lost";
+      updates.reason = String(updates.reason || req.deal.reason || getInactiveServiceLossReason()).trim();
+      warningMessage = "Service is inactive. Deal moved to Lost.";
+      stageChanged = normalizeDealStage(oldStage) !== "lost";
     }
 
     const amountForForecast = Object.prototype.hasOwnProperty.call(updates, "amount")
@@ -835,14 +1054,67 @@ const updateDealHandler = async (req, res) => {
     updates.status = derived.status;
     updates.reason = derived.reason;
 
-    let updatedDeal = await Deal.findByIdAndUpdate(req.params.id, updates, {
-      new: true,
-      runValidators: true,
-    })
-      .populate("assignedTo", "name username role employee_id")
-      .populate("product", "name sku category price");
+    let lifecycleUpdates = {};
+    const itemIdForWonValidation = Object.prototype.hasOwnProperty.call(req.body, "product")
+      ? req.body.product
+      : req.deal.product;
+
+    if (normalizeDealStage(nextStage) === "won") {
+      const item = await resolveDealItem(itemIdForWonValidation);
+      const wonValidationError = validateWonDealAgainstItem({
+        item,
+        quantity: Object.prototype.hasOwnProperty.call(updates, "quantity") ? updates.quantity : req.deal.quantity,
+        billingCycle: Object.prototype.hasOwnProperty.call(updates, "billingCycle")
+          ? updates.billingCycle
+          : req.deal.billingCycle,
+      });
+      if (wonValidationError) {
+        return res.status(400).json({ message: wonValidationError });
+      }
+
+      lifecycleUpdates = await applyWonDealEffects({
+        deal: {
+          ...req.deal.toObject(),
+          ...updates,
+          quantity: Object.prototype.hasOwnProperty.call(updates, "quantity") ? updates.quantity : req.deal.quantity,
+          billingCycle: Object.prototype.hasOwnProperty.call(updates, "billingCycle")
+            ? updates.billingCycle
+            : req.deal.billingCycle,
+        },
+        item,
+      });
+
+      if (item.type !== "service") {
+        stockRollback = {
+          itemId: item._id,
+          quantity: Number(
+            Object.prototype.hasOwnProperty.call(updates, "quantity") ? updates.quantity : req.deal.quantity
+          ) || 0,
+        };
+      }
+
+      Object.assign(updates, lifecycleUpdates);
+    }
+
+    let updatedDeal;
+    try {
+      updatedDeal = await Deal.findByIdAndUpdate(req.params.id, updates, {
+        new: true,
+        runValidators: true,
+      })
+        .populate("assignedTo", "name username role employee_id")
+        .populate("product", "name sku category price type status stock serviceType billingCycle");
+    } catch (error) {
+      if (stockRollback?.itemId && stockRollback.quantity > 0) {
+        await Item.findByIdAndUpdate(stockRollback.itemId, { $inc: { stock: stockRollback.quantity } });
+      }
+      throw error;
+    }
 
     if (!updatedDeal) {
+      if (stockRollback?.itemId && stockRollback.quantity > 0) {
+        await Item.findByIdAndUpdate(stockRollback.itemId, { $inc: { stock: stockRollback.quantity } });
+      }
       return res.status(404).json({ message: "Deal not found" });
     }
 
@@ -909,9 +1181,20 @@ const updateDealHandler = async (req, res) => {
     await syncDealContact(updatedDeal);
     await syncCustomerFromDeal(updatedDeal);
     await syncCustomerStatusFromLatestDeal(updatedDeal.customerId);
-    res.json(updatedDeal);
+    const responseDeal = updatedDeal.toObject ? updatedDeal.toObject() : updatedDeal;
+    if (warningMessage) {
+      responseDeal.warningMessage = warningMessage;
+    }
+    res.json(responseDeal);
   } catch (err) {
     console.error('Deal update error:', err);
+    if (stockRollback?.itemId && stockRollback.quantity > 0) {
+      try {
+        await Item.findByIdAndUpdate(stockRollback.itemId, { $inc: { stock: stockRollback.quantity } });
+      } catch (rollbackErr) {
+        console.error("Failed to rollback inventory after deal update error:", rollbackErr);
+      }
+    }
     res.status(500).json({ message: err.message });
   }
 };
@@ -933,6 +1216,7 @@ router.put("/:id/stage", verifyToken, permitDealAccess(), async (req, res) => {
 });
 
 router.delete("/:id", verifyToken, permitDealAccess(), async (req, res) => {
+  let restockRollback = null;
   try {
     const { authorizeDealAccess } = require("../middleware/dealAuth");
     
@@ -941,14 +1225,37 @@ router.delete("/:id", verifyToken, permitDealAccess(), async (req, res) => {
       return res.status(403).json({ message: "Forbidden - insufficient permissions for this deal" });
     }
 
+    if (normalizeDealStage(req.deal.stage) === "won") {
+      const item = await resolveDealItem(req.deal.product);
+      if (item && item.type !== "service") {
+        const quantity = Number(req.deal.quantity || 0);
+        if (quantity > 0) {
+          await Item.findByIdAndUpdate(item._id, {
+            $inc: { stock: quantity },
+          });
+          restockRollback = { itemId: item._id, quantity };
+        }
+      }
+    }
+
     const deal = await Deal.findByIdAndDelete(req.params.id);
     if (!deal) {
+      if (restockRollback?.itemId && restockRollback.quantity > 0) {
+        await Item.findByIdAndUpdate(restockRollback.itemId, { $inc: { stock: -restockRollback.quantity } });
+      }
       return res.status(404).json({ message: "Deal not found" });
     }
     await Contact.deleteMany({ sourceDealId: deal._id });
     await syncCustomerStatusFromLatestDeal(deal.customerId);
     res.json({ message: "Deal deleted successfully" });
   } catch (err) {
+    if (restockRollback?.itemId && restockRollback.quantity > 0) {
+      try {
+        await Item.findByIdAndUpdate(restockRollback.itemId, { $inc: { stock: -restockRollback.quantity } });
+      } catch (rollbackErr) {
+        console.error("Failed to rollback inventory after deal delete error:", rollbackErr);
+      }
+    }
     res.status(500).json({ message: err.message });
   }
 });

@@ -8,7 +8,7 @@ const customerSchema = new mongoose.Schema(
     company: { type: String, trim: true },
     product: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "Product",
+      ref: "Item",
       default: null,
       index: true,
     },

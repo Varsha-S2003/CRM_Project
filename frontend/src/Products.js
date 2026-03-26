@@ -105,6 +105,12 @@ function Products() {
     fetchItems();
   }, [fetchItems]);
 
+  useEffect(() => {
+    const refresh = () => fetchItems();
+    window.addEventListener("inventory-updated", refresh);
+    return () => window.removeEventListener("inventory-updated", refresh);
+  }, [fetchItems]);
+
   const formatCurrency = (value) =>
     new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(value || 0);
 
