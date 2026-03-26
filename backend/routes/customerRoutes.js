@@ -31,6 +31,16 @@ const getDealSortTimestamp = (deal) => {
   return Math.max(updatedAt || 0, createdAt || 0);
 };
 
+const toPurchasePayload = (deal, customer) => ({
+  id: deal?._id || null,
+  product: deal?.product || customer?.product || null,
+  stage: String(deal?.stage || "").trim(),
+  status: normalizeStatus(deal?.status, deal?.stage),
+  reason: String(deal?.reason || "").trim(),
+  source: String(deal?.leadSource || customer?.leadId?.source || "").trim(),
+  createdAt: deal?.createdAt || null,
+});
+
 router.get("/", verifyToken, async (req, res) => {
   try {
     const requestedStatus = String(req.query.status || "").trim();
@@ -79,11 +89,16 @@ router.get("/", verifyToken, async (req, res) => {
     );
 
     const latestDealByCustomerKey = new Map();
+    const purchasesByCustomerKey = new Map();
     relevantDeals.forEach((deal) => {
       const customerKeyFromCustomerId = customerIdToCustomerKey.get(String(deal.customerId || ""));
       const customerKeyFromLeadId = leadIdToCustomerKey.get(String(deal.sourceLeadId || ""));
       const customerKey = customerKeyFromCustomerId || customerKeyFromLeadId;
       if (!customerKey) return;
+
+      const existingPurchases = purchasesByCustomerKey.get(customerKey) || [];
+      existingPurchases.push(deal);
+      purchasesByCustomerKey.set(customerKey, existingPurchases);
 
       const existingDeal = latestDealByCustomerKey.get(customerKey);
       if (!existingDeal || getDealSortTimestamp(deal) > getDealSortTimestamp(existingDeal)) {
@@ -93,6 +108,9 @@ router.get("/", verifyToken, async (req, res) => {
 
     const response = customers.map((customer) => {
       const latestDeal = latestDealByCustomerKey.get(String(customer._id));
+      const purchases = (purchasesByCustomerKey.get(String(customer._id)) || [])
+        .sort((a, b) => getDealSortTimestamp(b) - getDealSortTimestamp(a))
+        .map((deal) => toPurchasePayload(deal, customer));
       const derivedStatus = latestDeal
         ? normalizeStatus(latestDeal.status, latestDeal.stage)
         : normalizeStatus(customer.status, null);
@@ -111,6 +129,7 @@ router.get("/", verifyToken, async (req, res) => {
         dealReason: String(latestDeal?.reason || "").trim(),
         dealSource: String(latestDeal?.leadSource || customer.leadId?.source || "").trim(),
         dealCreatedAt: latestDeal?.createdAt || null,
+        purchases,
         status: derivedStatus,
         reason: derivedReason,
       };

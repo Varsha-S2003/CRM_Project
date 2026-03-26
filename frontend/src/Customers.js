@@ -18,6 +18,16 @@ const getProductLabel = (productValue) => {
   return String(productValue.name || productValue.sku || "").trim() || "-";
 };
 
+const normalizePurchase = (purchase, customer) => ({
+  id: purchase?.id || purchase?._id || customer?._id,
+  product: getProductLabel(purchase?.product || customer?.product),
+  source: getLeadSource(purchase?.source || customer?.dealSource || customer?.leadId),
+  stage: String(purchase?.stage || customer?.dealStage || customer?.stage || "-").trim() || "-",
+  status: normalizeStatusLabel(purchase?.status || customer?.dealStatus || customer?.status),
+  reason: String(purchase?.reason || customer?.dealReason || customer?.reason || "").trim(),
+  createdAt: purchase?.createdAt || customer?.dealCreatedAt || customer?.createdAt || customer?.created_at || null,
+});
+
 const toTimestamp = (value) => {
   if (!value) return 0;
   const timestamp = new Date(value).getTime();
@@ -79,15 +89,10 @@ export default function Customers() {
     customers.forEach((customer) => {
       const key = buildCustomerMergeKey(customer);
       const createdAtValue = customer.createdAt || customer.created_at || null;
-      const purchase = {
-        id: customer._id,
-        product: getProductLabel(customer.product),
-        source: getLeadSource(customer.dealSource || customer.leadId),
-        stage: String(customer.dealStage || customer.stage || "-").trim() || "-",
-        status: normalizeStatusLabel(customer.dealStatus || customer.status),
-        reason: String(customer.dealReason || customer.reason || "").trim(),
-        createdAt: customer.dealCreatedAt || createdAtValue,
-      };
+      const purchases =
+        Array.isArray(customer.purchases) && customer.purchases.length > 0
+          ? customer.purchases.map((purchase) => normalizePurchase(purchase, customer))
+          : [normalizePurchase(null, customer)];
 
       if (!grouped.has(key)) {
         grouped.set(key, {
@@ -100,13 +105,13 @@ export default function Customers() {
           status: customer.status || "Active",
           reason: customer.status === "Inactive" ? String(customer.reason || "").trim() : "",
           createdAt: createdAtValue,
-          purchases: [purchase],
+          purchases,
         });
         return;
       }
 
       const existing = grouped.get(key);
-      existing.purchases.push(purchase);
+      existing.purchases.push(...purchases);
 
       if (!existing.phone && customer.phone) {
         existing.phone = customer.phone;
