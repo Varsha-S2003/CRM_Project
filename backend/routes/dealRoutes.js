@@ -247,6 +247,7 @@ const validateCreateDealInput = (payload) => {
   const dealSource = String(payload.leadSource || "").trim();
   const amount = Number(payload.amount);
   const closingDate = payload.closingDate ? new Date(payload.closingDate) : null;
+  const stageKey = normalizeDealStage(payload.stage || "qualification");
   const isInactiveService = payload.itemType === "service" && String(payload.itemStatus || "").trim() === "Inactive";
 
   if (!name) {
@@ -275,18 +276,6 @@ const validateCreateDealInput = (payload) => {
 
   if (!product) {
     return "Product is required";
-  }
-
-  if (payload.itemType === "product") {
-    if (quantity === null || quantity <= 0) {
-      return "Quantity is required for selected products";
-    }
-  }
-
-  if (payload.itemType === "service" && !isInactiveService) {
-    if (!billingCycle) {
-      return "Plan / Billing Cycle is required for selected services";
-    }
   }
 
   if (!dealType) {
@@ -742,6 +731,7 @@ router.post("/", verifyToken, async (req, res) => {
       amount: amount ?? value,
       closingDate,
       probability,
+      stage,
       product,
       quantity,
       billingCycle,
@@ -1028,6 +1018,38 @@ const updateDealHandler = async (req, res) => {
       stageChanged = normalizeDealStage(oldStage) !== "lost";
     }
 
+    const isQualificationToNeedAnalysis =
+      normalizeDealStage(oldStage) === "qualification" && normalizeDealStage(nextStage) === "need_analysis";
+    if (isQualificationToNeedAnalysis) {
+      if (itemForValidation?.type === "product") {
+        const nextQuantity = Object.prototype.hasOwnProperty.call(updates, "quantity")
+          ? parseOptionalNumber(updates.quantity)
+          : parseOptionalNumber(req.deal.quantity);
+        const availableQuantity = Number(itemForValidation.stock ?? itemForValidation.quantity ?? 0);
+        if (nextQuantity === null || nextQuantity <= 0) {
+          return res.status(400).json({ message: "Quantity is required when moving a product deal to Need Analysis" });
+        }
+        if (Number.isFinite(availableQuantity) && nextQuantity > availableQuantity) {
+          nextStage = "lost";
+          updates.stage = "lost";
+          updates.reason = String(updates.reason || req.deal.reason || "Insufficient stock").trim();
+          warningMessage = "Insufficient stock. Deal moved to Lost.";
+          stageChanged = normalizeDealStage(oldStage) !== "lost";
+        }
+        updates.quantity = nextQuantity;
+      } else if (itemForValidation?.type === "service") {
+        const nextBillingCycle = Object.prototype.hasOwnProperty.call(updates, "billingCycle")
+          ? normalizeBillingCycle(updates.billingCycle)
+          : normalizeBillingCycle(req.deal.billingCycle);
+        if (!nextBillingCycle) {
+          return res.status(400).json({
+            message: "Plan / Billing Cycle is required when moving a service deal to Need Analysis",
+          });
+        }
+        updates.billingCycle = nextBillingCycle;
+      }
+    }
+
     const amountForForecast = Object.prototype.hasOwnProperty.call(updates, "amount")
       ? Number(updates.amount) || 0
       : Number(req.deal.amount) || 0;
@@ -1208,6 +1230,7 @@ router.put("/:id/stage", verifyToken, permitDealAccess(), async (req, res) => {
   }
 
   req.body = {
+    ...req.body,
     stage,
     reason: req.body.reason,
   };

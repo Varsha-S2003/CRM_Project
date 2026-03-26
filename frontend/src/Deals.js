@@ -155,6 +155,12 @@ function Deals() {
   const [showLostReasonModal, setShowLostReasonModal] = useState(false);
   const [lostReason, setLostReason] = useState("");
   const [pendingStageChange, setPendingStageChange] = useState(null);
+  const [showQualificationAdvanceModal, setShowQualificationAdvanceModal] = useState(false);
+  const [pendingQualificationAdvance, setPendingQualificationAdvance] = useState(null);
+  const [qualificationAdvanceForm, setQualificationAdvanceForm] = useState({
+    quantity: "",
+    billingCycle: "",
+  });
   const notificationRef = useRef(null);
   const createMenuRef = useRef(null);
   const viewDropdownRef = useRef(null);
@@ -437,6 +443,8 @@ function Deals() {
 
   const selectedNewDealItemType = getItemType(products.find((item) => String(item._id) === String(newDeal.product)));
   const selectedEditDealItemType = getItemType(products.find((item) => String(item._id) === String(editDealForm?.product || "")));
+  const newDealStageKey = normalizeStageForUi(newDeal.stage || "qualification");
+  const selectedEditDealStageKey = normalizeStageForUi(editDealForm?.stage || selectedDeal?.stage || "");
 
   // Get stages that have deals matching the search
   const getStagesWithDeals = () => {
@@ -650,19 +658,6 @@ function Deals() {
       alert("Product is required");
       return;
     }
-    if (selectedNewDealItemType === "product") {
-      const quantityValue = parseOptionalNumberInput(newDeal.quantity);
-      if (quantityValue === null || quantityValue <= 0) {
-        alert("Quantity is required for selected products");
-        return;
-      }
-    }
-    if (selectedNewDealItemType === "service") {
-      if (String(selectedNewDealItem?.status || "").trim() !== "Inactive" && !String(newDeal.billingCycle || "").trim()) {
-        alert("Plan / Billing Cycle is required for selected services");
-        return;
-      }
-    }
     if (!trimmedDealType) {
       alert("Deal Type is required");
       return;
@@ -766,12 +761,12 @@ function Deals() {
     }
   };
 
-  const updateStage = async (dealId, stageId, reason = "") => {
+  const updateStage = async (dealId, stageId, reason = "", extraPayload = {}) => {
     try {
       const token = localStorage.getItem("token");
       const res = await axios.put(
         `http://localhost:5000/api/deals/${dealId}/stage`,
-        { stage: stageId, reason },
+        { stage: stageId, reason, ...extraPayload },
         { headers: { Authorization: `Bearer ${token}` } }
       );
       const normalizedDeal = normalizeDeal(res.data);
@@ -812,7 +807,63 @@ function Deals() {
       return;
     }
 
+    if (currentStage === "qualification" && stageId === "need_analysis") {
+      const currentItem = currentDeal.product;
+      const currentItemType = getItemType(currentItem);
+      setPendingQualificationAdvance({
+        dealId,
+        stageId,
+        itemType: currentItemType,
+        availableStock: Number(currentItem?.stock ?? currentItem?.quantity ?? 0),
+      });
+      setQualificationAdvanceForm({
+        quantity: currentDeal.quantity ?? "",
+        billingCycle: currentDeal.billingCycle || "",
+      });
+      setShowQualificationAdvanceModal(true);
+      return;
+    }
+
     updateStage(dealId, stageId, "");
+  };
+
+  const submitQualificationAdvance = async () => {
+    if (!pendingQualificationAdvance) return;
+
+    const { dealId, stageId, itemType } = pendingQualificationAdvance;
+    const quantityValue = parseOptionalNumberInput(qualificationAdvanceForm.quantity);
+    const billingCycleValue = String(qualificationAdvanceForm.billingCycle || "").trim();
+
+    if (itemType === "product") {
+      if (quantityValue === null || quantityValue <= 0) {
+        alert("Quantity is required when moving a product deal to Need Analysis.");
+        return;
+      }
+      if (Number.isFinite(Number(pendingQualificationAdvance.availableStock)) && quantityValue > Number(pendingQualificationAdvance.availableStock)) {
+        alert("Insufficient stock. Deal moved to Lost.");
+        await updateStage(dealId, "lost", "Insufficient stock");
+        setPendingQualificationAdvance(null);
+        setQualificationAdvanceForm({ quantity: "", billingCycle: "" });
+        setShowQualificationAdvanceModal(false);
+        return;
+      }
+    }
+
+    if (itemType === "service") {
+      if (!billingCycleValue) {
+        alert("Plan / Billing Cycle is required when moving a service deal to Need Analysis.");
+        return;
+      }
+    }
+
+    await updateStage(dealId, stageId, "", {
+      quantity: itemType === "product" ? quantityValue : undefined,
+      billingCycle: itemType === "service" ? billingCycleValue : undefined,
+    });
+
+    setPendingQualificationAdvance(null);
+    setQualificationAdvanceForm({ quantity: "", billingCycle: "" });
+    setShowQualificationAdvanceModal(false);
   };
 
   const submitLostReason = async () => {
@@ -1020,14 +1071,14 @@ function Deals() {
       alert("Product is required");
       return;
     }
-    if (selectedEditDealItemType === "product") {
+    if (selectedEditDealItemType === "product" && selectedEditDealStageKey !== "qualification") {
       const quantityValue = parseOptionalNumberInput(editDealForm.quantity);
       if (quantityValue === null || quantityValue <= 0) {
         alert("Quantity is required for selected products");
         return;
       }
     }
-    if (selectedEditDealItemType === "service") {
+    if (selectedEditDealItemType === "service" && selectedEditDealStageKey !== "qualification") {
       if (!String(editDealForm.billingCycle || "").trim()) {
         alert("Plan / Billing Cycle is required for selected services");
         return;
@@ -1878,6 +1929,80 @@ ET`;
           </div>
         )}
 
+        {showQualificationAdvanceModal && (
+          <div
+            className="modal-overlay-zoho"
+            onClick={() => {
+              setShowQualificationAdvanceModal(false);
+              setPendingQualificationAdvance(null);
+            }}
+          >
+            <div className="modal-box-zoho" onClick={(event) => event.stopPropagation()}>
+              <div className="modal-header-zoho">
+                <h2>{pendingQualificationAdvance?.itemType === "service" ? "Plan Required" : "Quantity Required"}</h2>
+                <button
+                  className="modal-close"
+                  onClick={() => {
+                    setShowQualificationAdvanceModal(false);
+                    setPendingQualificationAdvance(null);
+                  }}
+                >
+                  x
+                </button>
+              </div>
+              <div className="modal-form-zoho">
+                {pendingQualificationAdvance?.itemType === "product" && (
+                  <div className="form-group">
+                    <label>Quantity *</label>
+                    <input
+                      type="number"
+                      min="1"
+                      value={qualificationAdvanceForm.quantity}
+                      onChange={(event) =>
+                        setQualificationAdvanceForm((prev) => ({ ...prev, quantity: event.target.value }))
+                      }
+                      placeholder="Enter quantity"
+                    />
+                  </div>
+                )}
+                {pendingQualificationAdvance?.itemType === "service" && (
+                  <div className="form-group">
+                    <label>Plan / Billing Cycle *</label>
+                    <select
+                      value={qualificationAdvanceForm.billingCycle}
+                      onChange={(event) =>
+                        setQualificationAdvanceForm((prev) => ({ ...prev, billingCycle: event.target.value }))
+                      }
+                    >
+                      <option value="">Select plan</option>
+                      {billingCycleOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                <div className="modal-actions">
+                  <button
+                    type="button"
+                    className="btn-cancel"
+                    onClick={() => {
+                      setShowQualificationAdvanceModal(false);
+                      setPendingQualificationAdvance(null);
+                    }}
+                  >
+                    Cancel
+                  </button>
+                  <button type="button" className="btn-submit" onClick={submitQualificationAdvance}>
+                    Save & Move
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {showExportModal && (
           <div className="modal-overlay-zoho" onClick={() => setShowExportModal(false)}>
             <div className="modal-box-zoho export-modal-box" onClick={(e) => e.stopPropagation()}>
@@ -2225,7 +2350,7 @@ ET`;
                     </select>
                   </div>
                 </div>
-                {selectedNewDealItemType === "product" && (
+                {selectedNewDealItemType === "product" && newDealStageKey !== "qualification" && (
                   <div className="form-row-zoho">
                     <div className="form-group">
                       <label>Quantity *</label>
@@ -2239,7 +2364,7 @@ ET`;
                     </div>
                   </div>
                 )}
-                {selectedNewDealItemType === "service" && (
+                {selectedNewDealItemType === "service" && newDealStageKey !== "qualification" && (
                   <div className="form-row-zoho">
                     <div className="form-group">
                       <label>Plan / Billing Cycle *</label>
@@ -2576,7 +2701,7 @@ ET`;
                     <span className="detail-value">{getProductLabel(selectedDeal.product)}</span>
                   )}
                 </div>
-                {isEditingSelectedDeal && selectedEditDealItemType === "product" && (
+                {isEditingSelectedDeal && selectedEditDealItemType === "product" && selectedEditDealStageKey !== "qualification" && (
                   <div className="detail-row">
                     <span className="detail-label">Quantity</span>
                     <input
@@ -2588,7 +2713,7 @@ ET`;
                     />
                   </div>
                 )}
-                {isEditingSelectedDeal && selectedEditDealItemType === "service" && (
+                {isEditingSelectedDeal && selectedEditDealItemType === "service" && selectedEditDealStageKey !== "qualification" && (
                   <div className="detail-row">
                     <span className="detail-label">Plan / Billing Cycle</span>
                     <select
