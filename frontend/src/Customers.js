@@ -132,12 +132,12 @@ export default function Customers() {
           status: customer.status || "Active",
           reason: customer.status === "Inactive" ? String(customer.reason || "").trim() : "",
           createdAt: createdAtValue,
-<<<<<<< HEAD
+
           serviceSubscriptions: [...incomingSubscriptions],
           purchases: [purchase],
-=======
+
           purchases,
->>>>>>> 854c403fd0967469db9e78a5ad05a69127f270f2
+
         });
         return;
       }
