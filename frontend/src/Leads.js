@@ -216,7 +216,6 @@ function Leads() {
     { id: "contacted", name: "Contacted", color: "#0ea5e9" },
     { id: "qualified", name: "Qualified", color: "#6366f1" },
     { id: "proposal", name: "Proposal", color: "#0d9488" },
-    { id: "proposal_sent", name: "Proposal Sent", color: "#14b8a6" },
     { id: "converted", name: "Converted", color: "#10b981" },
     { id: "lost", name: "Lost", color: "#ef4444" },
   ];
@@ -626,7 +625,7 @@ function Leads() {
       annualRevenue: row.annualrevenue || "",
       employeeCount: row.employeecount || row.noofemployees || "",
       source: row.source || "",
-      status: validStatuses.has(rawStatus) ? rawStatus : "new",
+      status: validStatuses.has(rawStatus) ? rawStatus : rawStatus === "proposal_sent" ? "proposal" : "new",
       emailOpened: row.emailopened || 0,
       websiteVisits: row.websitevisits || 0,
       formSubmissions: row.formsubmissions || 0,
@@ -1274,7 +1273,12 @@ function Leads() {
   };
 
   const getLeadsByStage = (stageId) => {
-    return leads.filter((lead) => lead.status === stageId);
+    return leads.filter((lead) => {
+      if (stageId === "proposal") {
+        return ["proposal", "proposal_sent"].includes(lead.status);
+      }
+      return lead.status === stageId;
+    });
   };
 
   // Get stages that have leads matching the search
@@ -1324,6 +1328,9 @@ function Leads() {
       : leads;
 
     if (exportView === "all") return matchingLeads;
+    if (exportView === "proposal") {
+      return matchingLeads.filter((lead) => ["proposal", "proposal_sent"].includes(lead.status));
+    }
     return matchingLeads.filter((lead) => lead.status === exportView);
   };
 
@@ -2886,24 +2893,22 @@ ET`;
                 </div>
               )}
 
-              {selectedLead.status !== "proposal_sent" && (
-                <div className="convert-section">
-                  <button
-                    className="btn-convert-lead"
-                    onClick={handleConvertLead}
-                    disabled={selectedLead.isConverted || selectedLead.status === "converted"}
-                  >
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <path d="M17 14V2h-5M15 2v14"></path>
-                      <path d="M15 10h4v4h-4V10z"></path>
-                      <path d="M7 10H3v4h4v-4z"></path>
-                      <path d="M7 22H3v-4h4v4z"></path>
-                      <path d="M15 22h4v-4h-4v4z"></path>
-                    </svg>
-                    {selectedLead.isConverted || selectedLead.status === "converted" ? "Already Converted" : "Convert Lead"}
-                  </button>
-                </div>
-              )}
+              <div className="convert-section">
+                <button
+                  className="btn-convert-lead"
+                  onClick={handleConvertLead}
+                  disabled={selectedLead.isConverted || selectedLead.status === "converted"}
+                >
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M17 14V2h-5M15 2v14"></path>
+                    <path d="M15 10h4v4h-4V10z"></path>
+                    <path d="M7 10H3v4h4v-4z"></path>
+                    <path d="M7 22H3v-4h4v4z"></path>
+                    <path d="M15 22h4v-4h-4v4z"></path>
+                  </svg>
+                  {selectedLead.isConverted || selectedLead.status === "converted" ? "Already Converted" : "Convert Lead"}
+                </button>
+              </div>
 
               <RecordActivityPanel
                 recordType="Lead"

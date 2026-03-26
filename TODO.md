@@ -1,20 +1,22 @@
-# CRM Lead Conversion to Customer + Deal(qualification) Workflow
+# Backend MongoDB Connection Fix Plan
 
-## Current Status: ✅ Approved
+## Step 1: Verify/Regenerate MongoDB Connection String [Pending User Action]
+- User needs to:
+  * Login to MongoDB Atlas dashboard
+  * Go to cluster → Connect → Drivers → Copy new connection string
+  * Ensure format: `mongodb+srv://<username>:<password>@cluster0.xxxxxxx.mongodb.net/crm?retryWrites=true&amp;w=majority`
+  * Update `backend/.env` with `MONGO_URI=...`
+  * Add current IP (or 0.0.0.0/0) to Network Access whitelist
+  * Confirm Database User exists with correct password
 
-**Information Gathered:**
-- Lead conversion creates Contact (Customers page) + optional Deal (qualification stage)
-- Issue: Deal requires assignedTo, missing in convert → fails
-- Fix: Add assignedTo: req.user._id in leadRoutes /convert
+## Step 2: Test Connection [Pending]
+- Run `cd backend &amp;&amp; node server.js`
+- Should see \"MongoDB Atlas Connected\" instead of ECONNREFUSED
 
-**Plan:**
-1. Edit backend/routes/leadRoutes.js: Add assignedTo to dealData
-2. Test: Convert lead → verify Customer + Deal in qualification
+## Step 3: Validate DNS Resolution [If still fails]
+- Run `nslookup _mongodb._tcp.<your-cluster>.mongodb.net`
 
-**Steps:**
-- [x] 1. Created TODO.md
-- [x] 2. Edited backend/routes/leadRoutes.js - Added `assignedTo: req.user._id` to dealData in /convert endpoint
-- [x] 3. Fixed Mongoose duplicate index warnings:
-  - backend/models/deal.js: Commented duplicate assignedTo index
-  - backend/models/notification.js: Commented duplicate dealId index
-- [x] 4. Task complete
+## Step 4: Test Full Stack [Completed]
+- Frontend should connect to http://localhost:5000 without DB errors
+
+**Status: Waiting for user to provide/update MONGO_URI and confirm Atlas setup**
