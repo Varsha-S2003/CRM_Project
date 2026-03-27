@@ -264,3 +264,156 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* Theme alignment overrides: keep same structure as other CRM pages */
+.employees-page {
+  min-height: 100vh;
+  padding: 24px 28px;
+  background: #f5f7fa;
+}
+
+.employees-shell {
+  max-width: 100%;
+  margin: 0;
+}
+
+.employees-hero {
+  margin-bottom: 18px;
+  padding: 12px 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  box-shadow: none;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.employees-hero h1 {
+  margin: 0 0 4px;
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: 0;
+  color: #1a1a2e;
+}
+
+.employees-hero p {
+  margin: 0;
+  color: #6b7280;
+  font-size: 14px;
+}
+
+.employees-stats {
+  margin: 16px 0 18px;
+  gap: 14px;
+}
+
+.employees-stat-card {
+  padding: 16px;
+  border-radius: 12px;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  box-shadow: none;
+  transition: none;
+}
+
+.employees-stat-card:hover {
+  transform: none;
+  box-shadow: none;
+  border-color: #e5e7eb;
+}
+
+.employees-stat-card span {
+  margin-bottom: 6px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: #6b7280;
+}
+
+.employees-stat-card strong {
+  font-size: 24px;
+  color: #1a1a2e;
+}
+
+.employees-panel {
+  padding: 18px;
+  border-radius: 12px;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+.employees-panel-head {
+  margin-bottom: 16px;
+}
+
+.employees-panel-head h2 {
+  margin: 0 0 4px;
+  color: #1a1a2e;
+}
+
+.employees-panel-head p {
+  color: #6b7280;
+}
+
+.employees-add-btn {
+  padding: 10px 16px;
+  border: none;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 600;
+  box-shadow: none;
+}
+
+.employees-add-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(79, 70, 229, 0.35);
+}
+
+.employees-grid {
+  gap: 14px;
+}
+
+.employee-card {
+  padding: 16px;
+  border-radius: 12px;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  box-shadow: none;
+  transition: none;
+}
+
+.employee-card:hover {
+  transform: none;
+  box-shadow: none;
+  border-color: #d1d5db;
+}
+
+.employee-avatar {
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  box-shadow: none;
+}
+
+.employee-role-badge {
+  background: #e0edff;
+  color: #0b5fcc;
+}
+
+.employee-role-badge.manager {
+  background: #efe8ff;
+  color: #5b34b3;
+}
+
+@media (max-width: 900px) {
+  .employees-page {
+    padding: 18px;
+  }
+
+  .employees-panel {
+    padding: 14px;
+  }
+}

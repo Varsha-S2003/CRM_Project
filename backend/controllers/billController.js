@@ -2,6 +2,7 @@ const mongoose = require("mongoose");
 const Bill = require("../models/bill");
 const Vendor = require("../models/vendor");
 const { refreshBillStatus } = require("../utils/vendorFinance");
+const { syncBillInventoryIfPaid } = require("../utils/vendorInventorySync");
 const { trackVendorActivity } = require("./vendorController");
 
 const toDate = (value) => {
@@ -67,6 +68,10 @@ const createBill = async (req, res) => {
 
     const bill = await Bill.create(payload);
     await refreshBillStatus(bill);
+    const freshBill = await Bill.findById(bill._id).select("status");
+    if (freshBill?.status === "Paid") {
+      await syncBillInventoryIfPaid({ billId: bill._id, vendorName: vendor.vendorName });
+    }
 
     await trackVendorActivity({
       vendorId: bill.vendorId,
@@ -117,6 +122,12 @@ const getBills = async (req, res) => {
 
     for (const bill of bills) {
       await refreshBillStatus(bill);
+      if (bill.status === "Paid") {
+        await syncBillInventoryIfPaid({
+          billId: bill._id,
+          vendorName: bill.vendorId?.vendorName || "",
+        });
+      }
     }
 
     const refreshed = await Bill.find({ _id: { $in: bills.map((bill) => bill._id) } })
@@ -148,6 +159,11 @@ const updateBillStatus = async (req, res) => {
 
     bill.status = status;
     await bill.save();
+
+    if (bill.status === "Paid") {
+      const vendor = await Vendor.findById(bill.vendorId).select("vendorName");
+      await syncBillInventoryIfPaid({ billId: bill._id, vendorName: vendor?.vendorName || "" });
+    }
 
     await trackVendorActivity({
       vendorId: bill.vendorId,

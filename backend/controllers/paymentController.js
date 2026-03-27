@@ -3,6 +3,7 @@ const Payment = require("../models/payment");
 const Bill = require("../models/bill");
 const Vendor = require("../models/vendor");
 const { refreshBillStatus } = require("../utils/vendorFinance");
+const { syncBillInventoryIfPaid } = require("../utils/vendorInventorySync");
 const { trackVendorActivity } = require("./vendorController");
 
 const parseDate = (value) => {
@@ -56,6 +57,10 @@ const addPayment = async (req, res) => {
 
     const payment = await Payment.create(payload);
     const statusSummary = await refreshBillStatus(bill);
+
+    if (statusSummary.status === "Paid") {
+      await syncBillInventoryIfPaid({ billId: bill._id, vendorName: vendor.vendorName });
+    }
 
     await trackVendorActivity({
       vendorId: vendor._id,

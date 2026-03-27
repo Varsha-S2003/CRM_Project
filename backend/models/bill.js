@@ -21,6 +21,11 @@ const billSchema = new mongoose.Schema(
     billNumber: { type: String, required: true, trim: true },
     amount: { type: Number, required: true, min: 0 },
     lineItems: [billLineItemSchema],
+    inventorySynced: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
     status: {
       type: String,
       enum: ["Paid", "Unpaid", "Overdue"],
