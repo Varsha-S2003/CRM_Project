@@ -20,6 +20,13 @@ import "./Dashboard.css";
 import Sidebar from "./Sidebar";
 
 function Dashboard() {
+  const formatInr = (value) =>
+    new Intl.NumberFormat("en-IN", {
+      style: "currency",
+      currency: "INR",
+      maximumFractionDigits: 0,
+    }).format(Number(value || 0));
+
   const getAssignmentStatusClass = (value) => {
     const status = String(value || "").toLowerCase();
     if (["new", "contacted", "qualified", "proposal", "lost", "converted"].includes(status)) {
@@ -603,6 +610,23 @@ function Dashboard() {
             <div className="stat-card">
               <h4>Conversion Rate</h4>
               <h2>{stats?.conversionRate || "32"}%</h2>
+            </div>
+
+            <div className="stat-card">
+              <h4>Total Vendors</h4>
+              <h2>{stats?.totalVendors || "0"}</h2>
+            </div>
+
+            <div className="stat-card">
+              <h4>Total Payables</h4>
+              <h2>{formatInr(stats?.totalPayables || 0)}</h2>
+            </div>
+
+            <div className="stat-card">
+              <h4>Overdue Bills</h4>
+              <h2 style={{ color: (stats?.overdueBills || 0) > 0 ? "#dc2626" : "#17a2b8" }}>
+                {stats?.overdueBills || 0}
+              </h2>
             </div>
           </div>
 

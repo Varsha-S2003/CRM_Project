@@ -18,6 +18,8 @@ import ActivityModule from "./ActivityModule";
 
 import Products from "./Products";
 import Inventory from "./Inventory";
+import VendorsPage from "./pages/VendorsPage";
+import VendorDetailPage from "./pages/VendorDetailPage";
  //bf512acb77558d0d630c7a57df7507f896003d97
 
 // debugging: log imported components to catch undefined values
@@ -342,6 +344,8 @@ function App() {
         <Route path="/activities" element={<ActivityModule />} />
         <Route path="/products" element={<Products />} />
         <Route path="/inventory" element={<Inventory />} />
+        <Route path="/vendors" element={<VendorsPage />} />
+        <Route path="/vendors/:id" element={<VendorDetailPage />} />
         </Routes>
     </BrowserRouter>
   );

@@ -6,6 +6,9 @@ const User = require("../models/user");
 const Lead = require("../models/lead");
 const Product = require("../models/product");
 const Deal = require("../models/deal");
+const Vendor = require("../models/vendor");
+const Bill = require("../models/bill");
+const Payment = require("../models/payment");
 
 // GET /api/stats - return some dashboard statistics (admin only)
 router.get("/", verifyToken, isAdmin, async (req, res) => {
@@ -79,6 +82,17 @@ router.get("/", verifyToken, isAdmin, async (req, res) => {
 
     const totalDeals = await Deal.countDocuments();
 
+    const [totalVendors, bills, payments, overdueBills] = await Promise.all([
+      Vendor.countDocuments(),
+      Bill.find({}).select("amount"),
+      Payment.find({}).select("amount"),
+      Bill.countDocuments({ status: "Overdue" }),
+    ]);
+
+    const totalBillAmount = bills.reduce((sum, bill) => sum + Number(bill.amount || 0), 0);
+    const totalPaidAmount = payments.reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+    const totalPayables = Math.max(0, totalBillAmount - totalPaidAmount);
+
     const stats = {
       totalUsers,
       managers,
@@ -87,6 +101,9 @@ router.get("/", verifyToken, isAdmin, async (req, res) => {
       totalDeals,
       totalLeads,
       conversionRate,
+      totalVendors,
+      totalPayables,
+      overdueBills,
       // Product stats
       totalProducts,
       totalStock,

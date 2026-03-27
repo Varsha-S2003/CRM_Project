@@ -56,6 +56,15 @@ app.use("/api/inventory", inventoryRoutes);
 const settingsRoutes = require("./routes/settingsRoutes");
 app.use("/api/settings", settingsRoutes);
 
+const vendorRoutes = require("./routes/vendorRoutes");
+app.use("/api/vendors", vendorRoutes);
+
+const billRoutes = require("./routes/billRoutes");
+app.use("/api/bills", billRoutes);
+
+const paymentRoutes = require("./routes/paymentRoutes");
+app.use("/api/payments", paymentRoutes);
+
 // MongoDB Atlas connection
 mongoose.connect(process.env.MONGO_URI)
 .then(async () => {
