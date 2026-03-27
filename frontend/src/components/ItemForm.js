@@ -7,9 +7,16 @@ const PRODUCT_CATEGORIES = [
   "Accessories",
   "Security Devices"
 ];
+const normalizeServiceCategory = (category, serviceType) => {
+  const value = String(category || "").trim();
+  if (serviceType === "license" && value === "Licensing") {
+    return "Cloud Services";
+  }
+  return value;
+};
 const SERVICE_TYPE_CATEGORY_MAP = {
-  license: ["Licensing", "Security"],
-  storage: ["Cloud Services", "Infrastructure"],
+  license: ["Cloud Services", "Infrastructure", "Security"],
+  storage: ["Cloud Services", "Infrastructure", "Backup & Recovery"],
   subscription: ["Cloud Services", "Managed Services", "Security"]
 };
 
@@ -33,11 +40,14 @@ const defaultValues = {
 
 const normalizeForForm = (item = {}) => {
   const type = item.type === "service" ? "service" : "product";
+  const serviceType = item.serviceType || "";
 
   return {
     ...defaultValues,
     ...item,
     type,
+    serviceType,
+    category: type === "service" ? normalizeServiceCategory(item.category, serviceType) : item.category || "",
     price: item.price !== undefined && item.price !== null ? String(item.price) : "",
     cost: item.cost !== undefined && item.cost !== null ? String(item.cost) : "",
     quantity:

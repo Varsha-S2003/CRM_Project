@@ -7,15 +7,28 @@ const PRODUCT_CATEGORIES = [
   "Accessories",
   "Security Devices"
 ];
-const SERVICE_CATEGORIES = ["Cloud Services", "Security", "Managed Services", "Licensing", "Infrastructure"];
+const SERVICE_CATEGORIES = [
+  "Cloud Services",
+  "Security",
+  "Managed Services",
+  "Infrastructure",
+  "Backup & Recovery"
+];
 const SERVICE_TYPE_CATEGORY_MAP = {
-  license: ["Licensing", "Security"],
-  storage: ["Cloud Services", "Infrastructure"],
+  license: ["Cloud Services", "Infrastructure", "Security"],
+  storage: ["Cloud Services", "Infrastructure", "Backup & Recovery"],
   subscription: ["Cloud Services", "Managed Services", "Security"]
 };
 const SERVICE_STATUS_VALUES = ["Active", "Inactive"];
 const BILLING_CYCLE_VALUES = ["monthly", "yearly"];
 const STORAGE_UNIT_VALUES = ["GB", "TB"];
+const normalizeServiceCategory = (category, serviceType) => {
+  const value = String(category || "").trim();
+  if (serviceType === "license" && value === "Licensing") {
+    return "Cloud Services";
+  }
+  return value;
+};
 
 const formatServiceTypeLabel = (serviceType) =>
   String(serviceType || "").charAt(0).toUpperCase() + String(serviceType || "").slice(1);
@@ -221,7 +234,7 @@ itemSchema.virtual("availableStorage").get(function getAvailableStorage() {
 
 itemSchema.pre("validate", function validateByType() {
   this.name = String(this.name || "").trim().replace(/\s+/g, " ");
-  this.category = String(this.category || "").trim();
+  this.category = normalizeServiceCategory(this.category, this.serviceType);
   this.normalizedName = this.name ? this.name.toLowerCase() : null;
   this.vendor = String(this.vendor || "").trim();
   this.provider = String(this.provider || "").trim();

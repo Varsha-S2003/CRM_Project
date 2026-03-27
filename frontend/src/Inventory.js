@@ -13,11 +13,11 @@ const PRODUCT_CATEGORIES = [
   "Security Devices"
 ];
 const SERVICE_CATEGORIES = [
-  "Managed Services",
-  "Licensing",
   "Cloud Services",
+  "Managed Services",
   "Security",
-  "Infrastructure"
+  "Infrastructure",
+  "Backup & Recovery"
 ];
 
 const getInventoryStatus = (item) => {
@@ -52,9 +52,9 @@ const formatInventoryInfo = (item) => {
 const formatCurrency = (value) => {
   if (value === undefined || value === null || value === "") return "-";
 
-  return new Intl.NumberFormat("en-US", {
+  return new Intl.NumberFormat("en-IN", {
     style: "currency",
-    currency: "USD"
+    currency: "INR"
   }).format(Number(value) || 0);
 };
 

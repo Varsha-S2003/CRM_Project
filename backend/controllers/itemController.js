@@ -7,10 +7,16 @@ const PRODUCT_CATEGORIES = [
   "Accessories",
   "Security Devices"
 ];
-const SERVICE_CATEGORIES = ["Cloud Services", "Security", "Managed Services", "Licensing", "Infrastructure"];
+const SERVICE_CATEGORIES = [
+  "Cloud Services",
+  "Security",
+  "Managed Services",
+  "Infrastructure",
+  "Backup & Recovery"
+];
 const SERVICE_TYPE_CATEGORY_MAP = {
-  license: ["Licensing", "Security"],
-  storage: ["Cloud Services", "Infrastructure"],
+  license: ["Cloud Services", "Infrastructure", "Security"],
+  storage: ["Cloud Services", "Infrastructure", "Backup & Recovery"],
   subscription: ["Cloud Services", "Managed Services", "Security"]
 };
 const BILLING_CYCLE_VALUES = ["monthly", "yearly"];
@@ -28,8 +34,8 @@ const SERVICE_CATEGORY_SKU_PREFIX = {
   "Cloud Services": "CLD",
   Security: "SVS",
   "Managed Services": "MNG",
-  Licensing: "LIC",
-  Infrastructure: "INF"
+  Infrastructure: "INF",
+  "Backup & Recovery": "BKR"
 };
 
 const parseNumber = (value) => {
@@ -49,6 +55,13 @@ const normalizeName = (value = "") => String(value).trim().replace(/\s+/g, " ");
 const normalizeProductName = (value = "") => normalizeName(value).toLowerCase();
 const formatServiceTypeLabel = (serviceType) =>
   String(serviceType || "").charAt(0).toUpperCase() + String(serviceType || "").slice(1);
+const normalizeServiceCategory = (category, serviceType) => {
+  const value = String(category || "").trim();
+  if (serviceType === "license" && value === "Licensing") {
+    return "Cloud Services";
+  }
+  return value;
+};
 
 const getNameSkuPart = (name = "") => {
   const words = String(name)
@@ -190,10 +203,6 @@ const buildItemPayload = (body, existing = null) => {
     errors.push(`for product, category must be one of: ${PRODUCT_CATEGORIES.join(", ")}`);
   }
 
-  if (payload.type === "service" && payload.category && !SERVICE_CATEGORIES.includes(payload.category)) {
-    errors.push(`for service, category must be one of: ${SERVICE_CATEGORIES.join(", ")}`);
-  }
-
   if (payload.type === "product") {
     if (Number.isNaN(payload.price) || payload.price === undefined || payload.price < 0) {
       errors.push("price must be a non-negative number");
@@ -224,7 +233,12 @@ const buildItemPayload = (body, existing = null) => {
   }
 
   payload.serviceType = source.serviceType;
+  payload.category = normalizeServiceCategory(payload.category, payload.serviceType);
   payload.normalizedName = normalizeProductName(payload.name);
+
+  if (payload.category && !SERVICE_CATEGORIES.includes(payload.category)) {
+    errors.push(`for service, category must be one of: ${SERVICE_CATEGORIES.join(", ")}`);
+  }
 
   const allowedServiceCategories = SERVICE_TYPE_CATEGORY_MAP[source.serviceType];
   if (!allowedServiceCategories) {

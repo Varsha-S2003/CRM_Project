@@ -12,11 +12,11 @@ const PRODUCT_CATEGORIES = [
   "Security Devices"
 ];
 const SERVICE_CATEGORIES = [
-  "Managed Services",
-  "Licensing",
   "Cloud Services",
+  "Managed Services",
   "Security",
-  "Infrastructure"
+  "Infrastructure",
+  "Backup & Recovery"
 ];
 
 const getItemAlert = (item) => {
@@ -112,7 +112,7 @@ function Products() {
   }, [fetchItems]);
 
   const formatCurrency = (value) =>
-    new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(value || 0);
+    new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR" }).format(value || 0);
 
   const getDisplayPrice = (item) =>
     (item.type || "product") === "service" ? item.cost : item.price;
