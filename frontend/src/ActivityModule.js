@@ -380,6 +380,14 @@ const getMonthGrid = (baseDate) => {
   });
 };
 
+const getActivityRelatedClass = (activity) => {
+  const relatedType = String(activity?.relatedTo?.recordType || "").toLowerCase();
+  if (relatedType === "lead") return "related-lead";
+  if (relatedType === "deal") return "related-deal";
+  if (relatedType === "contact") return "related-contact";
+  return "";
+};
+
 function ActivityModule() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -430,6 +438,7 @@ function ActivityModule() {
     outcome: "",
     reason: "",
     rescheduleDateTime: "",
+    usecaseNotes: "",
     requirementSummary: "",
     timeline: "",
     needPriority: "Medium",
@@ -760,6 +769,7 @@ function ActivityModule() {
       outcome: "",
       reason: "",
       rescheduleDateTime: "",
+      usecaseNotes: "",
       requirementSummary: "",
       timeline: "",
       needPriority: "Medium",
@@ -1152,6 +1162,14 @@ function ActivityModule() {
     return summaryOk && timelineOk && decisionMakerOk && (quantityOk || planAndCycleOk);
   }, [completionForm, isNeedAnalysisDealCompletion]);
 
+  const isLeadMeetingInterestedCompletion = useMemo(() => {
+    const outcome = String(completionForm.outcome || "").trim().toLowerCase();
+    if (outcome !== "interested") return false;
+    const activityType = String(completionTarget?.activityType || "").toLowerCase();
+    const relatedType = String(completionTarget?.relatedTo?.recordType || "").toLowerCase();
+    return activityType === "meeting" && relatedType === "lead";
+  }, [completionForm.outcome, completionTarget]);
+
   const handleComplete = async () => {
     if (!completionTarget?._id) return;
 
@@ -1263,6 +1281,7 @@ function ActivityModule() {
 
     const outcome = String(completionForm.outcome || "").trim();
     const reason = String(completionForm.reason || "").trim();
+    const usecaseNotes = String(completionForm.usecaseNotes || "").trim();
     const needsReason = ["not_interested", "no_response", "follow_up_needed"].includes(outcome);
     const needsReschedule = ["no_response", "follow_up_needed"].includes(outcome);
 
@@ -1273,6 +1292,11 @@ function ActivityModule() {
 
     if (needsReason && !reason) {
       setToast(outcome === "not_interested" ? "Please enter reason for Not Interested." : "Please enter follow-up reason.");
+      return;
+    }
+
+    if (isLeadMeetingInterestedCompletion && !usecaseNotes) {
+      setToast("Please enter meeting details before completing.");
       return;
     }
 
@@ -1287,7 +1311,7 @@ function ActivityModule() {
       const payload = {
         outcome,
         stage: getDefaultStageByActivityType(completionTarget.activityType),
-        outcomeReason: reason,
+        outcomeReason: isLeadMeetingInterestedCompletion ? usecaseNotes : reason,
         rescheduleDateTime: parsedReschedule ? parsedReschedule.toISOString() : null,
       };
 
@@ -1393,27 +1417,37 @@ function ActivityModule() {
                   {(taskBoardColumns[column] || []).length === 0 ? (
                     <div className="task-column__empty">No Tasks found.</div>
                   ) : (
-                    (taskBoardColumns[column] || []).map((task) => (
-                      <article key={task._id} className="task-card">
-                        <button className="task-card__edit" onClick={() => openEditModal(task)} aria-label="Edit task">
-                          +
-                        </button>
-                        <h3>{task.title}</h3>
-                        <p>{formatDate(task.startDateTime || task.dueDate)}</p>
-                        <p>{task.priority}</p>
-                        <p>{task.owner?.name || task.owner?.username || "-"}</p>
-                        <p>{task.relatedTo?.recordName || "-"}</p>
-                        <div className="task-card__actions">
-                          {task.status !== "Completed" ? (
-                            <button onClick={() => openCompleteModal(task)}>Complete</button>
-                          ) : null}
-                          {task.status !== "Completed" ? (
-                            <button onClick={() => handleReschedule(task)}>Reschedule</button>
-                          ) : null}
-                          <button onClick={() => handleDelete(task._id)}>Delete</button>
-                        </div>
-                      </article>
-                    ))
+                    (taskBoardColumns[column] || []).map((task) => {
+                      const relatedClass = getActivityRelatedClass(task);
+                      return (
+                        <article key={task._id} className={`task-card ${relatedClass}`}>
+                          <button className="task-card__edit" onClick={() => openEditModal(task)} aria-label="Edit task">
+                            +
+                          </button>
+                          <h3>{task.title}</h3>
+                          <p>{formatDate(task.startDateTime || task.dueDate)}</p>
+                          <p>{task.priority}</p>
+                          <p>{task.owner?.name || task.owner?.username || "-"}</p>
+                          <p>
+                            <span className={`record-type-pill ${relatedClass}`}>
+                              {task.relatedTo?.recordType || "Lead"}
+                            </span>{" "}
+                            <span className={`activity-related-label ${relatedClass}`}>
+                              {task.relatedTo?.recordName || "-"}
+                            </span>
+                          </p>
+                          <div className="task-card__actions">
+                            {task.status !== "Completed" ? (
+                              <button onClick={() => openCompleteModal(task)}>Complete</button>
+                            ) : null}
+                            {task.status !== "Completed" ? (
+                              <button onClick={() => handleReschedule(task)}>Reschedule</button>
+                            ) : null}
+                            <button onClick={() => handleDelete(task._id)}>Delete</button>
+                          </div>
+                        </article>
+                      );
+                    })
                   )}
                 </div>
               </div>
@@ -1478,27 +1512,37 @@ function ActivityModule() {
                   {(meetingBoardColumns[column] || []).length === 0 ? (
                     <div className="task-column__empty">No Meetings found.</div>
                   ) : (
-                    (meetingBoardColumns[column] || []).map((meeting) => (
-                      <article key={meeting._id} className="task-card meeting-card">
-                        <button className="task-card__edit" onClick={() => openEditModal(meeting)} aria-label="Edit meeting">
-                          +
-                        </button>
-                        <h3>{meeting.title}</h3>
-                        <p>{formatDateTime(meeting.startDateTime || meeting.dueDate)}</p>
-                        <p>{meeting.location || "No location"}</p>
-                        <p>{meeting.owner?.name || meeting.owner?.username || "-"}</p>
-                        <p>{meeting.relatedTo?.recordName || "-"}</p>
-                        <div className="task-card__actions">
-                          {meeting.status !== "Completed" ? (
-                            <button onClick={() => openCompleteModal(meeting)}>Complete</button>
-                          ) : null}
-                          {meeting.status !== "Completed" ? (
-                            <button onClick={() => handleReschedule(meeting)}>Reschedule</button>
-                          ) : null}
-                          <button onClick={() => handleDelete(meeting._id)}>Delete</button>
-                        </div>
-                      </article>
-                    ))
+                    (meetingBoardColumns[column] || []).map((meeting) => {
+                      const relatedClass = getActivityRelatedClass(meeting);
+                      return (
+                        <article key={meeting._id} className={`task-card meeting-card ${relatedClass}`}>
+                          <button className="task-card__edit" onClick={() => openEditModal(meeting)} aria-label="Edit meeting">
+                            +
+                          </button>
+                          <h3>{meeting.title}</h3>
+                          <p>{formatDateTime(meeting.startDateTime || meeting.dueDate)}</p>
+                          <p>{meeting.location || "No location"}</p>
+                          <p>{meeting.owner?.name || meeting.owner?.username || "-"}</p>
+                          <p>
+                            <span className={`record-type-pill ${relatedClass}`}>
+                              {meeting.relatedTo?.recordType || "Lead"}
+                            </span>{" "}
+                            <span className={`activity-related-label ${relatedClass}`}>
+                              {meeting.relatedTo?.recordName || "-"}
+                            </span>
+                          </p>
+                          <div className="task-card__actions">
+                            {meeting.status !== "Completed" ? (
+                              <button onClick={() => openCompleteModal(meeting)}>Complete</button>
+                            ) : null}
+                            {meeting.status !== "Completed" ? (
+                              <button onClick={() => handleReschedule(meeting)}>Reschedule</button>
+                            ) : null}
+                            <button onClick={() => handleDelete(meeting._id)}>Delete</button>
+                          </div>
+                        </article>
+                      );
+                    })
                   )}
                 </div>
               </div>
@@ -1563,27 +1607,37 @@ function ActivityModule() {
                   {(callBoardColumns[column] || []).length === 0 ? (
                     <div className="task-column__empty">No Calls found.</div>
                   ) : (
-                    (callBoardColumns[column] || []).map((call) => (
-                      <article key={call._id} className="task-card call-card">
-                        <button className="task-card__edit" onClick={() => openEditModal(call)} aria-label="Edit call">
-                          +
-                        </button>
-                        <h3>{call.title}</h3>
-                        <p>{formatDateTime(call.startDateTime || call.dueDate)}</p>
-                        <p>{call.call?.callType || "Outbound"}</p>
-                        <p>{call.owner?.name || call.owner?.username || "-"}</p>
-                        <p>{call.relatedTo?.recordName || "-"}</p>
-                        <div className="task-card__actions">
-                          {call.status !== "Completed" ? (
-                            <button onClick={() => openCompleteModal(call)}>Complete</button>
-                          ) : null}
-                          {call.status !== "Completed" ? (
-                            <button onClick={() => handleReschedule(call)}>Reschedule</button>
-                          ) : null}
-                          <button onClick={() => handleDelete(call._id)}>Delete</button>
-                        </div>
-                      </article>
-                    ))
+                    (callBoardColumns[column] || []).map((call) => {
+                      const relatedClass = getActivityRelatedClass(call);
+                      return (
+                        <article key={call._id} className={`task-card call-card ${relatedClass}`}>
+                          <button className="task-card__edit" onClick={() => openEditModal(call)} aria-label="Edit call">
+                            +
+                          </button>
+                          <h3>{call.title}</h3>
+                          <p>{formatDateTime(call.startDateTime || call.dueDate)}</p>
+                          <p>{call.call?.callType || "Outbound"}</p>
+                          <p>{call.owner?.name || call.owner?.username || "-"}</p>
+                          <p>
+                            <span className={`record-type-pill ${relatedClass}`}>
+                              {call.relatedTo?.recordType || "Lead"}
+                            </span>{" "}
+                            <span className={`activity-related-label ${relatedClass}`}>
+                              {call.relatedTo?.recordName || "-"}
+                            </span>
+                          </p>
+                          <div className="task-card__actions">
+                            {call.status !== "Completed" ? (
+                              <button onClick={() => openCompleteModal(call)}>Complete</button>
+                            ) : null}
+                            {call.status !== "Completed" ? (
+                              <button onClick={() => handleReschedule(call)}>Reschedule</button>
+                            ) : null}
+                            <button onClick={() => handleDelete(call._id)}>Delete</button>
+                          </div>
+                        </article>
+                      );
+                    })
                   )}
                 </div>
               </div>
@@ -1700,48 +1754,62 @@ function ActivityModule() {
                 </div>
               ))}
             </div>
-
             <div className="activity-dashboard-sections">
               <div className="activity-dashboard-card">
                 <h3>Today's {currentModule.sectionLabel}</h3>
                 <div className="activity-section-list">
-                  {filteredDashboardToday.slice(0, 4).map((item) => (
-                    <div key={item._id} className="activity-section-item">
-                      <span className={`activity-pill ${item.activityType}`}>{item.activityType}</span>
-                      <div>
-                        <strong>{item.title}</strong>
-                        <p>{item.relatedTo?.recordName} • {formatDateTime(item.startDateTime || item.dueDate)}</p>
+                  {filteredDashboardToday.slice(0, 4).map((item) => {
+                    const relatedClass = getActivityRelatedClass(item);
+                    return (
+                      <div key={item._id} className={`activity-section-item ${relatedClass}`}>
+                        <span className={`activity-pill ${item.activityType} ${relatedClass}`}>{item.activityType}</span>
+                        <div>
+                          <strong>{item.title}</strong>
+                          <p className={`activity-related-label ${relatedClass}`}>
+                            {item.relatedTo?.recordName} • {formatDateTime(item.startDateTime || item.dueDate)}
+                          </p>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
               <div className="activity-dashboard-card">
                 <h3>Upcoming {currentModule.sectionLabel}</h3>
                 <div className="activity-section-list">
-                  {filteredDashboardUpcoming.slice(0, 4).map((item) => (
-                    <div key={item._id} className="activity-section-item">
-                      <span className={`activity-pill ${item.activityType}`}>{item.activityType}</span>
-                      <div>
-                        <strong>{item.title}</strong>
-                        <p>{item.owner?.name || item.owner?.username} • {formatDateTime(item.startDateTime || item.dueDate)}</p>
+                  {filteredDashboardUpcoming.slice(0, 4).map((item) => {
+                    const relatedClass = getActivityRelatedClass(item);
+                    return (
+                      <div key={item._id} className={`activity-section-item ${relatedClass}`}>
+                        <span className={`activity-pill ${item.activityType} ${relatedClass}`}>{item.activityType}</span>
+                        <div>
+                          <strong>{item.title}</strong>
+                          <p>
+                            {item.owner?.name || item.owner?.username} • {formatDateTime(item.startDateTime || item.dueDate)}
+                          </p>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
               <div className="activity-dashboard-card">
                 <h3>Overdue {currentModule.sectionLabel}</h3>
                 <div className="activity-section-list">
-                  {filteredDashboardOverdue.slice(0, 4).map((item) => (
-                    <div key={item._id} className="activity-section-item">
-                      <span className={`activity-pill ${item.activityType}`}>{item.activityType}</span>
-                      <div>
-                        <strong>{item.title}</strong>
-                        <p>{item.priority} priority • {formatDate(item.startDateTime || item.dueDate)}</p>
+                  {filteredDashboardOverdue.slice(0, 4).map((item) => {
+                    const relatedClass = getActivityRelatedClass(item);
+                    return (
+                      <div key={item._id} className={`activity-section-item ${relatedClass}`}>
+                        <span className={`activity-pill ${item.activityType} ${relatedClass}`}>{item.activityType}</span>
+                        <div>
+                          <strong>{item.title}</strong>
+                          <p>
+                            {item.priority} priority • {formatDate(item.startDateTime || item.dueDate)}
+                          </p>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             </div>
@@ -1773,29 +1841,32 @@ function ActivityModule() {
                       </tr>
                     </thead>
                     <tbody>
-                      {activities.map((activity) => (
-                        <tr key={activity._id}>
-                          <td><span className={`activity-pill ${activity.activityType}`}>{activity.activityType}</span></td>
-                          <td>{activity.title}</td>
-                          <td>{activity.owner?.name || activity.owner?.username || "-"}</td>
-                          <td>{formatDateTime(activity.startDateTime || activity.dueDate)}</td>
-                          <td>{activity.priority}</td>
-                          <td>{activity.relatedTo?.recordName || "-"}</td>
-                          <td><span className={`activity-status ${activity.status.toLowerCase()}`}>{activity.status}</span></td>
-                          <td>
-                            <div className="activity-table-actions">
-                              {activity.status !== "Completed" ? (
-                                <button onClick={() => openCompleteModal(activity)}>Complete</button>
-                              ) : null}
-                              {activity.status !== "Completed" ? (
-                                <button onClick={() => handleReschedule(activity)}>Reschedule</button>
-                              ) : null}
-                              <button onClick={() => openEditModal(activity)}>Edit</button>
-                              <button className="danger" onClick={() => handleDelete(activity._id)}>Delete</button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
+                      {activities.map((activity) => {
+                        const relatedClass = getActivityRelatedClass(activity);
+                        return (
+                          <tr key={activity._id}>
+                            <td><span className={`activity-pill ${activity.activityType} ${relatedClass}`}>{activity.activityType}</span></td>
+                            <td>{activity.title}</td>
+                            <td>{activity.owner?.name || activity.owner?.username || "-"}</td>
+                            <td>{formatDateTime(activity.startDateTime || activity.dueDate)}</td>
+                            <td>{activity.priority}</td>
+                            <td className={`activity-related-label ${relatedClass}`}>{activity.relatedTo?.recordName || "-"}</td>
+                            <td><span className={`activity-status ${activity.status.toLowerCase()}`}>{activity.status}</span></td>
+                            <td>
+                              <div className="activity-table-actions">
+                                {activity.status !== "Completed" ? (
+                                  <button onClick={() => openCompleteModal(activity)}>Complete</button>
+                                ) : null}
+                                {activity.status !== "Completed" ? (
+                                  <button onClick={() => handleReschedule(activity)}>Reschedule</button>
+                                ) : null}
+                                <button onClick={() => openEditModal(activity)}>Edit</button>
+                                <button className="danger" onClick={() => handleDelete(activity._id)}>Delete</button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -1857,16 +1928,19 @@ function ActivityModule() {
                         >
                           <div className="calendar-date">{day.getDate()}</div>
                           <div className="calendar-events">
-                            {dayItems.slice(0, 3).map((item) => (
-                              <div
-                                key={item._id}
-                                className={`calendar-event ${item.activityType}`}
-                                draggable
-                                onDragStart={(event) => event.dataTransfer.setData("text/plain", item._id)}
-                              >
-                                {item.title}
-                              </div>
-                            ))}
+                            {dayItems.slice(0, 3).map((item) => {
+                              const relatedClass = getActivityRelatedClass(item);
+                              return (
+                                <div
+                                  key={item._id}
+                                  className={`calendar-event ${item.activityType} ${relatedClass}`}
+                                  draggable
+                                  onDragStart={(event) => event.dataTransfer.setData("text/plain", item._id)}
+                                >
+                                  {item.title}
+                                </div>
+                              );
+                            })}
                           </div>
                         </div>
                       );
@@ -1887,15 +1961,20 @@ function ActivityModule() {
                         end.setDate(start.getDate() + 6);
                         return sourceDate >= startOfDay(start) && sourceDate <= endOfDay(end);
                       })
-                      .map((activity) => (
-                        <div key={activity._id} className="calendar-list-item">
-                          <span className={`activity-pill ${activity.activityType}`}>{activity.activityType}</span>
-                          <div>
-                            <strong>{activity.title}</strong>
-                            <p>{formatDateTime(activity.startDateTime || activity.dueDate)} • {activity.relatedTo?.recordName}</p>
+                      .map((activity) => {
+                        const relatedClass = getActivityRelatedClass(activity);
+                        return (
+                          <div key={activity._id} className={`calendar-list-item ${relatedClass}`}>
+                            <span className={`activity-pill ${activity.activityType} ${relatedClass}`}>{activity.activityType}</span>
+                            <div>
+                              <strong>{activity.title}</strong>
+                              <p className={`activity-related-label ${relatedClass}`}>
+                                {formatDateTime(activity.startDateTime || activity.dueDate)} • {activity.relatedTo?.recordName}
+                              </p>
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                   </div>
                 )}
               </div>
@@ -1951,17 +2030,20 @@ function ActivityModule() {
                 <p>Chronological view of {currentModule.timelineLabel} for quick follow-up.</p>
               </div>
               <div className="timeline-list">
-                {activities.slice(0, 8).map((activity) => (
-                  <div key={activity._id} className="timeline-item">
-                    <div className={`timeline-dot ${activity.activityType}`}></div>
-                    <div>
-                      <strong>{activity.title}</strong>
-                      <p>
-                        {activity.relatedTo?.recordType}: {activity.relatedTo?.recordName} • {formatDateTime(activity.startDateTime || activity.dueDate)}
-                      </p>
+                {activities.slice(0, 8).map((activity) => {
+                  const relatedClass = getActivityRelatedClass(activity);
+                  return (
+                    <div key={activity._id} className={`timeline-item ${relatedClass}`}>
+                      <div className={`timeline-dot ${activity.activityType} ${relatedClass}`}></div>
+                      <div>
+                        <strong>{activity.title}</strong>
+                        <p className={`activity-related-label ${relatedClass}`}>
+                          {activity.relatedTo?.recordType}: {activity.relatedTo?.recordName} • {formatDateTime(activity.startDateTime || activity.dueDate)}
+                        </p>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           </div>
@@ -2639,6 +2721,20 @@ function ActivityModule() {
                                 ? "Enter why this lead is not interested"
                                 : "Enter follow-up reason"
                             }
+                          />
+                        </label>
+                      ) : null}
+
+                      {isLeadMeetingInterestedCompletion ? (
+                        <label className="full-width">
+                          Meeting Details / Usecase Notes
+                          <textarea
+                            rows="3"
+                            value={completionForm.usecaseNotes}
+                            onChange={(event) =>
+                              setCompletionForm((prev) => ({ ...prev, usecaseNotes: event.target.value }))
+                            }
+                            placeholder="Add key points, requirements, and next steps from the meeting"
                           />
                         </label>
                       ) : null}

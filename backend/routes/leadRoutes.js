@@ -590,16 +590,6 @@ router.post("/assign", verifyToken, permit("ADMIN", "MANAGER"), async (req, res,
 
     if (!lead) return res.status(404).json({ message: "Lead not found" });
 
-    if (actorRole === "MANAGER") {
-      const assignedToManager = lead.assignedTo && String(lead.assignedTo) === String(req.user._id);
-      const assignedByManager = lead.assignedBy && String(lead.assignedBy) === String(req.user._id);
-      if (!assignedToManager && !assignedByManager) {
-        return res.status(403).json({
-          message: "Managers can only manage leads assigned to them or assigned by them",
-        });
-      }
-    }
-
     if (!normalizedUserId) {
       lead.assignedTo = null;
       lead.assignedBy = null;

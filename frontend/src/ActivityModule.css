@@ -652,8 +652,7 @@
   gap: 0;
   background: #eef2f7;
   margin: -30px -40px;
-  height: 100vh;
-  overflow: hidden;
+  min-height: 100vh;
 }
 
 .task-page__header,
@@ -888,6 +887,67 @@
   color: #304566;
 }
 
+/* Record-type accents: Lead vs Deal */
+.activity-pill.related-lead,
+.calendar-event.related-lead,
+.timeline-dot.related-lead {
+  box-shadow: 0 0 0 1px var(--theme-gold);
+}
+
+.activity-pill.related-deal,
+.calendar-event.related-deal,
+.timeline-dot.related-deal {
+  box-shadow: 0 0 0 1px var(--theme-green-strong);
+}
+
+.calendar-list-item.related-lead,
+.activity-section-item.related-lead,
+.timeline-item.related-lead,
+.task-card.related-lead {
+  border-left: 4px solid var(--theme-gold);
+}
+
+.calendar-list-item.related-deal,
+.activity-section-item.related-deal,
+.timeline-item.related-deal,
+.task-card.related-deal {
+  border-left: 4px solid var(--theme-green-strong);
+}
+
+.record-type-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  margin-right: 6px;
+}
+
+.record-type-pill.related-lead {
+  background: #fff4d7;
+  color: #8a6400;
+}
+
+.record-type-pill.related-deal {
+  background: #e8f6e8;
+  color: var(--theme-green-strong);
+}
+
+.activity-related-label {
+  font-weight: 600;
+}
+
+.activity-related-label.related-lead {
+  color: var(--theme-ink-soft);
+}
+
+.activity-related-label.related-deal {
+  color: var(--theme-green-strong);
+}
+
 @media (max-width: 1200px) {
   .activity-dashboard-sections,
   .activity-stats-grid,
@@ -1115,4 +1175,41 @@
 
 .task-column__title strong {
   background: #d9cfbc;
+}
+
+/* Record-type accents: Lead vs Deal */
+.activity-pill.related-lead,
+.calendar-event.related-lead,
+.timeline-dot.related-lead {
+  box-shadow: 0 0 0 1px var(--theme-gold);
+}
+
+.activity-pill.related-deal,
+.calendar-event.related-deal,
+.timeline-dot.related-deal {
+  box-shadow: 0 0 0 1px var(--theme-green-strong);
+}
+
+.calendar-list-item.related-lead,
+.activity-section-item.related-lead,
+.timeline-item.related-lead {
+  border-left: 4px solid var(--theme-gold);
+}
+
+.calendar-list-item.related-deal,
+.activity-section-item.related-deal,
+.timeline-item.related-deal {
+  border-left: 4px solid var(--theme-green-strong);
+}
+
+.activity-related-label {
+  font-weight: 600;
+}
+
+.activity-related-label.related-lead {
+  color: var(--theme-ink-soft);
+}
+
+.activity-related-label.related-deal {
+  color: var(--theme-green-strong);
 }

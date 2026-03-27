@@ -76,6 +76,10 @@ function Leads() {
   });
   const [newLeadErrors, setNewLeadErrors] = useState({});
   const [cardAssignSelection, setCardAssignSelection] = useState({});
+  const [showQualifiedNotesModal, setShowQualifiedNotesModal] = useState(false);
+  const [qualifiedNotes, setQualifiedNotes] = useState("");
+  const [isSavingQualifiedNotes, setIsSavingQualifiedNotes] = useState(false);
+  const [pendingQualifiedStatus, setPendingQualifiedStatus] = useState(null);
   // compute role flags for UI
   const role = localStorage.getItem("role")?.toUpperCase();
   const currentUserId = localStorage.getItem("userId") || "";
@@ -898,33 +902,7 @@ function Leads() {
     }
   };
 
-  const handleUpdateStatus = async (leadId, newStatus) => {
-    if (newStatus === "converted") {
-      await handleConvertLead();
-      return;
-    }
-
-    // Client-side validation (matches backend)
-    if (selectedLead) {
-      const currentStatus = selectedLead.status;
-      if (currentStatus !== newStatus &&
-          (!allowedTransitions[currentStatus] || !allowedTransitions[currentStatus].includes(newStatus))) {
-        alert(`Invalid stage transition: from "${stages.find(s => s.id === currentStatus)?.name || currentStatus}" to "${stages.find(s => s.id === newStatus)?.name || newStatus}" not allowed`);
-        return;
-      }
-    }
-
-    let transitionReason = "";
-    if (newStatus === "lost") {
-      const reasonInput = window.prompt("Enter reason for moving this lead to Lost", "");
-      if (reasonInput === null) return;
-      transitionReason = String(reasonInput || "").trim();
-      if (!transitionReason) {
-        alert("Reason is required for Lost transition.");
-        return;
-      }
-    }
-
+  const performStatusUpdate = async (leadId, newStatus, transitionReason = "") => {
     try {
       const token = localStorage.getItem("token");
       const res = await axios.put(
@@ -949,9 +927,62 @@ function Leads() {
       setSelectedLead(null);
     } catch (err) {
       console.error(err);
-      console.error('Full error:', err.response?.data);
+      console.error("Full error:", err.response?.data);
       alert(err.response?.data?.message || err.message || "Failed to update lead status");
     }
+  };
+
+  const handleUpdateStatus = async (leadId, newStatus) => {
+    if (newStatus === "converted") {
+      await handleConvertLead();
+      return;
+    }
+
+    // Client-side validation (matches backend)
+    if (selectedLead) {
+      const currentStatus = selectedLead.status;
+      if (
+        currentStatus !== newStatus &&
+        (!allowedTransitions[currentStatus] || !allowedTransitions[currentStatus].includes(newStatus))
+      ) {
+        alert(
+          `Invalid stage transition: from "${
+            stages.find((s) => s.id === currentStatus)?.name || currentStatus
+          }" to "${stages.find((s) => s.id === newStatus)?.name || newStatus}" not allowed`
+        );
+        return;
+      }
+    }
+
+    let transitionReason = "";
+    if (newStatus === "lost") {
+      const reasonInput = window.prompt("Enter reason for moving this lead to Lost", "");
+      if (reasonInput === null) return;
+      transitionReason = String(reasonInput || "").trim();
+      if (!transitionReason) {
+        alert("Reason is required for Lost transition.");
+        return;
+      }
+    }
+
+    if (newStatus === "qualified") {
+      const leadForNotes =
+        (selectedLead && selectedLead._id === leadId && selectedLead) ||
+        leads.find((lead) => lead._id === leadId) ||
+        null;
+
+      setPendingQualifiedStatus({
+        leadId,
+        newStatus,
+        transitionReason,
+        lead: leadForNotes,
+      });
+      setQualifiedNotes("");
+      setShowQualifiedNotesModal(true);
+      return;
+    }
+
+    await performStatusUpdate(leadId, newStatus, transitionReason);
   };
 
   const handleConvertLead = async () => {
@@ -2077,8 +2108,12 @@ ET`;
                           <button
                             type="button"
                             className="card-assign-btn"
-                            disabled={selectedAssignTarget === assignedToId}
                             onClick={async () => {
+                              if (!selectedAssignTarget && !assignedToId) {
+                                window.alert("Please select an employee to assign this lead.");
+                                return;
+                              }
+
                               await handleAssign(lead._id, selectedAssignTarget);
                               setCardAssignSelection((prev) => {
                                 const next = { ...prev };
@@ -2687,6 +2722,126 @@ ET`;
               </div>
 
               {!isEditingLead && (
+                <>
+
+          {showQualifiedNotesModal && pendingQualifiedStatus && (
+            <div
+              className="modal-overlay-zoho"
+              onClick={() => {
+                setShowQualifiedNotesModal(false);
+                setPendingQualifiedStatus(null);
+                setQualifiedNotes("");
+              }}
+            >
+              <div className="modal-box-zoho" onClick={(e) => e.stopPropagation()}>
+                <div className="modal-header-zoho">
+                  <h2>Meeting Notes for Qualified Lead</h2>
+                  <button
+                    className="modal-close"
+                    onClick={() => {
+                      setShowQualifiedNotesModal(false);
+                      setPendingQualifiedStatus(null);
+                      setQualifiedNotes("");
+                    }}
+                  >
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <line x1="18" y1="6" x2="6" y2="18"></line>
+                      <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                  </button>
+                </div>
+                <div className="modal-form-zoho">
+                  <div className="form-group">
+                    <label>What happened in this meeting?</label>
+                    <textarea
+                      value={qualifiedNotes}
+                      onChange={(e) => setQualifiedNotes(e.target.value)}
+                      rows={5}
+                      placeholder="Add detailed notes about the discussion, objections, and next steps."
+                    />
+                  </div>
+                  <div className="modal-actions">
+                    <button
+                      type="button"
+                      className="btn-cancel"
+                      onClick={() => {
+                        setShowQualifiedNotesModal(false);
+                        setPendingQualifiedStatus(null);
+                        setQualifiedNotes("");
+                      }}
+                      disabled={isSavingQualifiedNotes}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-submit"
+                      onClick={async () => {
+                        if (!pendingQualifiedStatus) return;
+
+                        const notes = String(qualifiedNotes || "").trim();
+                        if (!notes) {
+                          alert("Please fill notes about the meeting before moving the lead to Qualified.");
+                          return;
+                        }
+
+                        setIsSavingQualifiedNotes(true);
+                        try {
+                          const token = localStorage.getItem("token");
+                          const leadId = pendingQualifiedStatus.leadId;
+                          const leadForNotes =
+                            pendingQualifiedStatus.lead ||
+                            (selectedLead && selectedLead._id === leadId && selectedLead) ||
+                            leads.find((lead) => lead._id === leadId) ||
+                            null;
+
+                          const leadName =
+                            (leadForNotes && (leadForNotes.name || leadForNotes.company || leadForNotes.email)) ||
+                            "Lead";
+
+                          const activityPayload = {
+                            activityType: "meeting",
+                            title: `Qualified Meeting - ${leadName}`,
+                            description: notes,
+                            notes,
+                            relatedType: "Lead",
+                            relatedId: leadId,
+                            status: "Completed",
+                            stage: "qualified",
+                          };
+
+                          await axios.post("http://localhost:5000/api/activities", activityPayload, {
+                            headers: { Authorization: `Bearer ${token}` },
+                          });
+
+                          await performStatusUpdate(
+                            pendingQualifiedStatus.leadId,
+                            pendingQualifiedStatus.newStatus,
+                            pendingQualifiedStatus.transitionReason || ""
+                          );
+
+                          setShowQualifiedNotesModal(false);
+                          setPendingQualifiedStatus(null);
+                          setQualifiedNotes("");
+                        } catch (error) {
+                          console.error(error);
+                          alert(
+                            error.response?.data?.message ||
+                              "Failed to save meeting notes. Lead status was not updated."
+                          );
+                        } finally {
+                          setIsSavingQualifiedNotes(false);
+                        }
+                      }}
+                      disabled={isSavingQualifiedNotes}
+                    >
+                      {isSavingQualifiedNotes ? "Saving..." : "Save & Move to Qualified"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
                 <div className="lead-details-view">
                   <div className="detail-row">
                     <span className="detail-label">Salutation</span>
@@ -2767,6 +2922,7 @@ ET`;
                     <span className="detail-value">{formatAddedDate(selectedLead.createdAt)}</span>
                   </div>
                 </div>
+                </>
               )}
 
               {isEditingLead && editLeadForm && (
