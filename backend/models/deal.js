@@ -131,6 +131,11 @@ const dealSchema = new mongoose.Schema(
       trim: true,
       default: "",
     },
+    waitingForRestock: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
     stage: {
       type: String,
       enum: [

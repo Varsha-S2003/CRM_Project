@@ -389,6 +389,27 @@ function LeadRequests() {
       const isLowStockError = /low stock|insufficient stock/i.test(String(errorMessage));
 
       if (isLowStockError) {
+        const customerWillWait = window.confirm(
+          `${errorMessage}\n\nCustomer said they can wait for refill?\n\nPress OK for YES (keep in Need Analysis + wait for refill).\nPress Cancel for NO.`
+        );
+
+        if (customerWillWait) {
+          try {
+            const token = localStorage.getItem("token");
+            await axios.put(
+              `http://localhost:5000/api/deals/${item._id}/waiting-restock`,
+              {
+                availableQuantity: err.response?.data?.availableQuantity,
+                requestedQuantity: err.response?.data?.requestedQuantity,
+              },
+              { headers: { Authorization: `Bearer ${token}` } }
+            );
+          } catch (restockErr) {
+            console.error("Failed to create wait-for-refill notification:", restockErr);
+          }
+        }
+
+        await fetchAuxiliaryRequests();
         setShowDealAdvanceModal(false);
         setPendingDealAdvance(null);
         setDealAdvanceForm({ quantity: "", billingCycle: "" });
@@ -633,6 +654,22 @@ function LeadRequests() {
     </div>
   );
 
+  const getWaitingForRestockNote = (item) => {
+    if (item?.waitingForRestock) {
+      return "Waiting for restock";
+    }
+
+    const noteSources = [
+      String(item?.nextStep || "").trim(),
+      String(item?.description || "").trim(),
+      String(item?.reason || "").trim(),
+    ].filter(Boolean);
+
+    return noteSources.some((value) => /waiting for restock/i.test(value))
+      ? "Waiting for restock"
+      : "";
+  };
+
   const renderDealCard = (item) => (
     <div key={item._id} className="lead-requests-card">
       <div className="lead-requests-card-header">
@@ -649,6 +686,9 @@ function LeadRequests() {
       <div className="assignment-lead-meta">Company: {item.company || "-"}</div>
       <div className="assignment-lead-meta">Amount: {item.amount ? `₹${Number(item.amount).toLocaleString()}` : "-"}</div>
       <div className="assignment-lead-meta">Contact: {item.contact || item.email || "-"}</div>
+      {normalizeDealStage(item.stage) === "need_analysis" && getWaitingForRestockNote(item) ? (
+        <div className="lead-request-waiting-note">{getWaitingForRestockNote(item)}</div>
+      ) : null}
 
       {normalizeDealStage(item.stage) === "qualification" ? (
         <div className="deal-request-actions">

@@ -15,6 +15,40 @@ const DealView = require("../models/dealView");
 const AppSettings = require("../models/appSettings");
 const { sendLowStockCustomerEmail } = require("../utils/mailer");
 
+// DEBUG: Test notification endpoint
+router.post("/test-notification", async (req, res) => {
+  try {
+    const admins = await User.find({ role: { $regex: /^admin$/i } }).select("_id name username");
+    if (!admins.length) {
+      return res.status(404).json({ message: "No admin users found" });
+    }
+
+    const firstDeal = await Deal.findOne().select("_id").lean();
+    if (!firstDeal?._id) {
+      return res.status(400).json({ message: "No deals found. Create at least one deal before testing notifications." });
+    }
+
+    const message = `[DEBUG] Test notification for admins at ${new Date().toLocaleString()}`;
+    await Notification.insertMany(
+      admins.map((admin) => ({
+        dealId: firstDeal._id,
+        message,
+        fromStage: "need_analysis",
+        toStage: "need_analysis",
+        changedBy: admin._id,
+        changedByName: admin.name || admin.username || "Admin",
+        recipients: [admin._id],
+        isRead: false,
+      }))
+    );
+
+    res.json({ message: `Test notification sent to ${admins.length} admin(s)` });
+  } catch (err) {
+    console.error("Test notification error:", err);
+    res.status(500).json({ message: err.message });
+  }
+});
+
 const normalizeDealStage = (stage) => {
   const value = String(stage || "").trim();
   const normalized = value.toLowerCase().replace(/\s+/g, "_");
@@ -73,6 +107,25 @@ const appendRestockNote = (value) => {
   if (!existing) return note;
   if (existing.toLowerCase().includes(note.toLowerCase())) return existing;
   return `${existing}\n${note}`;
+};
+
+const markDealWaitingForRestock = async (dealId) => {
+  if (!dealId) return;
+
+  const deal = await Deal.findById(dealId).select("_id nextStep description");
+  if (!deal) return;
+
+  await Deal.findByIdAndUpdate(
+    dealId,
+    {
+      $set: {
+        nextStep: appendRestockNote(deal.nextStep),
+        description: appendRestockNote(deal.description || deal.nextStep),
+        waitingForRestock: true,
+      },
+    },
+    { new: false }
+  );
 };
 
 const getStageFilterValues = (stage) => {
@@ -323,6 +376,106 @@ const notifyLowStockToCustomer = async ({ req, deal, item, availableQuantity, re
   } catch (emailError) {
     console.error("Low-stock customer email failed:", emailError.message);
   }
+};
+
+const notifyLowStockToAdmins = async ({ deal, item, availableQuantity, requestedQuantity, actor }) => {
+  const admins = await User.find({ role: { $regex: /^admin$/i } }).select("_id");
+  if (admins.length === 0 || !deal?._id) {
+    return;
+  }
+
+  const itemName = String(item?.name || item?.sku || "Product").trim() || "Product";
+  const dealName = String(deal?.name || "").trim() || "Deal";
+  const companyName = String(deal?.company || "").trim();
+  const contactName = String(deal?.contact || deal?.firstName || deal?.name || "").trim() || "Customer";
+  const emailText = String(deal?.email || "").trim() || "-";
+  const phoneText = String(deal?.phone || deal?.mobile || "").trim() || "-";
+  const availableText = Number.isFinite(Number(availableQuantity)) ? Number(availableQuantity) : 0;
+  const requestedText = Number.isFinite(Number(requestedQuantity)) ? Number(requestedQuantity) : 0;
+  const companySegment = companyName ? ` for ${companyName}` : "";
+  const changedById = actor?._id || deal?.assignedTo || admins[0]?._id;
+  const changedByName = actor?.name || actor?.username || "Employee";
+  const stageLabel = String(normalizeDealStage(deal.stage || "need_analysis") || "need_analysis").replace(/_/g, " ");
+  if (!changedById) {
+    return;
+  }
+
+  const message =
+    `Need Analysis - Wait for refill. Customer needs ${itemName}${companySegment}, but it is in low stock. ` +
+    `Requested: ${requestedText}. Available: ${availableText}. ` +
+    `Customer: ${contactName}. Email: ${emailText}. Phone: ${phoneText}. ` +
+    `Updated by employee: ${changedByName}. Current stage: ${stageLabel}. Please refill inventory.`;
+
+  await Notification.insertMany(
+    admins.map((admin) => ({
+      dealId: deal._id,
+      message,
+      fromStage: normalizeDealStage(deal.stage || "need_analysis"),
+      toStage: normalizeDealStage(deal.stage || "need_analysis"),
+      changedBy: changedById,
+      changedByName,
+      recipients: [admin._id],
+      isRead: false,
+    }))
+  );
+  console.log(`Low-stock YES notification sent to ${admins.length} admin(s) for deal ${deal._id}`);
+};
+
+const notifyCustomerWaitingForRestockToAdmins = async ({ deal, item, availableQuantity, requestedQuantity, actor = null }) => {
+  const admins = await User.find({ role: { $regex: /^admin$/i } }).select("_id");
+  if (admins.length === 0 || !deal?._id) {
+    return;
+  }
+
+  const itemName =
+    String(item?.name || item?.sku || "").trim() ||
+    String(deal?.product?.name || deal?.product?.sku || "").trim() ||
+    "Product";
+  const companyName = String(deal?.company || "").trim() || "-";
+  const customerName =
+    String(deal?.contact || "").trim() ||
+    String(deal?.firstName || "").trim() ||
+    String(deal?.name || "").trim() ||
+    "Customer";
+  const emailText = String(deal?.email || "").trim() || "-";
+  const phoneText = String(deal?.phone || deal?.mobile || "").trim() || "-";
+  const availableText = Number.isFinite(Number(availableQuantity)) ? Number(availableQuantity) : 0;
+  const requestedText = Number.isFinite(Number(requestedQuantity)) ? Number(requestedQuantity) : 0;
+  let changedById = actor?._id || deal?.assignedTo || admins[0]?._id;
+  let changedByName = actor?.name || actor?.username || "Employee";
+
+  if (!actor && deal?.assignedTo) {
+    const assignedEmployee = await User.findById(deal.assignedTo).select("_id name username role").lean();
+    if (assignedEmployee?._id) {
+      changedById = assignedEmployee._id;
+      const employeeName = assignedEmployee.name || assignedEmployee.username || "Employee";
+      const employeeRole = String(assignedEmployee.role || "EMPLOYEE").toUpperCase();
+      changedByName = `${employeeName} (${employeeRole})`;
+    }
+  }
+
+  if (!changedById) {
+    return;
+  }
+
+  const message =
+    `Need Analysis - Wait for refill. Customer confirmed waiting for restock. Product: ${itemName}. ` +
+    `Requested: ${requestedText}. Available: ${availableText}. ` +
+    `Customer: ${customerName}. Company: ${companyName}. Email: ${emailText}. Phone: ${phoneText}. ` +
+    `Updated by employee: ${changedByName}. Please refill inventory.`;
+
+  await Notification.insertMany(
+    admins.map((admin) => ({
+      dealId: deal._id,
+      message,
+      fromStage: normalizeDealStage(deal.stage || "need_analysis"),
+      toStage: normalizeDealStage(deal.stage || "need_analysis"),
+      changedBy: changedById,
+      changedByName,
+      recipients: [admin._id],
+      isRead: false,
+    }))
+  );
 };
 
 const validateCreateDealInput = (payload) => {
@@ -950,6 +1103,16 @@ router.post("/", verifyToken, async (req, res) => {
     deal = await Deal.create(normalizedDealPayload);
     createdDeal = deal;
 
+    if (lowStockOnCreate) {
+      await notifyLowStockToAdmins({
+        deal,
+        item: resolvedItem,
+        availableQuantity,
+        requestedQuantity,
+        actor: req.user,
+      });
+    }
+
     if (!forceLostOnCreate && derived.status === "Active" && normalizeDealStage(finalStage) === "won" && itemType === "product") {
       const wonValidationError = validateWonDealAgainstItem({
         item: resolvedItem,
@@ -1158,6 +1321,14 @@ const updateDealHandler = async (req, res) => {
           return res.status(400).json({ message: "Quantity is required when moving a product deal to Proposal stage" });
         }
         if (Number.isFinite(availableQuantity) && nextQuantity > availableQuantity) {
+          await markDealWaitingForRestock(req.deal._id);
+          await notifyLowStockToAdmins({
+            deal: req.deal,
+            item: itemForValidation,
+            availableQuantity,
+            requestedQuantity: nextQuantity,
+            actor: req.user,
+          });
           await notifyLowStockToCustomer({
             req,
             deal: req.deal,
@@ -1172,6 +1343,7 @@ const updateDealHandler = async (req, res) => {
           });
         }
         updates.quantity = nextQuantity;
+        updates.waitingForRestock = false;
       } else if (itemType === "service") {
         const nextBillingCycle = Object.prototype.hasOwnProperty.call(updates, "billingCycle")
           ? normalizeBillingCycle(updates.billingCycle)
@@ -1321,7 +1493,7 @@ const updateDealHandler = async (req, res) => {
         }
       }
       // Always notify admins (find all ADMIN users)
-      const admins = await User.find({ role: 'ADMIN' });
+      const admins = await User.find({ role: { $regex: /^admin$/i } });
       recipients.push(...admins.map(a => a._id));
       
       if (recipients.length > 0) {
@@ -1375,6 +1547,41 @@ router.put("/:id/stage", verifyToken, permitDealAccess(), async (req, res) => {
   return updateDealHandler(req, res);
 });
 
+router.put("/:id/waiting-restock", verifyToken, permitDealAccess(), async (req, res) => {
+  try {
+    const deal = await Deal.findById(req.params.id)
+      .populate("product", "name sku stock quantity")
+      .populate("assignedTo", "_id name username role")
+      .lean();
+
+    if (!deal) {
+      return res.status(404).json({ message: "Deal not found" });
+    }
+
+    await markDealWaitingForRestock(deal._id);
+
+    const item = deal.product || null;
+    const requestedQuantity = Number(req.body?.requestedQuantity ?? deal.quantity ?? 0);
+    const availableQuantity = Number(req.body?.availableQuantity ?? item?.stock ?? item?.quantity ?? 0);
+
+    await notifyCustomerWaitingForRestockToAdmins({
+      deal,
+      item,
+      availableQuantity,
+      requestedQuantity,
+      actor: req.user,
+    });
+
+    return res.json({
+      message: "Deal marked as waiting for restock and admin notified",
+      dealId: deal._id,
+    });
+  } catch (err) {
+    console.error("waiting-restock update error:", err);
+    return res.status(500).json({ message: err.message || "Failed to mark waiting for restock" });
+  }
+});
+
 router.get("/stock-response", async (req, res) => {
   const action = String(req.query.action || "").trim().toLowerCase();
   const token = String(req.query.token || "").trim();
@@ -1405,6 +1612,18 @@ router.get("/stock-response", async (req, res) => {
     }
 
     if (action === "yes") {
+      await markDealWaitingForRestock(deal._id);
+
+      const item = await resolveDealItem(deal.product);
+      const requestedQuantity = Number(deal.quantity || 0);
+      const availableQuantity = Number(item?.stock ?? item?.quantity ?? deal?.product?.stock ?? deal?.product?.quantity ?? 0);
+      await notifyCustomerWaitingForRestockToAdmins({
+        deal,
+        item,
+        availableQuantity,
+        requestedQuantity,
+      });
+
       const openActivities = await Activity.find({
         "relatedTo.recordType": "Deal",
         "relatedTo.recordId": deal._id,
