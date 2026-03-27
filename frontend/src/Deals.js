@@ -97,6 +97,7 @@ const normalizeDeal = (deal) => {
     stage,
     status,
     reason,
+    waitingForRestock: Boolean(deal.waitingForRestock),
     company: String(deal.company || deal.customerId?.company || "").trim(),
     contact: String(deal.contact || deal.customerId?.name || "").trim(),
     email: String(deal.email || deal.customerId?.email || "").trim(),
@@ -139,6 +140,22 @@ function Deals() {
   const [showCreateMenu, setShowCreateMenu] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
   const [showExportModal, setShowExportModal] = useState(false);
+
+  const getWaitingForRestockNote = (deal) => {
+    if (deal?.waitingForRestock) {
+      return "WAITING FOR RESTOCK";
+    }
+
+    const noteSources = [
+      String(deal?.nextStep || "").trim(),
+      String(deal?.description || "").trim(),
+      String(deal?.reason || "").trim(),
+    ].filter(Boolean);
+
+    return noteSources.some((value) => /waiting for restock/i.test(value))
+      ? "WAITING FOR RESTOCK"
+      : "";
+  };
   const [showFilterModal, setShowFilterModal] = useState(false);
   const [showViewDropdown, setShowViewDropdown] = useState(false);
   const [importFileName, setImportFileName] = useState("");
@@ -1870,6 +1887,9 @@ ET`;
                       {deal.status === "Inactive" && (
                         <div className="deal-reason-text">Reason: {deal.reason || "Not provided"}</div>
                       )}
+                      {deal.stage === "need_analysis" && getWaitingForRestockNote(deal) ? (
+                        <div className="deal-waiting-note">{getWaitingForRestockNote(deal)}</div>
+                      ) : null}
                       <div className="card-company-zoho">{deal.company || "-"}</div>
                       <div className="card-detail">{deal.contact || "-"}</div>
                       <div className="card-detail">{deal.email || "-"}</div>

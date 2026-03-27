@@ -20,6 +20,13 @@ import "./Dashboard.css";
 import Sidebar from "./Sidebar";
 
 function Dashboard() {
+  const formatInr = (value) =>
+    new Intl.NumberFormat("en-IN", {
+      style: "currency",
+      currency: "INR",
+      maximumFractionDigits: 0,
+    }).format(Number(value || 0));
+
   const getAssignmentStatusClass = (value) => {
     const status = String(value || "").toLowerCase();
     if (["new", "contacted", "qualified", "proposal", "lost", "converted"].includes(status)) {
@@ -408,105 +415,14 @@ function Dashboard() {
                 <button
                   type="button"
                   className="dashboard-notification-btn"
-                  onClick={() => setShowNotifications((prev) => !prev)}
-                  title="Notifications"
+                  onClick={() => navigate("/notifications")}
+                  title="Open Notifications"
                 >
                   {"\u{1F514}"}
                   {unreadCount > 0 && (
                     <span className="dashboard-notification-badge">{unreadCount > 99 ? "99+" : unreadCount}</span>
                   )}
                 </button>
-                {showNotifications && (
-                  <div className="dashboard-notification-dropdown">
-                    <div className="dashboard-notification-header">
-                      <h4>Notifications ({unreadCount})</h4>
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          if (notifications.some((item) => !item.isRead)) {
-                            const unreadIds = notifications.filter((item) => !item.isRead).map((item) => item._id);
-                            try {
-                              const token = localStorage.getItem("token");
-                              await axios.patch(
-                                `http://localhost:5000/api/deals/notifications/${unreadIds.join(",")}/read`,
-                                {},
-                                { headers: { Authorization: `Bearer ${token}` } }
-                              );
-                              fetchNotifications();
-                            } catch (err) {
-                              console.error("Dashboard mark-all-read error:", err);
-                            }
-                          }
-                        }}
-                      >
-                        Mark all read
-                      </button>
-                    </div>
-                    {notificationsLoading ? (
-                      <div className="dashboard-notification-empty">Loading...</div>
-                    ) : notifications.length === 0 && activityNotifications.length === 0 ? (
-                      <div className="dashboard-notification-empty">No notifications</div>
-                    ) : (
-                      <div className="dashboard-notification-list">
-                        {activityNotifications.slice(0, 6).map((notif) => (
-                          <div key={notif._id} className="dashboard-notification-item unread reminder">
-                            <div className="dashboard-notification-message">
-                              <span className="dashboard-notification-pill">Reminder</span>
-                              {notif.title}
-                              {notif.relatedTo?.recordName && (
-                                <span>Lead: {notif.relatedTo.recordName}</span>
-                              )}
-                            </div>
-                            <div className="dashboard-notification-time">
-                              {new Date(notif.reminderTime).toLocaleString()}
-                            </div>
-                          </div>
-                        ))}
-
-                        {notifications.slice(0, 10).map((notif) => (
-                          <div
-                            key={notif._id}
-                            className={`dashboard-notification-item ${notif.isRead ? "read" : "unread"}`}
-                            onClick={async () => {
-                              if (!notif.isRead) {
-                                try {
-                                  const token = localStorage.getItem("token");
-                                  await axios.patch(
-                                    `http://localhost:5000/api/deals/notifications/${notif._id}/read`,
-                                    {},
-                                    { headers: { Authorization: `Bearer ${token}` } }
-                                  );
-                                  fetchNotifications();
-                                } catch (err) {
-                                  console.error("Dashboard mark-read error:", err);
-                                }
-                              }
-                            }}
-                          >
-                            <div className="dashboard-notification-message">
-                              {notif.message}
-                              {notif.dealId?.name && (
-                                <button
-                                  type="button"
-                                  className="dashboard-notification-link"
-                                  onClick={(event) => {
-                                    event.stopPropagation();
-                                    window.location.href = "/deals";
-                                  }}
-                                >
-                                  Deal: {notif.dealId.name}
-                                </button>
-                              )}
-                            </div>
-                            <div className="dashboard-notification-time">
-                              {new Date(notif.createdAt).toLocaleString()}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
               </div>
             </div>
           </div>
@@ -603,6 +519,23 @@ function Dashboard() {
             <div className="stat-card">
               <h4>Conversion Rate</h4>
               <h2>{stats?.conversionRate || "32"}%</h2>
+            </div>
+
+            <div className="stat-card">
+              <h4>Total Vendors</h4>
+              <h2>{stats?.totalVendors || "0"}</h2>
+            </div>
+
+            <div className="stat-card">
+              <h4>Total Payables</h4>
+              <h2>{formatInr(stats?.totalPayables || 0)}</h2>
+            </div>
+
+            <div className="stat-card">
+              <h4>Overdue Bills</h4>
+              <h2 style={{ color: (stats?.overdueBills || 0) > 0 ? "#dc2626" : "#17a2b8" }}>
+                {stats?.overdueBills || 0}
+              </h2>
             </div>
           </div>
 
