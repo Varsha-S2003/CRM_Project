@@ -3,6 +3,7 @@ const router = express.Router();
 const { verifyToken } = require("../middleware/authMiddleware");
 const Customer = require("../models/customer");
 const Deal = require("../models/deal");
+const Lead = require("../models/lead");
 
 const normalizeDealStage = (stage) => {
   const value = String(stage || "").trim().toLowerCase().replace(/\s+/g, "_");
@@ -83,7 +84,58 @@ router.get("/", verifyToken, async (req, res) => {
       return res.status(400).json({ message: "status must be Active or Inactive" });
     }
 
-    const customers = await Customer.find()
+    const role = String(req.user?.role || "").toUpperCase();
+    let customerFilter = {};
+
+    if (role === "MANAGER") {
+      const assignedLeadIds = await Lead.find({
+        $or: [
+          {
+            $and: [
+              { assignedTo: req.user._id },
+              {
+                $or: [
+                  { assignedByRole: "ADMIN" },
+                  { assignedByRole: { $exists: false } },
+                  { assignedByRole: null },
+                  { assignedByRole: "" },
+                ],
+              },
+            ],
+          },
+          {
+            $and: [
+              { assignedBy: req.user._id },
+              { assignedByRole: "MANAGER" },
+            ],
+          },
+        ],
+      }).distinct("_id");
+      const customerIdsFromDeals = await Deal.find({
+        sourceLeadId: { $in: assignedLeadIds },
+      }).distinct("customerId");
+
+      customerFilter = {
+        $or: [
+          { leadId: { $in: assignedLeadIds } },
+          { _id: { $in: customerIdsFromDeals.filter(Boolean) } },
+        ],
+      };
+    } else if (role === "EMPLOYEE") {
+      const assignedLeadIds = await Lead.find({ assignedTo: req.user._id }).distinct("_id");
+      const customerIdsFromDeals = await Deal.find({
+        sourceLeadId: { $in: assignedLeadIds },
+      }).distinct("customerId");
+
+      customerFilter = {
+        $or: [
+          { leadId: { $in: assignedLeadIds } },
+          { _id: { $in: customerIdsFromDeals.filter(Boolean) } },
+        ],
+      };
+    }
+
+    const customers = await Customer.find(customerFilter)
       .populate("leadId", "name email phone status source")
       .populate("product", "name sku category price type status serviceType billingCycle")
       .sort({ createdAt: -1 });

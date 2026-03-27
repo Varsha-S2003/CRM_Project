@@ -42,6 +42,8 @@ function buildResponseForRole(user, appSettings) {
         organization: {
           companyName: appSettings.companyName,
           supportEmail: appSettings.supportEmail,
+          frontendUrl: appSettings.frontendUrl || "http://localhost:3000",
+          backendUrl: appSettings.backendUrl || "http://localhost:5000",
           primaryColor: appSettings.branding?.primaryColor || "#4f46e5",
           accentColor: appSettings.branding?.accentColor || "#22c55e",
           compactSidebar: Boolean(appSettings.branding?.compactSidebar)
@@ -154,6 +156,9 @@ router.put("/", verifyToken, async (req, res) => {
       // allow admin to configure frontend URL here as well
       if (typeof organization.frontendUrl === "string" && organization.frontendUrl.trim()) {
         appSettings.frontendUrl = organization.frontendUrl.trim();
+      }
+      if (typeof organization.backendUrl === "string" && organization.backendUrl.trim()) {
+        appSettings.backendUrl = organization.backendUrl.trim();
       }
       // email settings come from organization.email sub‑object; overwrite individual fields
       if (organization.email && typeof organization.email === "object") {

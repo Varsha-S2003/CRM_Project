@@ -32,7 +32,8 @@ const appSettingsSchema = new mongoose.Schema(
       }
     },
     // base URL of the front‑end application (used when generating reset links)
-    frontendUrl: { type: String, default: "http://localhost:3000" }
+    frontendUrl: { type: String, default: "http://localhost:3000" },
+    backendUrl: { type: String, default: "http://localhost:5000" }
   },
   { timestamps: true }
 );

@@ -319,6 +319,24 @@ export default function Settings() {
                       />
                     </label>
                     <label className="settings-field">
+                      <span>Frontend URL</span>
+                      <input
+                        type="text"
+                        value={formData.sections.organization.frontendUrl || ""}
+                        onChange={(e) => updateSection("organization", "frontendUrl", e.target.value)}
+                        placeholder="http://localhost:3000"
+                      />
+                    </label>
+                    <label className="settings-field">
+                      <span>Backend URL</span>
+                      <input
+                        type="text"
+                        value={formData.sections.organization.backendUrl || ""}
+                        onChange={(e) => updateSection("organization", "backendUrl", e.target.value)}
+                        placeholder="http://localhost:5000"
+                      />
+                    </label>
+                    <label className="settings-field">
                       <span>Primary Color</span>
                       <input
                         type="text"

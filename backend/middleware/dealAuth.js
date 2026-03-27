@@ -1,4 +1,5 @@
 const User = require("../models/user");
+const Lead = require("../models/lead");
 
 // Recursive function to get all team member IDs under a manager
 async function getTeamMembers(userId, visited = new Set()) {
@@ -21,6 +22,34 @@ async function getTeamMembers(userId, visited = new Set()) {
   return allTeam;
 }
 
+async function getManagerLeadScopeIds(managerId) {
+  const leads = await Lead.find({
+    $or: [
+      {
+        $and: [
+          { assignedTo: managerId },
+          {
+            $or: [
+              { assignedByRole: "ADMIN" },
+              { assignedByRole: { $exists: false } },
+              { assignedByRole: null },
+              { assignedByRole: "" },
+            ],
+          },
+        ],
+      },
+      {
+        $and: [
+          { assignedBy: managerId },
+          { assignedByRole: "MANAGER" },
+        ],
+      },
+    ],
+  }).select("_id");
+
+  return leads.map((lead) => String(lead._id));
+}
+
 // Main authorization function
 async function authorizeDealAccess(reqUser, deal) {
   const userRole = reqUser.role.toUpperCase();
@@ -29,23 +58,36 @@ async function authorizeDealAccess(reqUser, deal) {
     return true; // Admin sees everything
   }
   
-  if (!deal || !deal.assignedTo) {
+  if (!deal) {
     return false;
   }
+
+  const assignedToId = deal.assignedTo?._id || deal.assignedTo;
   
   if (userRole === 'EMPLOYEE') {
-    return String(deal.assignedTo) === String(reqUser._id);
+    if (!assignedToId) return false;
+    return String(assignedToId) === String(reqUser._id);
   }
   
   if (userRole === 'MANAGER') {
     // Check if deal is assigned to me
-    if (String(deal.assignedTo) === String(reqUser._id)) {
+    if (assignedToId && String(assignedToId) === String(reqUser._id)) {
       return true;
     }
     
     // Check if deal is assigned to my team (recursive)
     const teamMemberIds = await getTeamMembers(reqUser._id);
-    return teamMemberIds.some(id => String(id) === String(deal.assignedTo));
+    if (assignedToId && teamMemberIds.some(id => String(id) === String(assignedToId))) {
+      return true;
+    }
+
+    // Managers can also access deals originating from leads in their manager scope.
+    const managerLeadIds = await getManagerLeadScopeIds(reqUser._id);
+    if (deal.sourceLeadId && managerLeadIds.includes(String(deal.sourceLeadId))) {
+      return true;
+    }
+
+    return false;
   }
   
   return false;

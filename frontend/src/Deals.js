@@ -44,7 +44,7 @@ const dealSources = ["", "Website", "Referral", "Social Media", "Email Campaign"
 
 const allowedTransitions = {
   "qualification": ["need_analysis", "lost"],
-  "need_analysis": ["value_proposition", "qualification", "lost"],
+  "need_analysis": ["value_proposition", "proposal_price_quote", "qualification", "lost"],
   "value_proposition": ["proposal_price_quote", "need_analysis", "lost"],
   "proposal_price_quote": ["negotiate", "value_proposition", "lost"],
   "negotiate": ["won", "proposal_price_quote", "lost"],
@@ -97,6 +97,10 @@ const normalizeDeal = (deal) => {
     stage,
     status,
     reason,
+    company: String(deal.company || deal.customerId?.company || "").trim(),
+    contact: String(deal.contact || deal.customerId?.name || "").trim(),
+    email: String(deal.email || deal.customerId?.email || "").trim(),
+    phone: String(deal.phone || deal.customerId?.phone || "").trim(),
     probability: probability === null || Number.isNaN(probability) ? null : probability,
     expectedRevenue,
     closingDate: deal.closingDate ? new Date(deal.closingDate).toISOString().slice(0, 10) : "",
@@ -808,6 +812,11 @@ function Deals() {
     }
 
     if (currentStage === "qualification" && stageId === "need_analysis") {
+      updateStage(dealId, stageId, "");
+      return;
+    }
+
+    if (currentStage === "need_analysis" && stageId === "proposal_price_quote") {
       const currentItem = currentDeal.product;
       const currentItemType = getItemType(currentItem);
       setPendingQualificationAdvance({
@@ -836,7 +845,7 @@ function Deals() {
 
     if (itemType === "product") {
       if (quantityValue === null || quantityValue <= 0) {
-        alert("Quantity is required when moving a product deal to Need Analysis.");
+        alert("Quantity is required when moving a product deal to Proposal stage.");
         return;
       }
       if (Number.isFinite(Number(pendingQualificationAdvance.availableStock)) && quantityValue > Number(pendingQualificationAdvance.availableStock)) {
@@ -851,7 +860,7 @@ function Deals() {
 
     if (itemType === "service") {
       if (!billingCycleValue) {
-        alert("Plan / Billing Cycle is required when moving a service deal to Need Analysis.");
+        alert("Plan / Billing Cycle is required when moving a service deal to Proposal stage.");
         return;
       }
     }

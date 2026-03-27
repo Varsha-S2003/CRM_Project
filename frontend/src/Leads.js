@@ -3,7 +3,6 @@ import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import "./Leads.css";
 import Sidebar from "./Sidebar";
-import RecordActivityPanel from "./RecordActivityPanel";
 import FilterBuilder from "./components/FilterBuilder";
 import { DEFAULT_COLUMNS } from "./utils/viewsUtils";
 
@@ -76,8 +75,14 @@ function Leads() {
     country: "",
   });
   const [newLeadErrors, setNewLeadErrors] = useState({});
+  const [cardAssignSelection, setCardAssignSelection] = useState({});
   // compute role flags for UI
   const role = localStorage.getItem("role")?.toUpperCase();
+  const currentUserId = localStorage.getItem("userId") || "";
+  const currentUserName =
+    localStorage.getItem("name") ||
+    localStorage.getItem("username") ||
+    "Current User";
   const isAdmin = role === "ADMIN";
   const isManager = role === "MANAGER";
 
@@ -85,7 +90,7 @@ function Leads() {
 
   const getEntityId = (value) => {
     if (!value) return "";
-    if (typeof value === "object") return String(value._id || "");
+    if (typeof value === "object") return String(value._id || value.id || value.userId || "");
     return String(value);
   };
 
@@ -94,6 +99,27 @@ function Leads() {
     const primary = user.name || user.username || user.email || user.employee_id || "User";
     const roleLabel = String(user.role || "").toUpperCase();
     return roleLabel ? `${primary} (${roleLabel})` : primary;
+  };
+
+  const getAssignedUserLabel = (assignedTo) => {
+    const assignedId = getEntityId(assignedTo);
+    if (!assignedId) return "";
+
+    if (assignedTo && typeof assignedTo === "object") {
+      return getUserDisplayLabel(assignedTo);
+    }
+
+    const fromDirectory = employees.find((employee) => String(employee._id) === String(assignedId));
+    if (fromDirectory) {
+      return getUserDisplayLabel(fromDirectory);
+    }
+
+    if (currentUserId && String(currentUserId) === String(assignedId)) {
+      const roleLabel = String(role || "").toUpperCase();
+      return roleLabel ? `${currentUserName} (${roleLabel})` : currentUserName;
+    }
+
+    return "";
   };
 
   // 🆕 VIEWS FUNCTIONS 🆕
@@ -215,7 +241,6 @@ function Leads() {
     { id: "new", name: "New", color: "#2563eb" },
     { id: "contacted", name: "Contacted", color: "#0ea5e9" },
     { id: "qualified", name: "Qualified", color: "#6366f1" },
-    { id: "proposal", name: "Proposal", color: "#0d9488" },
     { id: "converted", name: "Converted", color: "#10b981" },
     { id: "lost", name: "Lost", color: "#ef4444" },
   ];
@@ -263,9 +288,7 @@ function Leads() {
       key: "assignedTo",
       label: "Assigned To",
       getValue: (lead) => {
-        const assignedToId = getEntityId(lead.assignedTo);
-        const assignedUser = employees.find((employee) => String(employee._id) === assignedToId);
-        return assignedUser ? getUserDisplayLabel(assignedUser) : "Unassigned";
+        return getAssignedUserLabel(lead.assignedTo) || "Unassigned";
       },
     },
     { key: "createdAt", label: "Added On", getValue: (lead) => formatAddedDate(lead.createdAt) },
@@ -625,7 +648,7 @@ function Leads() {
       annualRevenue: row.annualrevenue || "",
       employeeCount: row.employeecount || row.noofemployees || "",
       source: row.source || "",
-      status: validStatuses.has(rawStatus) ? rawStatus : rawStatus === "proposal_sent" ? "proposal" : "new",
+      status: validStatuses.has(rawStatus) ? rawStatus : rawStatus === "proposal_sent" ? "qualified" : "new",
       emailOpened: row.emailopened || 0,
       websiteVisits: row.websitevisits || 0,
       formSubmissions: row.formsubmissions || 0,
@@ -986,14 +1009,35 @@ function Leads() {
         { headers: { Authorization: `Bearer ${token}` } }
       );
       const updatedLead = res.data;
-      if (updatedLead?._id) {
-        setLeads((prev) => prev.map((lead) => (lead._id === updatedLead._id ? updatedLead : lead)));
-      }
-      fetchLeads();
-      fetchStats();
+      const assignedUser = userId
+        ? employees.find((employee) => String(employee._id) === String(userId)) || { _id: userId }
+        : null;
+
+      setLeads((prev) =>
+        prev.map((lead) => {
+          if (lead._id !== leadId) return lead;
+
+          const nextLead = updatedLead?._id ? { ...lead, ...updatedLead } : { ...lead };
+
+          if (!getEntityId(nextLead.assignedTo) || String(getEntityId(nextLead.assignedTo)) !== String(userId || "")) {
+            nextLead.assignedTo = assignedUser;
+          }
+
+          return nextLead;
+        })
+      );
+
+      await Promise.all([fetchLeads(), fetchStats()]);
       // update selectedLead assignment locally if it's open
-      if (selectedLead && selectedLead._id === leadId && updatedLead?._id) {
-        setSelectedLead(updatedLead);
+      if (selectedLead && selectedLead._id === leadId) {
+        setSelectedLead((prev) => {
+          if (!prev || prev._id !== leadId) return prev;
+          const nextLead = updatedLead?._id ? { ...prev, ...updatedLead } : { ...prev };
+          if (!getEntityId(nextLead.assignedTo) || String(getEntityId(nextLead.assignedTo)) !== String(userId || "")) {
+            nextLead.assignedTo = assignedUser;
+          }
+          return nextLead;
+        });
       }
     } catch (err) {
       console.error(err);
@@ -1274,8 +1318,8 @@ function Leads() {
 
   const getLeadsByStage = (stageId) => {
     return leads.filter((lead) => {
-      if (stageId === "proposal") {
-        return ["proposal", "proposal_sent"].includes(lead.status);
+      if (stageId === "qualified") {
+        return ["qualified", "proposal", "proposal_sent"].includes(lead.status);
       }
       return lead.status === stageId;
     });
@@ -1328,8 +1372,8 @@ function Leads() {
       : leads;
 
     if (exportView === "all") return matchingLeads;
-    if (exportView === "proposal") {
-      return matchingLeads.filter((lead) => ["proposal", "proposal_sent"].includes(lead.status));
+    if (exportView === "qualified") {
+      return matchingLeads.filter((lead) => ["qualified", "proposal", "proposal_sent"].includes(lead.status));
     }
     return matchingLeads.filter((lead) => lead.status === exportView);
   };
@@ -1952,7 +1996,12 @@ ET`;
                   <span className="lead-count-zoho">{getLeadsByStage(stage.id).length}</span>
                 </div>
                 <div className="column-content-zoho">
-                  {getLeadsByStage(stage.id).map((lead) => (
+                  {getLeadsByStage(stage.id).map((lead) => {
+                    const assignedToId = getEntityId(lead.assignedTo);
+                    const selectedAssignTarget = cardAssignSelection[lead._id] ?? assignedToId;
+                    const assignedDisplayName = getAssignedUserLabel(lead.assignedTo);
+
+                    return (
                     <div
                       key={lead._id}
                       className="kanban-card-zoho"
@@ -2002,8 +2051,49 @@ ET`;
                           <span className="source-text">{lead.source}</span>
                         </div>
                       )}
+
+                      {(isAdmin || isManager) && assignableUsers.length > 0 && (
+                        <div className="card-assign-inline" onClick={(event) => event.stopPropagation()}>
+                          <div className="card-assigned-name">
+                            Assigned: {assignedDisplayName || "Unassigned"}
+                          </div>
+                          <select
+                            className="card-assign-select"
+                            value={selectedAssignTarget}
+                            onChange={(event) => {
+                              setCardAssignSelection((prev) => ({
+                                ...prev,
+                                [lead._id]: event.target.value,
+                              }));
+                            }}
+                          >
+                            <option value="">Unassigned</option>
+                            {assignableUsers.map((emp) => (
+                              <option key={emp._id} value={emp._id}>
+                                {getUserDisplayLabel(emp)}
+                              </option>
+                            ))}
+                          </select>
+                          <button
+                            type="button"
+                            className="card-assign-btn"
+                            disabled={selectedAssignTarget === assignedToId}
+                            onClick={async () => {
+                              await handleAssign(lead._id, selectedAssignTarget);
+                              setCardAssignSelection((prev) => {
+                                const next = { ...prev };
+                                delete next[lead._id];
+                                return next;
+                              });
+                            }}
+                          >
+                            Assign
+                          </button>
+                        </div>
+                      )}
                     </div>
-                  ))}
+                  );
+                  })}
                 </div>
               </div>
             ))}
@@ -2893,37 +2983,13 @@ ET`;
                 </div>
               )}
 
-              <div className="convert-section">
-                <button
-                  className="btn-convert-lead"
-                  onClick={handleConvertLead}
-                  disabled={selectedLead.isConverted || selectedLead.status === "converted"}
-                >
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M17 14V2h-5M15 2v14"></path>
-                    <path d="M15 10h4v4h-4V10z"></path>
-                    <path d="M7 10H3v4h4v-4z"></path>
-                    <path d="M7 22H3v-4h4v4z"></path>
-                    <path d="M15 22h4v-4h-4v4z"></path>
-                  </svg>
-                  {selectedLead.isConverted || selectedLead.status === "converted" ? "Already Converted" : "Convert Lead"}
-                </button>
-              </div>
-
-              <RecordActivityPanel
-                recordType="Lead"
-                recordId={selectedLead._id}
-                recordName={selectedLead.name}
-              />
-              {isAdmin && (
-                <button className="delete-btn-zoho" onClick={() => handleDeleteLead(selectedLead._id)}>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <polyline points="3 6 5 6 21 6"></polyline>
-                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                  </svg>
-                  Delete Lead
-                </button>
-              )}
+              <button className="delete-btn-zoho" onClick={() => handleDeleteLead(selectedLead._id)}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <polyline points="3 6 5 6 21 6"></polyline>
+                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                </svg>
+                Delete Lead
+              </button>
             </div>
           </div>
         )}

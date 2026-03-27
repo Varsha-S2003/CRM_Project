@@ -166,7 +166,7 @@ function Sidebar() {
               <span>Inventory</span>
             </a>
           )}
-          {canSee(["ADMIN","MANAGER"]) && (
+          {canSee(["ADMIN","MANAGER","EMPLOYEE"]) && (
             <a
               href="/"
               onClick={(e) => handleNav("/customers", e)}

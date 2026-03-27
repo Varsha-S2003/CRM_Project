@@ -10,20 +10,48 @@ const STATUS_FILTERS = [
   { key: "new", label: "New" },
   { key: "contacted", label: "Contacted" },
   { key: "qualified", label: "Qualified" },
-  { key: "proposal", label: "Proposal" },
+  { key: "converted", label: "Converted" },
   { key: "lost", label: "Lost" },
 ];
 const KANBAN_STATUS_COLUMNS = STATUS_FILTERS.filter((item) => item.key !== "all");
+const DEAL_STAGE_FILTERS = [
+  { key: "all", label: "All" },
+  { key: "qualification", label: "Qualification" },
+  { key: "need_analysis", label: "Need Analysis" },
+  { key: "value_proposition", label: "Value Proposition" },
+  { key: "proposal_price_quote", label: "Proposal / Quote" },
+  { key: "negotiate", label: "Negotiate" },
+  { key: "won", label: "Closed Won" },
+  { key: "lost", label: "Closed Lost" },
+];
+const DEAL_STAGE_COLUMNS = DEAL_STAGE_FILTERS.filter((item) => item.key !== "all");
+const REQUEST_TYPE_FILTERS = [
+  { key: "lead", label: "Lead Requests" },
+  { key: "deal", label: "Deal Requests" },
+  { key: "contact", label: "Contacts" },
+];
+const BILLING_CYCLE_OPTIONS = [
+  { value: "monthly", label: "Monthly" },
+  { value: "6_months", label: "6 Months" },
+  { value: "yearly", label: "Yearly" },
+];
 
 const normalizeStatus = (value) => String(value || "").trim().toLowerCase();
 
-const getStatusClassName = (value) => {
-  const status = normalizeStatus(value);
-  if (["new", "contacted", "qualified", "proposal", "proposal_sent", "lost"].includes(status)) return status;
-  return "unknown";
+const normalizeDealStage = (value) => {
+  const stage = String(value || "").trim().toLowerCase().replace(/\s+/g, "_");
+  if (stage === "proposal") return "proposal_price_quote";
+  if (stage === "closed_won") return "won";
+  if (stage === "closed_lost") return "lost";
+  return stage;
 };
 
-const PROPOSAL_REJECT_REASONS = ["Too Expensive", "Not Interested", "Competitor Chosen", "No Response"];
+const getStatusClassName = (value) => {
+  const status = normalizeStatus(value);
+  if (["new", "contacted", "qualified", "proposal", "proposal_sent", "converted", "lost"].includes(status)) return status;
+  if (["qualification", "need_analysis", "value_proposition", "proposal_price_quote", "negotiate", "won"].includes(status)) return status;
+  return "unknown";
+};
 
 function LeadRequests() {
   const navigate = useNavigate();
@@ -36,7 +64,17 @@ function LeadRequests() {
   const [assignableEmployees, setAssignableEmployees] = useState([]);
   const [assignSelectionByLead, setAssignSelectionByLead] = useState({});
   const [assigningLeadIds, setAssigningLeadIds] = useState({});
+  const [convertingLeadIds, setConvertingLeadIds] = useState({});
   const [activeStatus, setActiveStatus] = useState("all");
+  const [activeDealStage, setActiveDealStage] = useState("all");
+  const [activeRequestType, setActiveRequestType] = useState("lead");
+  const [dealRequests, setDealRequests] = useState([]);
+  const [contactRequests, setContactRequests] = useState([]);
+  const [movingDealIds, setMovingDealIds] = useState({});
+  const [showDealAdvanceModal, setShowDealAdvanceModal] = useState(false);
+  const [pendingDealAdvance, setPendingDealAdvance] = useState(null);
+  const [dealAdvanceForm, setDealAdvanceForm] = useState({ quantity: "", billingCycle: "" });
+  const [auxiliaryLoading, setAuxiliaryLoading] = useState(false);
 
   const fetchAssignmentDashboard = useCallback(async () => {
     try {
@@ -109,6 +147,47 @@ function LeadRequests() {
     fetchAssignableEmployees();
   }, [isAdmin, isManager]);
 
+  const fetchAuxiliaryRequests = useCallback(async () => {
+    try {
+      const token = localStorage.getItem("token");
+      setAuxiliaryLoading(true);
+
+      const [dealRes, contactRes] = await Promise.all([
+        axios.get("http://localhost:5000/api/deals", {
+          headers: { Authorization: `Bearer ${token}` },
+        }),
+        axios.get("http://localhost:5000/api/customers", {
+          headers: { Authorization: `Bearer ${token}` },
+        }),
+      ]);
+
+      setDealRequests(Array.isArray(dealRes.data) ? dealRes.data : []);
+      setContactRequests(Array.isArray(contactRes.data) ? contactRes.data : []);
+    } catch (err) {
+      console.error("Requests fetch error:", err);
+      setDealRequests([]);
+      setContactRequests([]);
+    } finally {
+      setAuxiliaryLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeRequestType === "lead") return;
+    fetchAuxiliaryRequests();
+  }, [activeRequestType, fetchAuxiliaryRequests]);
+
+  useEffect(() => {
+    if (activeRequestType !== "deal") return undefined;
+
+    const handleRefreshOnFocus = () => {
+      fetchAuxiliaryRequests();
+    };
+
+    window.addEventListener("focus", handleRefreshOnFocus);
+    return () => window.removeEventListener("focus", handleRefreshOnFocus);
+  }, [activeRequestType, fetchAuxiliaryRequests]);
+
   const handleManagerAssignLead = useCallback(
     async (leadId) => {
       const selectedEmployeeId = assignSelectionByLead[leadId];
@@ -171,8 +250,8 @@ function LeadRequests() {
     const counts = requestItems.reduce(
       (acc, item) => {
         const key = normalizeStatus(item.status);
-        if (key === "proposal_sent") {
-          acc.proposal += 1;
+        if (key === "proposal" || key === "proposal_sent") {
+          acc.qualified += 1;
           return acc;
         }
         if (acc[key] === undefined) return acc;
@@ -184,7 +263,7 @@ function LeadRequests() {
         new: 0,
         contacted: 0,
         qualified: 0,
-        proposal: 0,
+        converted: 0,
         lost: 0,
       }
     );
@@ -194,8 +273,8 @@ function LeadRequests() {
 
   const filteredItems = useMemo(() => {
     if (activeStatus === "all") return requestItems;
-    if (activeStatus === "proposal") {
-      return requestItems.filter((item) => ["proposal", "proposal_sent"].includes(normalizeStatus(item.status)));
+    if (activeStatus === "qualified") {
+      return requestItems.filter((item) => ["qualified", "proposal", "proposal_sent"].includes(normalizeStatus(item.status)));
     }
     return requestItems.filter((item) => normalizeStatus(item.status) === activeStatus);
   }, [activeStatus, requestItems]);
@@ -211,14 +290,14 @@ function LeadRequests() {
       new: [],
       contacted: [],
       qualified: [],
-      proposal: [],
+      converted: [],
       lost: [],
     };
 
     filteredItems.forEach((item) => {
       const key = normalizeStatus(item.status);
-      if (key === "proposal_sent") {
-        grouped.proposal.push(item);
+      if (key === "proposal" || key === "proposal_sent") {
+        grouped.qualified.push(item);
         return;
       }
       if (grouped[key]) grouped[key].push(item);
@@ -226,6 +305,173 @@ function LeadRequests() {
 
     return grouped;
   }, [filteredItems]);
+
+  const dealStageCounts = useMemo(() => {
+    return dealRequests.reduce(
+      (acc, item) => {
+        const stage = normalizeDealStage(item.stage);
+        if (acc[stage] === undefined) return acc;
+        acc[stage] += 1;
+        return acc;
+      },
+      {
+        all: dealRequests.length,
+        qualification: 0,
+        need_analysis: 0,
+        value_proposition: 0,
+        proposal_price_quote: 0,
+        negotiate: 0,
+        won: 0,
+        lost: 0,
+      }
+    );
+  }, [dealRequests]);
+
+  const filteredDealRequests = useMemo(() => {
+    if (activeDealStage === "all") return dealRequests;
+    return dealRequests.filter((item) => normalizeDealStage(item.stage) === activeDealStage);
+  }, [activeDealStage, dealRequests]);
+
+  const visibleDealColumns = useMemo(() => {
+    if (activeDealStage === "all") return DEAL_STAGE_COLUMNS;
+    const selected = DEAL_STAGE_COLUMNS.find((item) => item.key === activeDealStage);
+    return selected ? [selected] : DEAL_STAGE_COLUMNS;
+  }, [activeDealStage]);
+
+  const dealItemsByStage = useMemo(() => {
+    const grouped = {
+      qualification: [],
+      need_analysis: [],
+      value_proposition: [],
+      proposal_price_quote: [],
+      negotiate: [],
+      won: [],
+      lost: [],
+    };
+
+    filteredDealRequests.forEach((item) => {
+      const key = normalizeDealStage(item.stage);
+      if (grouped[key]) grouped[key].push(item);
+    });
+
+    return grouped;
+  }, [filteredDealRequests]);
+
+  const moveDealStage = useCallback(async (item, targetStage, extraPayload = {}) => {
+    if (!item?._id) return;
+    if (!targetStage) return;
+
+    const stageLabels = {
+      need_analysis: "Need Analysis",
+      proposal_price_quote: "Proposal / Quote",
+    };
+    const targetLabel = stageLabels[normalizeDealStage(targetStage)] || String(targetStage || "");
+
+    try {
+      const token = localStorage.getItem("token");
+      setMovingDealIds((prev) => ({ ...prev, [item._id]: true }));
+      const res = await axios.put(
+        `http://localhost:5000/api/deals/${item._id}/stage`,
+        { stage: targetStage, ...extraPayload },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      const updatedDeal = res.data || {};
+      setDealRequests((prev) =>
+        prev.map((deal) => (String(deal._id) === String(item._id) ? { ...deal, ...updatedDeal } : deal))
+      );
+      await fetchAuxiliaryRequests();
+      setShowDealAdvanceModal(false);
+      setPendingDealAdvance(null);
+      setDealAdvanceForm({ quantity: "", billingCycle: "" });
+    } catch (err) {
+      console.error(`Failed to move deal to ${targetLabel}:`, err);
+      const errorMessage = err.response?.data?.message || `Failed to move deal to ${targetLabel}.`;
+      const isLowStockError = /low stock|insufficient stock/i.test(String(errorMessage));
+
+      if (isLowStockError) {
+        setShowDealAdvanceModal(false);
+        setPendingDealAdvance(null);
+        setDealAdvanceForm({ quantity: "", billingCycle: "" });
+        window.alert(
+          `${errorMessage}\n\nThere is not enough stock for this quantity.\n\nThe customer has been informed by email that we will follow up as soon as inventory is restocked.\n\nThe email now includes YES and NO buttons:\nYES keeps the deal in the current stage.\nNO moves the deal to Closed Lost with a reason.`
+        );
+        return;
+      }
+
+      window.alert(errorMessage);
+    } finally {
+      setMovingDealIds((prev) => ({ ...prev, [item._id]: false }));
+    }
+  }, [fetchAuxiliaryRequests]);
+
+  const openDealAdvanceModal = useCallback((item, targetStage) => {
+    const productTypeRaw =
+      typeof item?.product === "object" ? item?.product?.type : "";
+    const inferredType = String(productTypeRaw || "").toLowerCase();
+
+    const itemType = inferredType === "product" || inferredType === "service"
+      ? inferredType
+      : item?.billingCycle
+        ? "service"
+        : item?.quantity
+          ? "product"
+          : "unknown";
+    setPendingDealAdvance({
+      dealId: item?._id,
+      itemType,
+      targetStage,
+      dealName: item?.name || "Deal",
+    });
+    setDealAdvanceForm({
+      quantity: item?.quantity ?? "",
+      billingCycle: String(item?.billingCycle || "").trim(),
+    });
+    setShowDealAdvanceModal(true);
+  }, []);
+
+  const submitDealAdvance = useCallback(async () => {
+    if (!pendingDealAdvance?.dealId) return;
+
+    const currentDeal = dealRequests.find((deal) => deal._id === pendingDealAdvance.dealId);
+    if (!currentDeal) {
+      setShowDealAdvanceModal(false);
+      setPendingDealAdvance(null);
+      return;
+    }
+
+    const quantityValue = Number(dealAdvanceForm.quantity);
+    const normalizedBillingCycle = String(dealAdvanceForm.billingCycle || "").trim();
+    const itemType = pendingDealAdvance.itemType;
+    const targetStage = pendingDealAdvance.targetStage || "proposal_price_quote";
+
+    if (itemType === "product") {
+      if (!Number.isFinite(quantityValue) || quantityValue <= 0) {
+        window.alert("Quantity is required when moving a product deal to Proposal stage.");
+        return;
+      }
+
+      await moveDealStage(currentDeal, targetStage, { quantity: quantityValue });
+      return;
+    }
+
+    if (itemType === "service") {
+      if (!normalizedBillingCycle) {
+        window.alert("Plan / Billing Cycle is required when moving a service deal to Proposal stage.");
+        return;
+      }
+      await moveDealStage(currentDeal, targetStage, { billingCycle: normalizedBillingCycle });
+      return;
+    }
+
+    const fallbackPayload = {};
+    if (Number.isFinite(quantityValue) && quantityValue > 0) {
+      fallbackPayload.quantity = quantityValue;
+    }
+    if (normalizedBillingCycle) {
+      fallbackPayload.billingCycle = normalizedBillingCycle;
+    }
+    await moveDealStage(currentDeal, targetStage, fallbackPayload);
+  }, [dealAdvanceForm.billingCycle, dealAdvanceForm.quantity, dealRequests, moveDealStage, pendingDealAdvance]);
 
   const openActionPage = (item) => {
     const nextActionType = String(item.nextAction?.type || "").toLowerCase();
@@ -245,92 +491,6 @@ function LeadRequests() {
     navigate(`/activities?${params.toString()}`);
   };
 
-  const openProposalPage = (item) => {
-    const params = new URLSearchParams({
-      createProposal: "1",
-      relatedType: "Lead",
-      relatedId: String(item._id || ""),
-      relatedName: String(item.name || "Lead"),
-      relatedEmail: String(item.email || ""),
-      source: "requests",
-      returnTo: "requests",
-    });
-
-    navigate(`/activities?${params.toString()}`);
-  };
-
-  const handleAcceptProposal = useCallback(
-    async (item) => {
-      if (!item?._id) return;
-      if (normalizeStatus(item.status) !== "proposal_sent") {
-        window.alert("Only Proposal Sent leads can be accepted.");
-        return;
-      }
-
-      if (!window.confirm("Accept this proposal and convert the lead?")) {
-        return;
-      }
-
-      try {
-        const token = localStorage.getItem("token");
-        await axios.post(
-          `http://localhost:5000/api/leads/${item._id}/proposal/accept`,
-          {},
-          { headers: { Authorization: `Bearer ${token}` } }
-        );
-        await fetchAssignmentDashboard();
-        window.alert("Proposal accepted. Lead converted successfully.");
-      } catch (err) {
-        console.error(err);
-        window.alert(
-          err.response?.data?.message ||
-          "Failed to accept proposal. Backend API may be unreachable."
-        );
-      }
-    },
-    [fetchAssignmentDashboard]
-  );
-
-  const handleRejectProposal = useCallback(
-    async (item) => {
-      if (!item?._id) return;
-      if (normalizeStatus(item.status) !== "proposal_sent") {
-        window.alert("Only Proposal Sent leads can be rejected.");
-        return;
-      }
-
-      const reason = window.prompt(
-        `Enter rejection reason (${PROPOSAL_REJECT_REASONS.join(", ")})`,
-        PROPOSAL_REJECT_REASONS[0]
-      );
-      if (reason === null) return;
-
-      const normalizedReason = String(reason || "").trim();
-      if (!PROPOSAL_REJECT_REASONS.includes(normalizedReason)) {
-        window.alert(`Please enter a valid reason: ${PROPOSAL_REJECT_REASONS.join(", ")}`);
-        return;
-      }
-
-      try {
-        const token = localStorage.getItem("token");
-        await axios.post(
-          `http://localhost:5000/api/leads/${item._id}/proposal/reject`,
-          { reason: normalizedReason },
-          { headers: { Authorization: `Bearer ${token}` } }
-        );
-        await fetchAssignmentDashboard();
-        window.alert("Proposal rejected and lead moved to Lost.");
-      } catch (err) {
-        console.error(err);
-        window.alert(
-          err.response?.data?.message ||
-          "Failed to reject proposal. Backend API may be unreachable."
-        );
-      }
-    },
-    [fetchAssignmentDashboard]
-  );
-
   const renderEmployeeAction = (item) => {
     const actionType = String(item.nextAction?.type || "none").toLowerCase();
     const label = item.nextAction?.label || "No Immediate Action";
@@ -349,6 +509,42 @@ function LeadRequests() {
 
     return <div className={`assignment-next-action ${actionType}`}>{label}</div>;
   };
+
+  const handleConvertToDeal = useCallback(
+    async (item) => {
+      if (!item?._id) return;
+
+      const status = normalizeStatus(item.status);
+      if (!["qualified", "proposal", "proposal_sent"].includes(status)) {
+        window.alert("Only qualified leads can be converted to deal.");
+        return;
+      }
+
+      if (!window.confirm("Convert this lead to deal? This will create customer and move lead to Converted.")) {
+        return;
+      }
+
+      try {
+        const token = localStorage.getItem("token");
+        setConvertingLeadIds((prev) => ({ ...prev, [item._id]: true }));
+
+        await axios.put(
+          `http://localhost:5000/api/leads/${item._id}/convert`,
+          {},
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+
+        window.alert("Lead converted successfully. Customer created and deal moved to Qualification stage.");
+        await fetchAssignmentDashboard();
+      } catch (err) {
+        console.error(err);
+        window.alert(err.response?.data?.message || "Failed to convert lead to deal.");
+      } finally {
+        setConvertingLeadIds((prev) => ({ ...prev, [item._id]: false }));
+      }
+    },
+    [fetchAssignmentDashboard]
+  );
 
   const renderLeadCard = (item) => (
     <div key={item._id} className="lead-requests-card">
@@ -421,30 +617,94 @@ function LeadRequests() {
         </div>
       )}
 
-      {["ADMIN", "MANAGER", "EMPLOYEE"].includes(role) && ["qualified", "proposal"].includes(normalizeStatus(item.status)) ? (
+      {["ADMIN", "MANAGER", "EMPLOYEE"].includes(role) && ["qualified", "proposal", "proposal_sent"].includes(normalizeStatus(item.status)) ? (
         <div className="lead-requests-card-action">
           <button
             type="button"
-            className="assignment-submit-btn proposal-btn"
-            onClick={() => openProposalPage(item)}
+            className="assignment-submit-btn lead-convert-btn"
+            onClick={() => handleConvertToDeal(item)}
+            disabled={Boolean(convertingLeadIds[item._id])}
           >
-            Create Proposal
+            {convertingLeadIds[item._id] ? "Converting..." : "Convert to Deal"}
           </button>
         </div>
       ) : null}
 
-      {["ADMIN", "MANAGER", "EMPLOYEE"].includes(role) && normalizeStatus(item.status) === "proposal_sent" ? (
-        <div className="lead-requests-card-action">
-          <div className="proposal-response-actions">
-            <button type="button" className="assignment-submit-btn" onClick={() => handleAcceptProposal(item)}>
-              Accept Proposal
-            </button>
-            <button type="button" className="assignment-delete-btn" onClick={() => handleRejectProposal(item)}>
-              Reject Proposal
-            </button>
-          </div>
+    </div>
+  );
+
+  const renderDealCard = (item) => (
+    <div key={item._id} className="lead-requests-card">
+      <div className="lead-requests-card-header">
+        <div className="assignment-lead-name">{item.name || "Unnamed Deal"}</div>
+        <div className="lead-requests-card-badges">
+          <span className={`lead-status-badge ${getStatusClassName(normalizeDealStage(item.stage))}`}>
+            {String(normalizeDealStage(item.stage) || "Unknown").replaceAll("_", " ").toUpperCase()}
+          </span>
+          <span className={`lead-assignment-badge ${String(item.status || "").toLowerCase() === "active" ? "assigned" : "unassigned"}`}>
+            {String(item.status || "Unknown").toUpperCase()}
+          </span>
+        </div>
+      </div>
+      <div className="assignment-lead-meta">Company: {item.company || "-"}</div>
+      <div className="assignment-lead-meta">Amount: {item.amount ? `₹${Number(item.amount).toLocaleString()}` : "-"}</div>
+      <div className="assignment-lead-meta">Contact: {item.contact || item.email || "-"}</div>
+
+      {normalizeDealStage(item.stage) === "qualification" ? (
+        <div className="deal-request-actions">
+          <button
+            type="button"
+            className="assignment-submit-btn deal-request-action-btn move"
+            disabled={Boolean(movingDealIds[item._id])}
+            onClick={() => {
+              if (!item?._id) return;
+              moveDealStage(item, "need_analysis");
+            }}
+          >
+            {movingDealIds[item._id] ? "Moving..." : "➡ Move to Need Analysis"}
+          </button>
         </div>
       ) : null}
+
+      {normalizeDealStage(item.stage) === "need_analysis" ? (
+        <div className="deal-request-actions">
+          <button
+            type="button"
+            className="assignment-submit-btn deal-request-action-btn move"
+            disabled={Boolean(movingDealIds[item._id])}
+            onClick={() => {
+              if (!item?._id) return;
+              const params = new URLSearchParams({
+                type: "meeting",
+                create: "1",
+                relatedType: "Deal",
+                relatedId: String(item._id || ""),
+                relatedName: String(item.name || "Deal"),
+                source: "requests",
+              });
+              navigate(`/activities?${params.toString()}`);
+            }}
+          >
+            Connect to Customer
+          </button>
+        </div>
+      ) : null}
+    </div>
+  );
+
+  const renderContactCard = (item) => (
+    <div key={item._id} className="lead-requests-card">
+      <div className="lead-requests-card-header">
+        <div className="assignment-lead-name">{item.name || "Unnamed Contact"}</div>
+        <div className="lead-requests-card-badges">
+          <span className={`lead-assignment-badge ${String(item.status || "").toLowerCase() === "active" ? "assigned" : "unassigned"}`}>
+            {String(item.status || "Unknown").toUpperCase()}
+          </span>
+        </div>
+      </div>
+      <div className="assignment-lead-meta">Company: {item.company || "-"}</div>
+      <div className="assignment-lead-meta">Email: {item.email || "-"}</div>
+      <div className="assignment-lead-meta">Phone: {item.phone || "-"}</div>
     </div>
   );
 
@@ -455,9 +715,9 @@ function LeadRequests() {
         <div className="lead-requests-page">
           <div className="lead-requests-header">
             <div>
-              <h2>{isManager ? "Lead Requests" : "My Lead Requests"}</h2>
+              <h2>Requests</h2>
               <p>
-                Separate request workspace with stage-wise filtering for faster handling of high-volume records.
+                Toggle between lead, deal, and contact requests from one workspace.
               </p>
             </div>
             <button type="button" className="assignment-submit-btn" onClick={() => navigate("/dashboard")}>
@@ -465,7 +725,30 @@ function LeadRequests() {
             </button>
           </div>
 
-          <>
+          <div className="request-type-toggle" role="tablist" aria-label="Request type tabs">
+            {REQUEST_TYPE_FILTERS.map((item) => (
+              <button
+                key={item.key}
+                type="button"
+                className={`request-type-toggle-btn ${activeRequestType === item.key ? "active" : ""}`}
+                onClick={() => setActiveRequestType(item.key)}
+                role="tab"
+                aria-selected={activeRequestType === item.key}
+              >
+                {item.label}
+                <span>
+                  {item.key === "lead"
+                    ? statusCounts.all
+                    : item.key === "deal"
+                      ? dealRequests.length
+                      : contactRequests.length}
+                </span>
+              </button>
+            ))}
+          </div>
+
+          {activeRequestType === "lead" ? (
+            <>
               <div className="assignment-summary-grid lead-requests-summary-grid">
                 <div className="assignment-summary-card">
                   <span>Total Requests</span>
@@ -527,7 +810,175 @@ function LeadRequests() {
                   })}
                 </div>
               )}
-          </>
+            </>
+          ) : activeRequestType === "deal" ? (
+            <>
+              {auxiliaryLoading ? (
+                <div className="assignment-empty">Loading deal requests...</div>
+              ) : filteredDealRequests.length === 0 ? (
+                <div className="assignment-empty">No deals found for the selected stage.</div>
+              ) : (
+                <>
+                  <div className="lead-requests-status-tabs" role="tablist" aria-label="Deal stage filter">
+                    {DEAL_STAGE_FILTERS.map((stage) => (
+                      <button
+                        key={stage.key}
+                        type="button"
+                        className={`lead-requests-status-tab ${activeDealStage === stage.key ? "active" : ""}`}
+                        onClick={() => setActiveDealStage(stage.key)}
+                        role="tab"
+                        aria-selected={activeDealStage === stage.key}
+                      >
+                        {stage.label}
+                        <span>{dealStageCounts[stage.key] || 0}</span>
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="lead-requests-kanban deal-requests-kanban">
+                    {visibleDealColumns.map((column) => {
+                      const columnItems = dealItemsByStage[column.key] || [];
+                      return (
+                        <section key={column.key} className={`lead-requests-kanban-column ${column.key}`}>
+                          <header className="lead-requests-kanban-header">
+                            <span>{column.label}</span>
+                            <strong>{columnItems.length}</strong>
+                          </header>
+                          <div className="lead-requests-kanban-body">
+                            {columnItems.length === 0 ? (
+                              <div className="lead-requests-kanban-empty">No deals in this stage.</div>
+                            ) : (
+                              columnItems.map((item) => renderDealCard(item))
+                            )}
+                          </div>
+                        </section>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
+            </>
+          ) : (
+            <>
+              {auxiliaryLoading ? (
+                <div className="assignment-empty">Loading contact requests...</div>
+              ) : contactRequests.length === 0 ? (
+                <div className="assignment-empty">No contacts found.</div>
+              ) : (
+                <div className="lead-requests-list-grid">
+                  {contactRequests.map((item) => renderContactCard(item))}
+                </div>
+              )}
+            </>
+          )}
+
+          {showDealAdvanceModal ? (
+            <div className="requests-modal-overlay" role="presentation">
+              <div className="requests-modal-card" role="dialog" aria-modal="true" aria-label="Deal move details">
+                <div className="requests-modal-header">
+                  <h3>Move To Proposal</h3>
+                  <button
+                    type="button"
+                    className="requests-modal-close"
+                    onClick={() => {
+                      setShowDealAdvanceModal(false);
+                      setPendingDealAdvance(null);
+                    }}
+                  >
+                    ×
+                  </button>
+                </div>
+                <div className="requests-modal-body">
+                  {pendingDealAdvance?.itemType === "product" ? (
+                    <label className="requests-modal-field">
+                      <span>Quantity *</span>
+                      <input
+                        type="number"
+                        min="1"
+                        step="1"
+                        value={dealAdvanceForm.quantity}
+                        onChange={(event) => setDealAdvanceForm((prev) => ({ ...prev, quantity: event.target.value }))}
+                        placeholder="Enter quantity"
+                      />
+                    </label>
+                  ) : null}
+
+                  {pendingDealAdvance?.itemType === "service" ? (
+                    <label className="requests-modal-field">
+                      <span>Plan / Billing Cycle *</span>
+                      <select
+                        value={dealAdvanceForm.billingCycle}
+                        onChange={(event) => setDealAdvanceForm((prev) => ({ ...prev, billingCycle: event.target.value }))}
+                      >
+                        <option value="">Select billing cycle</option>
+                        {BILLING_CYCLE_OPTIONS.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  ) : null}
+
+                  {pendingDealAdvance?.itemType === "unknown" ? (
+                    <>
+                      <label className="requests-modal-field">
+                        <span>Quantity</span>
+                        <input
+                          type="number"
+                          min="1"
+                          step="1"
+                          value={dealAdvanceForm.quantity}
+                          onChange={(event) => setDealAdvanceForm((prev) => ({ ...prev, quantity: event.target.value }))}
+                          placeholder="Enter quantity (for product deals)"
+                        />
+                      </label>
+                      <label className="requests-modal-field">
+                        <span>Plan / Billing Cycle</span>
+                        <select
+                          value={dealAdvanceForm.billingCycle}
+                          onChange={(event) => setDealAdvanceForm((prev) => ({ ...prev, billingCycle: event.target.value }))}
+                        >
+                          <option value="">Select billing cycle (for service deals)</option>
+                          {BILLING_CYCLE_OPTIONS.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    </>
+                  ) : null}
+
+                  {!pendingDealAdvance?.itemType ? (
+                    <p className="requests-modal-hint">
+                      Continue to move this deal to Proposal stage.
+                    </p>
+                  ) : null}
+                </div>
+                <div className="requests-modal-footer">
+                  <button
+                    type="button"
+                    className="requests-modal-cancel"
+                    onClick={() => {
+                      setShowDealAdvanceModal(false);
+                      setPendingDealAdvance(null);
+                    }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className="assignment-submit-btn"
+                    onClick={submitDealAdvance}
+                    disabled={Boolean(movingDealIds[pendingDealAdvance?.dealId])}
+                  >
+                    {movingDealIds[pendingDealAdvance?.dealId] ? "Saving..." : "Save & Move"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : null}
         </div>
       </div>
     </div>

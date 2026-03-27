@@ -580,6 +580,19 @@
   color: #1d4ed8;
 }
 
+.activity-need-analysis-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 600;
+  color: #334155;
+}
+
+.activity-need-analysis-check input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+}
+
 .record-activity-panel {
   margin-top: 20px;
 }

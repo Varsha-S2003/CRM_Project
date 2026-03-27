@@ -312,8 +312,85 @@ async function sendActivityReminderEmail({
   return { result, preview };
 }
 
+async function sendLowStockCustomerEmail({
+  to,
+  customerName,
+  company,
+  itemName,
+  requestedQuantity,
+  availableQuantity,
+  yesUrl,
+  noUrl,
+}) {
+  const mailer = await getTransporter();
+  const appName = "Elogixa CRM";
+  const emailConfig = await getEmailConfig();
+  const sender = emailConfig.auth?.user || "";
+
+  const safeCustomerName = String(customerName || "Customer").trim() || "Customer";
+  const safeCompany = String(company || "").trim();
+  const safeItemName = String(itemName || "requested item").trim() || "requested item";
+  const safeRequestedQuantity = Number.isFinite(Number(requestedQuantity)) ? Number(requestedQuantity) : null;
+  const safeAvailableQuantity = Number.isFinite(Number(availableQuantity)) ? Number(availableQuantity) : 0;
+  const safeYesUrl = String(yesUrl || "").trim();
+  const safeNoUrl = String(noUrl || "").trim();
+
+  const subject = `Inventory Update for ${safeItemName}`;
+  const greetingLine = safeCompany
+    ? `Hello ${safeCustomerName} (${safeCompany}),`
+    : `Hello ${safeCustomerName},`;
+
+  const result = await mailer.sendMail({
+    from: `"${appName}" <${sender}>`,
+    to,
+    subject,
+    text: [
+      greetingLine,
+      "",
+      `Thank you for your requirement for ${safeItemName}.`,
+      safeRequestedQuantity !== null
+        ? `You requested quantity: ${safeRequestedQuantity}.`
+        : "",
+      `Currently, we have only ${safeAvailableQuantity} in stock.`,
+      "We will follow up with full details as soon as inventory is restocked.",
+      safeYesUrl ? `If you agree to wait, please confirm here: ${safeYesUrl}` : "If you agree to wait, please click the YES button in this email.",
+      safeNoUrl ? `If you do not want to wait, please confirm here: ${safeNoUrl}` : "If you do not want to wait, please click the NO button in this email.",
+      "",
+      "Regards,",
+      appName,
+    ].filter(Boolean).join("\n"),
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 620px; margin: 0 auto; border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden;">
+        <div style="background: #b91c1c; padding: 16px 20px; color: #ffffff;">
+          <h2 style="margin: 0; font-size: 20px;">${appName} Stock Update</h2>
+        </div>
+        <div style="padding: 20px; background: #ffffff; color: #111827;">
+          <p style="margin: 0 0 12px;">${greetingLine}</p>
+          <p style="margin: 0 0 12px;">Thank you for your requirement for <strong>${safeItemName}</strong>.</p>
+          ${safeRequestedQuantity !== null ? `<p style="margin: 0 0 12px;">Requested quantity: <strong>${safeRequestedQuantity}</strong></p>` : ""}
+          <p style="margin: 0 0 12px;">Currently, we have only <strong>${safeAvailableQuantity}</strong> in stock.</p>
+          <p style="margin: 0 0 12px;">We will follow up with full details as soon as inventory is restocked.</p>
+          <p style="margin: 0 0 16px;">Please confirm your choice below.</p>
+          <div style="margin-top: 16px;">
+            ${safeYesUrl ? `<a href="${safeYesUrl}" style="display: inline-block; margin-right: 12px; padding: 10px 18px; background: #166534; color: #ffffff; text-decoration: none; border-radius: 8px; font-weight: 700;">YES, I AGREE</a>` : ""}
+            ${safeNoUrl ? `<a href="${safeNoUrl}" style="display: inline-block; padding: 10px 18px; background: #b91c1c; color: #ffffff; text-decoration: none; border-radius: 8px; font-weight: 700;">NO, CLOSE REQUEST</a>` : ""}
+          </div>
+        </div>
+      </div>
+    `,
+  });
+
+  const preview = isEtherealConfig(emailConfig) ? nodemailer.getTestMessageUrl(result) : null;
+  if (preview) {
+    console.log("Ethereal low-stock email preview URL:", preview);
+  }
+
+  return { result, preview };
+}
+
 module.exports = {
   sendPasswordResetEmail,
   sendLeadProposalEmail,
   sendActivityReminderEmail,
+  sendLowStockCustomerEmail,
 };

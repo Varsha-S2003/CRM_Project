@@ -65,6 +65,7 @@ const COMPLETE_OUTCOME_OPTIONS = [
   { value: "no_response", label: "No Response" },
   { value: "follow_up_needed", label: "Follow-up Needed" },
 ];
+const NEED_ANALYSIS_PRIORITY_OPTIONS = ["Low", "Medium", "High"];
 const MODULE_CONFIG = {
   all: {
     title: "Activity Module",
@@ -133,6 +134,8 @@ const getDefaultStageByActivityType = (type) => {
   if (normalized === "task") return "qualified";
   return "";
 };
+
+const normalizeDealStage = (value) => String(value || "").trim().toLowerCase().replace(/\s+/g, "_");
 
 const parseDateValue = (value) => {
   if (!value) return null;
@@ -387,6 +390,7 @@ function ActivityModule() {
   const [notifications, setNotifications] = useState([]);
   const [users, setUsers] = useState([]);
   const [relatedOptions, setRelatedOptions] = useState([]);
+  const [relatedDealsById, setRelatedDealsById] = useState({});
   const [activeSidebar, setActiveSidebar] = useState(
     ["task", "meeting", "call"].includes(initialType) ? initialType : "all"
   );
@@ -426,6 +430,17 @@ function ActivityModule() {
     outcome: "",
     reason: "",
     rescheduleDateTime: "",
+    requirementSummary: "",
+    timeline: "",
+    needPriority: "Medium",
+    decisionMakerConfirmed: false,
+    needType: "",
+    productName: "",
+    quantity: "",
+    requiredModules: "",
+    servicePlan: "",
+    billingCycle: "",
+    usersOrSeats: "",
   });
   const [returnToRequestsAfterSubmit, setReturnToRequestsAfterSubmit] = useState(false);
   const [redirectAfterProposalSubmit, setRedirectAfterProposalSubmit] = useState("");
@@ -517,6 +532,12 @@ function ActivityModule() {
       ...contactsRes.data.map((item) => ({ id: item._id, name: item.name, type: "Contact" })),
       ...dealsRes.data.map((item) => ({ id: item._id, name: item.name, type: "Deal" })),
     ];
+    const dealsLookup = (Array.isArray(dealsRes.data) ? dealsRes.data : []).reduce((acc, deal) => {
+      const key = String(deal?._id || "").trim();
+      if (key) acc[key] = deal;
+      return acc;
+    }, {});
+    setRelatedDealsById(dealsLookup);
     setRelatedOptions(options);
     setForm((prev) => (prev.relatedId ? prev : createDefaultForm(currentUserId, options)));
   }, [apiHeaders, currentUserId, role]);
@@ -739,6 +760,17 @@ function ActivityModule() {
       outcome: "",
       reason: "",
       rescheduleDateTime: "",
+      requirementSummary: "",
+      timeline: "",
+      needPriority: "Medium",
+      decisionMakerConfirmed: false,
+      needType: "",
+      productName: "",
+      quantity: "",
+      requiredModules: "",
+      servicePlan: "",
+      billingCycle: "",
+      usersOrSeats: "",
     });
   };
 
@@ -1011,17 +1043,223 @@ function ActivityModule() {
   };
 
   const openCompleteModal = (activity) => {
+    const relatedType = String(activity?.relatedTo?.recordType || "").toLowerCase();
+    const relatedDealId = String(activity?.relatedTo?.recordId?._id || activity?.relatedTo?.recordId || "").trim();
+    const relatedDeal =
+      relatedType === "deal" &&
+      activity?.relatedTo?.recordId &&
+      typeof activity.relatedTo.recordId === "object"
+        ? activity.relatedTo.recordId
+        : null;
+    const cachedDeal = relatedDealId ? relatedDealsById[relatedDealId] : null;
+    const resolvedDeal = relatedDeal || cachedDeal;
+    const productOrService =
+      typeof resolvedDeal?.product === "object" && resolvedDeal?.product
+        ? resolvedDeal.product
+        : null;
+    const autoFetchedItemName = String(productOrService?.name || "").trim();
+    const normalizedDealStage = normalizeDealStage(resolvedDeal?.stage);
+    const isNeedAnalysisDeal =
+      relatedType === "deal" &&
+      (normalizedDealStage === "need_analysis" ||
+        (!normalizedDealStage && String(activity?.activityType || "").toLowerCase() === "meeting"));
+    const inferredDealType = String(productOrService?.type || "").toLowerCase() === "service"
+      ? "service"
+      : "product";
+
     setCompletionTarget(activity);
     setCompletionForm({
-      outcome: "",
+      outcome: isNeedAnalysisDeal ? "interested" : "",
       reason: "",
       rescheduleDateTime: "",
+      requirementSummary: "",
+      timeline: "",
+      needPriority: "Medium",
+      decisionMakerConfirmed: false,
+      needType: isNeedAnalysisDeal ? inferredDealType : "",
+      productName: autoFetchedItemName,
+      quantity: resolvedDeal?.quantity ?? "",
+      requiredModules: "",
+      servicePlan: autoFetchedItemName,
+      billingCycle: String(resolvedDeal?.billingCycle || "").trim(),
+      usersOrSeats: "",
     });
     setShowCompleteModal(true);
   };
 
+  useEffect(() => {
+    if (!showCompleteModal) return;
+
+    const relatedType = String(completionTarget?.relatedTo?.recordType || "").toLowerCase();
+    const relatedRecord = completionTarget?.relatedTo?.recordId;
+    const relatedDeal = relatedRecord && typeof relatedRecord === "object" ? relatedRecord : null;
+    const normalizedDealStage = normalizeDealStage(relatedDeal?.stage);
+    const shouldHydrateNeedAnalysisFields =
+      relatedType === "deal" &&
+      (normalizedDealStage === "need_analysis" ||
+        (!normalizedDealStage && String(completionTarget?.activityType || "").toLowerCase() === "meeting"));
+    if (!shouldHydrateNeedAnalysisFields) return;
+
+    const dealId = String(
+      completionTarget?.relatedTo?.recordId?._id || completionTarget?.relatedTo?.recordId || ""
+    ).trim();
+    if (!dealId) return;
+
+    const deal = relatedDealsById[dealId];
+    if (!deal || typeof deal?.product !== "object" || !deal?.product) return;
+
+    const itemName = String(deal.product.name || "").trim();
+    if (!itemName) return;
+
+    setCompletionForm((prev) => {
+      const next = { ...prev };
+      const inferredNeedType = String(deal?.product?.type || "").toLowerCase() === "service" ? "service" : "product";
+      next.needType = inferredNeedType;
+      if (!String(next.productName || "").trim()) next.productName = itemName;
+      if (!String(next.servicePlan || "").trim()) next.servicePlan = itemName;
+      if (!String(next.billingCycle || "").trim()) next.billingCycle = String(deal.billingCycle || "").trim();
+      if (next.quantity === "" || next.quantity === null || next.quantity === undefined) {
+        next.quantity = deal.quantity ?? "";
+      }
+      return next;
+    });
+  }, [completionTarget, relatedDealsById, showCompleteModal]);
+
+  const isNeedAnalysisDealCompletion = useMemo(() => {
+    const relatedType = String(completionTarget?.relatedTo?.recordType || "").toLowerCase();
+    const relatedRecord = completionTarget?.relatedTo?.recordId;
+    const relatedDeal = relatedRecord && typeof relatedRecord === "object" ? relatedRecord : null;
+    const normalizedDealStage = normalizeDealStage(relatedDeal?.stage);
+    return (
+      relatedType === "deal" &&
+      (normalizedDealStage === "need_analysis" ||
+        (!normalizedDealStage && String(completionTarget?.activityType || "").toLowerCase() === "meeting"))
+    );
+  }, [completionTarget]);
+
+  const isNeedAnalysisMinimumValid = useMemo(() => {
+    if (!isNeedAnalysisDealCompletion) return false;
+
+    const summaryOk = Boolean(String(completionForm.requirementSummary || "").trim());
+    const timelineOk = Boolean(String(completionForm.timeline || "").trim());
+    const decisionMakerOk = Boolean(completionForm.decisionMakerConfirmed);
+    const quantityValue = Number(completionForm.quantity);
+    const quantityOk = Number.isFinite(quantityValue) && quantityValue > 0;
+    const planAndCycleOk =
+      Boolean(String(completionForm.servicePlan || "").trim()) &&
+      Boolean(String(completionForm.billingCycle || "").trim());
+
+    return summaryOk && timelineOk && decisionMakerOk && (quantityOk || planAndCycleOk);
+  }, [completionForm, isNeedAnalysisDealCompletion]);
+
   const handleComplete = async () => {
     if (!completionTarget?._id) return;
+
+    if (isNeedAnalysisDealCompletion) {
+      const dealIdRaw =
+        completionTarget?.relatedTo?.recordId?._id ||
+        completionTarget?.relatedTo?.recordId;
+      const dealId = String(dealIdRaw || "").trim();
+      if (!dealId) {
+        setToast("Linked deal not found for Need Analysis completion.");
+        return;
+      }
+
+      const needType = String(completionForm.needType || "").toLowerCase() === "service" ? "service" : "product";
+      const requirementSummary = String(completionForm.requirementSummary || "").trim();
+      const timeline = String(completionForm.timeline || "").trim();
+      const requiredModules = String(completionForm.requiredModules || "").trim();
+      const servicePlan = String(completionForm.servicePlan || "").trim();
+      const billingCycle = String(completionForm.billingCycle || "").trim().toLowerCase();
+      const usersOrSeatsValue = Number(completionForm.usersOrSeats);
+      const quantityValue = Number(completionForm.quantity);
+      const quantityIsValid = Number.isFinite(quantityValue) && quantityValue > 0;
+      const planAndCycleValid = Boolean(servicePlan) && Boolean(billingCycle);
+
+      if (!requirementSummary) {
+        setToast("Requirement Summary is required.");
+        return;
+      }
+      if (!timeline) {
+        setToast("Timeline is required.");
+        return;
+      }
+      if (!completionForm.decisionMakerConfirmed) {
+        setToast("Please confirm Decision Maker before completion.");
+        return;
+      }
+      if (needType === "product" && !quantityIsValid) {
+        setToast("Quantity is required for Product type.");
+        return;
+      }
+      if (needType === "service" && !planAndCycleValid) {
+        setToast("Service Plan and Billing Cycle are required for Service type.");
+        return;
+      }
+      if (!quantityIsValid && !planAndCycleValid) {
+        setToast("Provide Quantity OR Service Plan + Billing Cycle.");
+        return;
+      }
+
+      const activitySummaryLines = [
+        `Need Analysis Summary: ${requirementSummary}`,
+        `Timeline: ${timeline}`,
+        `Priority: ${completionForm.needPriority || "Medium"}`,
+        `Decision Maker Confirmed: ${completionForm.decisionMakerConfirmed ? "Yes" : "No"}`,
+        needType === "product"
+          ? `Product: ${completionForm.productName || "-"}, Quantity: ${quantityIsValid ? quantityValue : "-"}, Modules: ${requiredModules || "-"}`
+          : `Service Plan: ${servicePlan || "-"}, Billing Cycle: ${billingCycle || "-"}, Users/Seats: ${Number.isFinite(usersOrSeatsValue) && usersOrSeatsValue > 0 ? usersOrSeatsValue : "-"}`,
+      ];
+
+      const dealPayload = {
+        stage: "proposal_price_quote",
+        nextStep: requirementSummary,
+        description: activitySummaryLines.join("\n"),
+      };
+      if (needType === "product" && quantityIsValid) {
+        dealPayload.quantity = quantityValue;
+      }
+      if (needType === "service" && planAndCycleValid) {
+        dealPayload.billingCycle = billingCycle;
+      }
+
+      try {
+        setCompleteBusy(true);
+
+        await axios.put(`http://localhost:5000/api/deals/${dealId}/stage`, dealPayload, {
+          headers: apiHeaders,
+        });
+
+        await axios.post(
+          `http://localhost:5000/api/activities/${completionTarget._id}/complete`,
+          {
+            outcome: "interested",
+            stage: getDefaultStageByActivityType(completionTarget.activityType),
+            outcomeReason: activitySummaryLines.join("\n"),
+            rescheduleDateTime: null,
+          },
+          { headers: apiHeaders }
+        );
+
+        setToast("Need Analysis completed and deal moved to Proposal stage.");
+        closeCompleteModal();
+        await refreshAll();
+      } catch (error) {
+        const errorMessage = error.response?.data?.message || "Failed to complete Need Analysis.";
+        const isLowStockError = /low stock|insufficient stock/i.test(String(errorMessage));
+
+        if (isLowStockError) {
+          window.alert(
+            `${errorMessage}\n\nThere is not enough stock for this quantity.\n\nThe customer has been informed by email that we will follow up as soon as inventory is restocked.\n\nThe email now includes YES and NO buttons:\nYES keeps the deal in the current stage.\nNO moves the deal to Closed Lost with a reason.`
+          );
+        } else {
+          setToast(errorMessage);
+        }
+      } finally {
+        setCompleteBusy(false);
+      }
+      return;
+    }
 
     const outcome = String(completionForm.outcome || "").trim();
     const reason = String(completionForm.reason || "").trim();
@@ -1169,7 +1407,9 @@ function ActivityModule() {
                           {task.status !== "Completed" ? (
                             <button onClick={() => openCompleteModal(task)}>Complete</button>
                           ) : null}
-                          <button onClick={() => handleReschedule(task)}>Reschedule</button>
+                          {task.status !== "Completed" ? (
+                            <button onClick={() => handleReschedule(task)}>Reschedule</button>
+                          ) : null}
                           <button onClick={() => handleDelete(task._id)}>Delete</button>
                         </div>
                       </article>
@@ -1252,7 +1492,9 @@ function ActivityModule() {
                           {meeting.status !== "Completed" ? (
                             <button onClick={() => openCompleteModal(meeting)}>Complete</button>
                           ) : null}
-                          <button onClick={() => handleReschedule(meeting)}>Reschedule</button>
+                          {meeting.status !== "Completed" ? (
+                            <button onClick={() => handleReschedule(meeting)}>Reschedule</button>
+                          ) : null}
                           <button onClick={() => handleDelete(meeting._id)}>Delete</button>
                         </div>
                       </article>
@@ -1335,7 +1577,9 @@ function ActivityModule() {
                           {call.status !== "Completed" ? (
                             <button onClick={() => openCompleteModal(call)}>Complete</button>
                           ) : null}
-                          <button onClick={() => handleReschedule(call)}>Reschedule</button>
+                          {call.status !== "Completed" ? (
+                            <button onClick={() => handleReschedule(call)}>Reschedule</button>
+                          ) : null}
                           <button onClick={() => handleDelete(call._id)}>Delete</button>
                         </div>
                       </article>
@@ -1543,7 +1787,9 @@ function ActivityModule() {
                               {activity.status !== "Completed" ? (
                                 <button onClick={() => openCompleteModal(activity)}>Complete</button>
                               ) : null}
-                              <button onClick={() => handleReschedule(activity)}>Reschedule</button>
+                              {activity.status !== "Completed" ? (
+                                <button onClick={() => handleReschedule(activity)}>Reschedule</button>
+                              ) : null}
                               <button onClick={() => openEditModal(activity)}>Edit</button>
                               <button className="danger" onClick={() => handleDelete(activity._id)}>Delete</button>
                             </div>
@@ -2227,55 +2473,190 @@ function ActivityModule() {
                   <div>
                     <h2>Complete Activity</h2>
                     <p>
-                      {completionTarget?.title || "Activity"} - choose outcome to update lead stage and follow-up actions.
+                      {isNeedAnalysisDealCompletion
+                        ? `${completionTarget?.title || "Activity"} - fill Need Analysis details to move deal to Proposal stage.`
+                        : `${completionTarget?.title || "Activity"} - choose outcome to update lead stage and follow-up actions.`}
                     </p>
                   </div>
                 </div>
 
                 <div className="activity-form">
-                  <div className="activity-complete-outcomes" role="group" aria-label="Completion outcome">
-                    {COMPLETE_OUTCOME_OPTIONS.map((item) => (
-                      <button
-                        key={item.value}
-                        type="button"
-                        className={`activity-complete-outcome-btn ${completionForm.outcome === item.value ? "active" : ""}`}
-                        onClick={() => setCompletionForm((prev) => ({ ...prev, outcome: item.value }))}
-                      >
-                        {item.label}
-                      </button>
-                    ))}
-                  </div>
+                  {isNeedAnalysisDealCompletion ? (
+                    <div className="activity-form-grid">
+                      <label className="full-width">
+                        Requirement Summary *
+                        <textarea
+                          rows="3"
+                          value={completionForm.requirementSummary}
+                          onChange={(event) =>
+                            setCompletionForm((prev) => ({ ...prev, requirementSummary: event.target.value }))
+                          }
+                          placeholder="Summarize customer requirements"
+                        />
+                      </label>
+                      <label>
+                        Timeline *
+                        <input
+                          type="text"
+                          value={completionForm.timeline}
+                          onChange={(event) =>
+                            setCompletionForm((prev) => ({ ...prev, timeline: event.target.value }))
+                          }
+                          placeholder="e.g. 2 weeks / by end of month"
+                        />
+                      </label>
+                      <label>
+                        Priority *
+                        <select
+                          value={completionForm.needPriority}
+                          onChange={(event) =>
+                            setCompletionForm((prev) => ({ ...prev, needPriority: event.target.value }))
+                          }
+                        >
+                          {NEED_ANALYSIS_PRIORITY_OPTIONS.map((option) => (
+                            <option key={option} value={option}>{option}</option>
+                          ))}
+                        </select>
+                      </label>
 
-                  {["not_interested", "no_response", "follow_up_needed"].includes(completionForm.outcome) ? (
-                    <label className="full-width">
-                      {completionForm.outcome === "not_interested" ? "Reason for Lost" : "Follow-up Reason"}
-                      <textarea
-                        rows="3"
-                        value={completionForm.reason}
-                        onChange={(event) =>
-                          setCompletionForm((prev) => ({ ...prev, reason: event.target.value }))
-                        }
-                        placeholder={
-                          completionForm.outcome === "not_interested"
-                            ? "Enter why this lead is not interested"
-                            : "Enter follow-up reason"
-                        }
-                      />
-                    </label>
-                  ) : null}
+                      <label>
+                        Need Type *
+                        <select
+                          value={completionForm.needType}
+                          disabled
+                          onChange={(event) =>
+                            setCompletionForm((prev) => ({ ...prev, needType: event.target.value }))
+                          }
+                        >
+                          <option value="product">Product</option>
+                          <option value="service">Service</option>
+                        </select>
+                      </label>
 
-                  {["no_response", "follow_up_needed"].includes(completionForm.outcome) ? (
-                    <label>
-                      Reschedule Date & Time
-                      <input
-                        type="datetime-local"
-                        value={completionForm.rescheduleDateTime}
-                        onChange={(event) =>
-                          setCompletionForm((prev) => ({ ...prev, rescheduleDateTime: event.target.value }))
-                        }
-                      />
-                    </label>
-                  ) : null}
+                      {completionForm.needType === "product" ? (
+                        <>
+                          <label>
+                            Product Name
+                            <input type="text" value={completionForm.productName} readOnly />
+                          </label>
+                          <label>
+                            Quantity *
+                            <input
+                              type="number"
+                              min="1"
+                              step="1"
+                              value={completionForm.quantity}
+                              onChange={(event) =>
+                                setCompletionForm((prev) => ({ ...prev, quantity: event.target.value }))
+                              }
+                              placeholder="Enter quantity"
+                            />
+                          </label>
+                          <label className="full-width">
+                            Required Modules / Features
+                            <textarea
+                              rows="2"
+                              value={completionForm.requiredModules}
+                              onChange={(event) =>
+                                setCompletionForm((prev) => ({ ...prev, requiredModules: event.target.value }))
+                              }
+                              placeholder="List required modules/features"
+                            />
+                          </label>
+                        </>
+                      ) : (
+                        <>
+                          <label>
+                            Service Name (auto-fetched) *
+                            <input type="text" value={completionForm.servicePlan} readOnly />
+                          </label>
+                          <label>
+                            Billing Cycle *
+                            <select
+                              value={completionForm.billingCycle}
+                              onChange={(event) =>
+                                setCompletionForm((prev) => ({ ...prev, billingCycle: event.target.value }))
+                              }
+                            >
+                              <option value="">Select billing cycle</option>
+                              <option value="monthly">Monthly</option>
+                              <option value="yearly">Yearly</option>
+                            </select>
+                          </label>
+                          <label>
+                            Number of Users / Seats
+                            <input
+                              type="number"
+                              min="1"
+                              step="1"
+                              value={completionForm.usersOrSeats}
+                              onChange={(event) =>
+                                setCompletionForm((prev) => ({ ...prev, usersOrSeats: event.target.value }))
+                              }
+                              placeholder="Enter users/seats"
+                            />
+                          </label>
+                        </>
+                      )}
+
+                      <label className="full-width activity-need-analysis-check">
+                        <input
+                          type="checkbox"
+                          checked={completionForm.decisionMakerConfirmed}
+                          onChange={(event) =>
+                            setCompletionForm((prev) => ({ ...prev, decisionMakerConfirmed: event.target.checked }))
+                          }
+                        />
+                        Decision Maker Confirmed *
+                      </label>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="activity-complete-outcomes" role="group" aria-label="Completion outcome">
+                        {COMPLETE_OUTCOME_OPTIONS.map((item) => (
+                          <button
+                            key={item.value}
+                            type="button"
+                            className={`activity-complete-outcome-btn ${completionForm.outcome === item.value ? "active" : ""}`}
+                            onClick={() => setCompletionForm((prev) => ({ ...prev, outcome: item.value }))}
+                          >
+                            {item.label}
+                          </button>
+                        ))}
+                      </div>
+
+                      {["not_interested", "no_response", "follow_up_needed"].includes(completionForm.outcome) ? (
+                        <label className="full-width">
+                          {completionForm.outcome === "not_interested" ? "Reason for Lost" : "Follow-up Reason"}
+                          <textarea
+                            rows="3"
+                            value={completionForm.reason}
+                            onChange={(event) =>
+                              setCompletionForm((prev) => ({ ...prev, reason: event.target.value }))
+                            }
+                            placeholder={
+                              completionForm.outcome === "not_interested"
+                                ? "Enter why this lead is not interested"
+                                : "Enter follow-up reason"
+                            }
+                          />
+                        </label>
+                      ) : null}
+
+                      {["no_response", "follow_up_needed"].includes(completionForm.outcome) ? (
+                        <label>
+                          Reschedule Date & Time
+                          <input
+                            type="datetime-local"
+                            value={completionForm.rescheduleDateTime}
+                            onChange={(event) =>
+                              setCompletionForm((prev) => ({ ...prev, rescheduleDateTime: event.target.value }))
+                            }
+                          />
+                        </label>
+                      ) : null}
+                    </>
+                  )}
 
                   <div className="activity-form-actions">
                     <button type="button" className="secondary" onClick={closeCompleteModal}>
@@ -2285,9 +2666,13 @@ function ActivityModule() {
                       type="button"
                       className="activity-primary-btn"
                       onClick={handleComplete}
-                      disabled={completeBusy}
+                      disabled={completeBusy || (isNeedAnalysisDealCompletion && !isNeedAnalysisMinimumValid)}
                     >
-                      {completeBusy ? "Saving..." : "Confirm Completion"}
+                      {completeBusy
+                        ? "Saving..."
+                        : isNeedAnalysisDealCompletion
+                          ? "Save Need Analysis & Move to Proposal"
+                          : "Confirm Completion"}
                     </button>
                   </div>
                 </div>

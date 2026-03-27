@@ -29,6 +29,46 @@
   margin-top: 6px;
 }
 
+.request-type-toggle {
+  margin: 10px 0 14px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.request-type-toggle-btn {
+  border: 1px solid var(--theme-border);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--theme-ink);
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.request-type-toggle-btn span {
+  min-width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  background: rgba(37, 99, 235, 0.12);
+  color: #1e56c0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 6px;
+  font-size: 11px;
+}
+
+.request-type-toggle-btn.active {
+  background: var(--theme-surface-accent);
+  color: var(--theme-green-strong);
+  border-color: rgba(111, 66, 193, 0.24);
+}
+
 .lead-requests-status-tabs {
   margin-top: 14px;
   display: flex;
@@ -80,6 +120,13 @@
   gap: 12px;
   overflow-x: auto;
   padding-bottom: 4px;
+}
+
+.lead-requests-list-grid {
+  margin-top: 14px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
 }
 
 .lead-requests-kanban-column {
@@ -170,6 +217,36 @@
   color: #047857;
 }
 
+.lead-status-badge.qualification {
+  background: rgba(37, 99, 235, 0.12);
+  color: #1d4ed8;
+}
+
+.lead-status-badge.need_analysis {
+  background: rgba(14, 165, 233, 0.14);
+  color: #0369a1;
+}
+
+.lead-status-badge.value_proposition {
+  background: rgba(99, 102, 241, 0.14);
+  color: #4338ca;
+}
+
+.lead-status-badge.proposal_price_quote {
+  background: rgba(20, 184, 166, 0.14);
+  color: #0f766e;
+}
+
+.lead-status-badge.negotiate {
+  background: rgba(245, 158, 11, 0.16);
+  color: #b45309;
+}
+
+.lead-status-badge.won {
+  background: rgba(16, 185, 129, 0.18);
+  color: #047857;
+}
+
 .lead-status-badge.proposal {
   background: rgba(234, 179, 8, 0.16);
   color: #a16207;
@@ -178,6 +255,11 @@
 .lead-status-badge.proposal_sent {
   background: rgba(20, 184, 166, 0.16);
   color: #0f766e;
+}
+
+.lead-status-badge.converted {
+  background: rgba(16, 185, 129, 0.18);
+  color: #047857;
 }
 
 .lead-status-badge.lost {
@@ -234,9 +316,138 @@
   justify-content: center;
 }
 
+.lead-requests-card .lead-convert-btn {
+  background: linear-gradient(135deg, #2563eb, #1d4ed8);
+  color: #fff;
+}
+
 .lead-requests-card .proposal-btn {
   background: linear-gradient(135deg, #7c3aed, #6d28d9);
   color: #fff;
+}
+
+.deal-request-actions {
+  margin-top: 10px;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+
+.deal-request-action-btn {
+  width: 100%;
+  justify-content: center;
+}
+
+.deal-request-action-btn.notes {
+  background: linear-gradient(135deg, #0f766e, #115e59);
+  color: #fff;
+}
+
+.deal-request-action-btn.move {
+  background: linear-gradient(135deg, #1d4ed8, #1e40af);
+  color: #fff;
+}
+
+.deal-request-action-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  filter: grayscale(0.1);
+}
+
+.requests-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 16px;
+}
+
+.requests-modal-card {
+  width: min(560px, 100%);
+  background: #fff;
+  border-radius: 16px;
+  border: 1px solid #dbe6f6;
+  box-shadow: 0 20px 48px rgba(15, 23, 42, 0.2);
+}
+
+.requests-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 18px;
+  border-bottom: 1px solid #e7edf8;
+}
+
+.requests-modal-header h3 {
+  margin: 0;
+  font-size: 28px;
+  line-height: 1.2;
+  color: #2b235a;
+}
+
+.requests-modal-close {
+  border: 1px solid #dbe6f6;
+  background: #f6f9ff;
+  color: #5f6f8a;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  font-size: 24px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.requests-modal-body {
+  padding: 18px;
+}
+
+.requests-modal-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.requests-modal-field span {
+  font-size: 18px;
+  font-weight: 700;
+  color: #334155;
+}
+
+.requests-modal-field input,
+.requests-modal-field select {
+  border: 1px solid #cfd9ea;
+  border-radius: 10px;
+  padding: 12px 14px;
+  font-size: 16px;
+  color: #1e293b;
+  background: #fff;
+}
+
+.requests-modal-hint {
+  margin: 0;
+  font-size: 15px;
+  color: #64748b;
+}
+
+.requests-modal-footer {
+  padding: 0 18px 18px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.requests-modal-cancel {
+  border: 1px solid #d0d7e7;
+  background: #fff;
+  color: #475569;
+  border-radius: 10px;
+  padding: 10px 18px;
+  font-weight: 600;
+  cursor: pointer;
 }
 
 .lead-requests-kanban-empty {
@@ -271,8 +482,40 @@
   background: rgba(20, 184, 166, 0.14);
 }
 
+.lead-requests-kanban-column.converted .lead-requests-kanban-header {
+  background: rgba(16, 185, 129, 0.14);
+}
+
 .lead-requests-kanban-column.lost .lead-requests-kanban-header {
   background: rgba(239, 68, 68, 0.12);
+}
+
+.deal-requests-kanban {
+  grid-template-columns: repeat(7, minmax(260px, 1fr));
+}
+
+.lead-requests-kanban-column.qualification .lead-requests-kanban-header {
+  background: rgba(37, 99, 235, 0.08);
+}
+
+.lead-requests-kanban-column.need_analysis .lead-requests-kanban-header {
+  background: rgba(14, 165, 233, 0.1);
+}
+
+.lead-requests-kanban-column.value_proposition .lead-requests-kanban-header {
+  background: rgba(99, 102, 241, 0.1);
+}
+
+.lead-requests-kanban-column.proposal_price_quote .lead-requests-kanban-header {
+  background: rgba(20, 184, 166, 0.12);
+}
+
+.lead-requests-kanban-column.negotiate .lead-requests-kanban-header {
+  background: rgba(245, 158, 11, 0.14);
+}
+
+.lead-requests-kanban-column.won .lead-requests-kanban-header {
+  background: rgba(16, 185, 129, 0.14);
 }
 
 @media (max-width: 768px) {
@@ -283,6 +526,11 @@
 
   .lead-requests-status-tabs {
     width: 100%;
+  }
+
+  .request-type-toggle-btn {
+    flex: 1 1 calc(50% - 8px);
+    justify-content: space-between;
   }
 
   .lead-requests-status-tab {

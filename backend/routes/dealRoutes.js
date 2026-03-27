@@ -1,14 +1,19 @@
 const express = require("express");
 const router = express.Router();
+const jwt = require("jsonwebtoken");
 const { verifyToken } = require("../middleware/authMiddleware");
 const { permitDealAccess, getUserDealsFilter, getTeamMembers } = require("../middleware/dealAuth");
 const Deal = require("../models/deal");
+const Lead = require("../models/lead");
 const Customer = require("../models/customer");
 const Contact = require("../models/contact");
 const Item = require("../models/item");
+const Activity = require("../models/activity");
 const Notification = require("../models/notification");
 const User = require("../models/user");
 const DealView = require("../models/dealView");
+const AppSettings = require("../models/appSettings");
+const { sendLowStockCustomerEmail } = require("../utils/mailer");
 
 const normalizeDealStage = (stage) => {
   const value = String(stage || "").trim();
@@ -21,6 +26,53 @@ const normalizeDealStage = (stage) => {
   };
 
   return map[normalized] || normalized;
+};
+
+const getPublicBaseUrl = async (req) => {
+  let settings = null;
+  try {
+    settings = await AppSettings.findOne().select("backendUrl").lean();
+  } catch (_error) {
+    settings = null;
+  }
+
+  const configuredBaseUrl =
+    String(settings?.backendUrl || process.env.BACKEND_URL || process.env.API_URL || "").trim();
+  if (configuredBaseUrl) {
+    return configuredBaseUrl.replace(/\/+$/, "");
+  }
+
+  const host = String(req.get("host") || "").trim();
+  if (!host) {
+    return `http://localhost:${process.env.PORT || 5000}`;
+  }
+
+  return `${req.protocol}://${host}`;
+};
+
+const buildLowStockResponseUrls = async ({ req, dealId }) => {
+  const token = jwt.sign(
+    {
+      dealId: String(dealId),
+      purpose: "low_stock_response",
+    },
+    process.env.JWT_SECRET || "secret",
+    { expiresIn: "14d" }
+  );
+
+  const baseUrl = await getPublicBaseUrl(req);
+  return {
+    yesUrl: `${baseUrl}/api/deals/stock-response?action=yes&token=${encodeURIComponent(token)}`,
+    noUrl: `${baseUrl}/api/deals/stock-response?action=no&token=${encodeURIComponent(token)}`,
+  };
+};
+
+const appendRestockNote = (value) => {
+  const existing = String(value || "").trim();
+  const note = "Waiting for restock";
+  if (!existing) return note;
+  if (existing.toLowerCase().includes(note.toLowerCase())) return existing;
+  return `${existing}\n${note}`;
 };
 
 const getStageFilterValues = (stage) => {
@@ -58,7 +110,7 @@ const getDefaultProbabilityForStage = (stage) => {
 
 const allowedTransitions = {
   qualification: ["need_analysis", "lost"],
-  need_analysis: ["value_proposition", "qualification", "lost"],
+  need_analysis: ["value_proposition", "proposal_price_quote", "qualification", "lost"],
   value_proposition: ["proposal_price_quote", "need_analysis", "lost"],
   proposal_price_quote: ["negotiate", "value_proposition", "lost"],
   negotiate: ["won", "proposal_price_quote", "lost"],
@@ -233,6 +285,46 @@ const applyForecastFields = (dealPayload) => {
   return normalized;
 };
 
+const getDealCustomerEmail = async (deal) => {
+  const directEmail = String(deal?.email || "").trim();
+  if (directEmail) return directEmail;
+
+  const customerId = deal?.customerId?._id || deal?.customerId;
+  if (!customerId) return "";
+
+  try {
+    const customer = await Customer.findById(customerId).select("email").lean();
+    return String(customer?.email || "").trim();
+  } catch (_err) {
+    return "";
+  }
+};
+
+const notifyLowStockToCustomer = async ({ req, deal, item, availableQuantity, requestedQuantity }) => {
+  const recipient = await getDealCustomerEmail(deal);
+  if (!recipient) return;
+
+  const customerName =
+    String(deal?.name || "").trim() ||
+    [String(deal?.firstName || "").trim(), String(deal?.lastName || "").trim()].filter(Boolean).join(" ") ||
+    "Customer";
+
+  try {
+    const responseUrls = await buildLowStockResponseUrls({ req, dealId: deal?._id });
+    await sendLowStockCustomerEmail({
+      to: recipient,
+      customerName,
+      company: String(deal?.company || "").trim(),
+      itemName: String(item?.name || item?.sku || "Product").trim(),
+      requestedQuantity,
+      availableQuantity,
+      ...responseUrls,
+    });
+  } catch (emailError) {
+    console.error("Low-stock customer email failed:", emailError.message);
+  }
+};
+
 const validateCreateDealInput = (payload) => {
   const name = String(payload.name || "").trim();
   const salutation = String(payload.salutation || "").trim();
@@ -298,6 +390,27 @@ const validateCreateDealInput = (payload) => {
   }
 
   return null;
+};
+
+const getManagerLeadScopeIds = async (managerId) => {
+  const leads = await Lead.find({
+    $or: [
+      {
+        $and: [
+          { assignedTo: managerId },
+          { $or: [{ assignedByRole: "ADMIN" }, { assignedByRole: { $exists: false } }, { assignedByRole: null }, { assignedByRole: "" }] },
+        ],
+      },
+      {
+        $and: [
+          { assignedBy: managerId },
+          { assignedByRole: "MANAGER" },
+        ],
+      },
+    ],
+  }).select("_id");
+
+  return leads.map((lead) => lead._id);
 };
 
 const validateWonDealAgainstItem = ({ item, quantity, billingCycle }) => {
@@ -539,7 +652,14 @@ router.post("/filter", verifyToken, async (req, res) => {
 
     if (req.user.role.toUpperCase() === "MANAGER") {
       const teamIds = await getTeamMembers(req.user._id);
-      accessFilter = { $or: [{ assignedTo: req.user._id }, { assignedTo: { $in: teamIds } }] };
+      const managerLeadIds = await getManagerLeadScopeIds(req.user._id);
+      accessFilter = {
+        $or: [
+          { assignedTo: req.user._id },
+          { assignedTo: { $in: teamIds } },
+          { sourceLeadId: { $in: managerLeadIds } },
+        ],
+      };
     }
 
     if (Object.keys(accessFilter).length > 0) {
@@ -560,6 +680,7 @@ router.post("/filter", verifyToken, async (req, res) => {
 
     const deals = await Deal.find(finalFilter)
       .populate("assignedTo", "name username role employee_id")
+      .populate("customerId", "name company email phone")
       .populate("product", "name sku category price type status stock serviceType billingCycle")
       .sort(sort)
       .limit(limit)
@@ -661,11 +782,14 @@ router.get("/", verifyToken, permitDealAccess(), async (req, res) => {
     // For managers, extend filter to include team
     if (req.user.role.toUpperCase() === 'MANAGER') {
       const teamIds = await getTeamMembers(req.user._id);
+      const managerLeadIds = await getManagerLeadScopeIds(req.user._id);
       filter.$or.push({ assignedTo: { $in: teamIds } });
+      filter.$or.push({ sourceLeadId: { $in: managerLeadIds } });
     }
     
     const deals = await Deal.find(filter)
       .populate('assignedTo', 'name username role employee_id')
+      .populate("customerId", "name company email phone")
       .populate("product", "name sku category price type status stock serviceType billingCycle")
       .sort({ createdAt: -1 });
     res.json(deals);
@@ -1018,35 +1142,48 @@ const updateDealHandler = async (req, res) => {
       stageChanged = normalizeDealStage(oldStage) !== "lost";
     }
 
-    const isQualificationToNeedAnalysis =
-      normalizeDealStage(oldStage) === "qualification" && normalizeDealStage(nextStage) === "need_analysis";
-    if (isQualificationToNeedAnalysis) {
-      if (itemForValidation?.type === "product") {
+    const isNeedAnalysisToProposal =
+      normalizeDealStage(oldStage) === "need_analysis" && normalizeDealStage(nextStage) === "proposal_price_quote";
+    if (isNeedAnalysisToProposal) {
+      const itemType = String(itemForValidation?.type || "").toLowerCase();
+      const inferredAvailableQuantity = Number(itemForValidation?.stock ?? itemForValidation?.quantity ?? 0);
+      const treatAsProduct = itemType === "product" || (itemType !== "service" && Number.isFinite(inferredAvailableQuantity));
+
+      if (treatAsProduct) {
         const nextQuantity = Object.prototype.hasOwnProperty.call(updates, "quantity")
           ? parseOptionalNumber(updates.quantity)
           : parseOptionalNumber(req.deal.quantity);
-        const availableQuantity = Number(itemForValidation.stock ?? itemForValidation.quantity ?? 0);
+        const availableQuantity = Number(itemForValidation?.stock ?? itemForValidation?.quantity ?? 0);
         if (nextQuantity === null || nextQuantity <= 0) {
-          return res.status(400).json({ message: "Quantity is required when moving a product deal to Need Analysis" });
+          return res.status(400).json({ message: "Quantity is required when moving a product deal to Proposal stage" });
         }
         if (Number.isFinite(availableQuantity) && nextQuantity > availableQuantity) {
-          nextStage = "lost";
-          updates.stage = "lost";
-          updates.reason = String(updates.reason || req.deal.reason || "Insufficient stock").trim();
-          warningMessage = "Insufficient stock. Deal moved to Lost.";
-          stageChanged = normalizeDealStage(oldStage) !== "lost";
+          await notifyLowStockToCustomer({
+            req,
+            deal: req.deal,
+            item: itemForValidation,
+            availableQuantity,
+            requestedQuantity: nextQuantity,
+          });
+          return res.status(400).json({
+            message: `Low stock. Available quantity is ${availableQuantity}.`,
+            availableQuantity,
+            requestedQuantity: nextQuantity,
+          });
         }
         updates.quantity = nextQuantity;
-      } else if (itemForValidation?.type === "service") {
+      } else if (itemType === "service") {
         const nextBillingCycle = Object.prototype.hasOwnProperty.call(updates, "billingCycle")
           ? normalizeBillingCycle(updates.billingCycle)
           : normalizeBillingCycle(req.deal.billingCycle);
         if (!nextBillingCycle) {
           return res.status(400).json({
-            message: "Plan / Billing Cycle is required when moving a service deal to Need Analysis",
+            message: "Plan / Billing Cycle is required when moving a service deal to Proposal stage",
           });
         }
         updates.billingCycle = nextBillingCycle;
+      } else {
+        return res.status(400).json({ message: "Unable to determine item type for this deal" });
       }
     }
 
@@ -1236,6 +1373,126 @@ router.put("/:id/stage", verifyToken, permitDealAccess(), async (req, res) => {
   };
 
   return updateDealHandler(req, res);
+});
+
+router.get("/stock-response", async (req, res) => {
+  const action = String(req.query.action || "").trim().toLowerCase();
+  const token = String(req.query.token || "").trim();
+
+  if (!["yes", "no"].includes(action) || !token) {
+    return res.status(400).send(`
+      <html><body style="font-family: Arial, sans-serif; padding: 32px;">
+        <h2>Invalid response link</h2>
+        <p>This stock response link is invalid or incomplete.</p>
+      </body></html>
+    `);
+  }
+
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || "secret");
+    if (decoded?.purpose !== "low_stock_response" || !decoded?.dealId) {
+      throw new Error("Invalid response token");
+    }
+
+    const deal = await Deal.findById(decoded.dealId);
+    if (!deal) {
+      return res.status(404).send(`
+        <html><body style="font-family: Arial, sans-serif; padding: 32px;">
+          <h2>Request not found</h2>
+          <p>This deal could not be found.</p>
+        </body></html>
+      `);
+    }
+
+    if (action === "yes") {
+      const openActivities = await Activity.find({
+        "relatedTo.recordType": "Deal",
+        "relatedTo.recordId": deal._id,
+        status: { $nin: ["Completed", "Cancelled"] },
+      }).select("_id notes description");
+
+      if (openActivities.length > 0) {
+        await Activity.bulkWrite(
+          openActivities.map((activity) => ({
+            updateOne: {
+              filter: { _id: activity._id },
+              update: {
+                $set: {
+                  notes: appendRestockNote(activity.notes),
+                  description: appendRestockNote(activity.description || activity.notes),
+                },
+              },
+            },
+          }))
+        );
+      }
+
+      return res.send(`
+        <html><body style="font-family: Arial, sans-serif; padding: 32px; color: #111827;">
+          <div style="max-width: 640px; margin: 0 auto; border: 1px solid #e5e7eb; border-radius: 12px; padding: 24px;">
+            <h2 style="margin-top: 0; color: #166534;">Thank you for your confirmation</h2>
+            <p>We have kept your request active.</p>
+            <p>Our team will follow up with full details as soon as inventory is restocked.</p>
+          </div>
+        </body></html>
+      `);
+    }
+
+    const previousStage = deal.stage;
+    if (String(deal.stage || "").toLowerCase() !== "lost") {
+      await Deal.findByIdAndUpdate(
+        deal._id,
+        {
+          $set: {
+            stage: "lost",
+            status: "Inactive",
+            reason: "Customer declined to wait for inventory restock",
+          },
+          $push: {
+            timeline: {
+              $each: [
+                {
+                  fromStage: previousStage,
+                  toStage: "lost",
+                  changedBy: null,
+                  changedAt: new Date(),
+                  userName: "Customer Response",
+                },
+              ],
+              $position: 0,
+            },
+          },
+        },
+        {
+          new: true,
+          runValidators: true,
+        }
+      );
+
+      await Activity.deleteMany({
+        "relatedTo.recordType": "Deal",
+        "relatedTo.recordId": deal._id,
+        status: { $nin: ["Completed", "Cancelled"] },
+      });
+    }
+
+    return res.send(`
+      <html><body style="font-family: Arial, sans-serif; padding: 32px; color: #111827;">
+        <div style="max-width: 640px; margin: 0 auto; border: 1px solid #e5e7eb; border-radius: 12px; padding: 24px;">
+          <h2 style="margin-top: 0; color: #991b1b;">Thank you for your interest</h2>
+          <p>Your request has been closed as per your response.</p>
+          <p>If you would like to continue later, our team will be happy to help you.</p>
+        </div>
+      </body></html>
+    `);
+  } catch (error) {
+    return res.status(400).send(`
+      <html><body style="font-family: Arial, sans-serif; padding: 32px;">
+        <h2>Response link expired</h2>
+        <p>This stock response link is invalid or has expired.</p>
+      </body></html>
+    `);
+  }
 });
 
 router.delete("/:id", verifyToken, permitDealAccess(), async (req, res) => {
