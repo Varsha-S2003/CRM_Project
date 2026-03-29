@@ -860,6 +860,14 @@ router.post("/filter", verifyToken, async (req, res) => {
 
     const deals = await Deal.find(finalFilter)
       .populate("assignedTo", "name username role employee_id")
+      .populate({
+        path: "sourceLeadId",
+        select: "assignedBy assignedTo",
+        populate: [
+          { path: "assignedBy", select: "name username role employee_id" },
+          { path: "assignedTo", select: "name username role employee_id" },
+        ],
+      })
       .populate("customerId", "name company email phone")
       .populate("product", "name sku category price type status stock serviceType billingCycle")
       .sort(sort)
@@ -969,6 +977,14 @@ router.get("/", verifyToken, permitDealAccess(), async (req, res) => {
     
     const deals = await Deal.find(filter)
       .populate('assignedTo', 'name username role employee_id')
+      .populate({
+        path: "sourceLeadId",
+        select: "assignedBy assignedTo",
+        populate: [
+          { path: "assignedBy", select: "name username role employee_id" },
+          { path: "assignedTo", select: "name username role employee_id" },
+        ],
+      })
       .populate("customerId", "name company email phone")
       .populate("product", "name sku category price type status stock serviceType billingCycle")
       .sort({ createdAt: -1 });

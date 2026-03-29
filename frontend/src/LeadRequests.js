@@ -735,6 +735,8 @@ function LeadRequests() {
         </div>
       </div>
       <div className="assignment-lead-meta">Company: {item.company || "-"}</div>
+      <div className="assignment-lead-meta">Assigned by: {item.sourceLeadId?.assignedBy?.name || item.sourceLeadId?.assignedBy?.username || "System"}</div>
+      <div className="assignment-lead-meta">Assigned to: {item.sourceLeadId?.assignedTo?.name || item.sourceLeadId?.assignedTo?.username || "Unassigned"}</div>
       <div className="assignment-lead-meta">Amount: {item.amount ? `₹${Number(item.amount).toLocaleString()}` : "-"}</div>
       <div className="assignment-lead-meta">Contact: {item.contact || item.email || "-"}</div>
       {normalizeDealStage(item.stage) === "need_analysis" && getWaitingForRestockNote(item) ? (
@@ -1122,3 +1124,4 @@ function LeadRequests() {
 }
 
 export default LeadRequests;
+
