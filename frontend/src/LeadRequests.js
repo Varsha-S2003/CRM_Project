@@ -61,6 +61,12 @@ const normalizeDealRequest = (deal) => {
   };
 };
 
+const normalizeAssignedUser = (value) => {
+  if (!value) return null;
+  if (typeof value === "object") return value;
+  return { _id: value };
+};
+
 const dedupeDealsById = (items) => {
   const map = new Map();
 
@@ -119,8 +125,8 @@ function LeadRequests() {
           company: lead.company,
           email: lead.email,
           status: lead.status,
-          assignedBy: null,
-          assignedTo: lead.assignedTo || null,
+          assignedBy: normalizeAssignedUser(lead.assignedBy),
+          assignedTo: normalizeAssignedUser(lead.assignedTo),
           canAssign: false,
           canUnassign: false,
           nextAction: { type: "none", label: "No Immediate Action" },

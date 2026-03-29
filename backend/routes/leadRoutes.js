@@ -578,7 +578,12 @@ router.get("/all", verifyToken, permit("ADMIN", "MANAGER"), async (req, res, nex
       }
     }
     
-    const leads = await Lead.find(filter).sort({ [sort]: parseInt(order) }).limit(parseInt(limit)).skip(parseInt(skip));
+    const leads = await Lead.find(filter)
+      .populate("assignedBy", "name username role employee_id")
+      .populate("assignedTo", "name username role employee_id")
+      .sort({ [sort]: parseInt(order) })
+      .limit(parseInt(limit))
+      .skip(parseInt(skip));
     res.json(leads);
   } catch (err) {
     if (err.statusCode) {
@@ -624,7 +629,12 @@ router.get("/my", verifyToken, permit("EMPLOYEE"), async (req, res, next) => {
       }
     }
     
-    const leads = await Lead.find(filter).sort({ [sort]: parseInt(order) }).limit(parseInt(limit)).skip(parseInt(skip));
+    const leads = await Lead.find(filter)
+      .populate("assignedBy", "name username role employee_id")
+      .populate("assignedTo", "name username role employee_id")
+      .sort({ [sort]: parseInt(order) })
+      .limit(parseInt(limit))
+      .skip(parseInt(skip));
     res.json(leads);
   } catch (err) {
     if (err.statusCode) {
