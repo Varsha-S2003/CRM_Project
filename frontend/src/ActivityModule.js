@@ -65,6 +65,33 @@ const COMPLETE_OUTCOME_OPTIONS = [
   { value: "no_response", label: "No Response" },
   { value: "follow_up_needed", label: "Follow-up Needed" },
 ];
+const PAIN_POINT_OPTIONS = [
+  "No proper lead tracking",
+  "Missed follow-ups",
+  "Manual work / time consuming",
+  "No centralized data",
+  "Low conversion rate",
+];
+const REQUIRED_FEATURE_OPTIONS = [
+  "Lead Management",
+  "Contact Management",
+  "Call Tracking",
+  "Meeting Scheduling",
+  "Email Integration",
+  "Proposal Management",
+  "Reporting & Dashboard",
+];
+const BUDGET_OPTIONS = ["Low", "Medium", "High", "Not decided"];
+const AUTHORITY_OPTIONS = ["Decision Maker", "Influencer", "No authority"];
+const NEED_LEVEL_OPTIONS = ["High", "Medium", "Low"];
+const QUALIFICATION_TIMELINE_OPTIONS = ["Immediate", "1 Month", "3 Months", "Later"];
+const CUSTOMER_INTEREST_LEVEL_OPTIONS = ["High", "Medium", "Low"];
+const VALUE_PROPOSITION_NEXT_STEP_OPTIONS = [
+  "Schedule Demo",
+  "Send Proposal",
+  "Follow-up Call",
+  "No Action",
+];
 const NEED_ANALYSIS_PRIORITY_OPTIONS = ["Low", "Medium", "High"];
 const MODULE_CONFIG = {
   all: {
@@ -136,6 +163,102 @@ const getDefaultStageByActivityType = (type) => {
 };
 
 const normalizeDealStage = (value) => String(value || "").trim().toLowerCase().replace(/\s+/g, "_");
+
+const createDefaultCompletionForm = () => ({
+  outcome: "",
+  reason: "",
+  rescheduleDateTime: "",
+  businessRequirementSummary: "",
+  customerGoal: "",
+  industryType: "",
+  currentSystemUsed: "",
+  currentLeadManagement: "",
+  communicationMethod: "",
+  processChallenges: "",
+  painPoints: [],
+  otherIssues: "",
+  requiredFeatures: [],
+  customRequirements: "",
+  decisionMakerName: "",
+  stakeholderRole: "",
+  stakeholderDepartment: "",
+  userCount: "",
+  approvalRequired: "",
+  qualificationBudget: "",
+  qualificationAuthority: "",
+  qualificationNeed: "",
+  qualificationTimeline: "",
+  interestedOffering: "",
+  meetingNotes: "",
+  problemStatement: "",
+  proposedSolution: "",
+  keyBenefits: "",
+  customerInterestLevel: "",
+  nextStepAction: "",
+  followUpDate: "",
+  demoGiven: "",
+  objectionsRaised: "",
+  uspExplained: "",
+  valuePropositionNotes: "",
+  requirementSummary: "",
+  timeline: "",
+  needPriority: "Medium",
+  decisionMakerConfirmed: false,
+  needType: "",
+  productName: "",
+  quantity: "",
+  requiredModules: "",
+  servicePlan: "",
+  billingCycle: "",
+  usersOrSeats: "",
+});
+
+const formatUsecaseNotes = (form) => {
+  const painPointsValue = Array.isArray(form.painPoints) ? form.painPoints.join(", ") : "";
+  const requiredFeaturesValue = Array.isArray(form.requiredFeatures) ? form.requiredFeatures.join(", ") : "";
+  const sections = [
+    ["Business Requirement Summary", form.businessRequirementSummary],
+    ["Customer Goal / Objective", form.customerGoal],
+    ["Industry Type", form.industryType],
+    ["Current System Used", form.currentSystemUsed],
+    ["How They Manage Leads Currently", form.currentLeadManagement],
+    ["Communication Method", form.communicationMethod],
+    ["Existing Challenges in Process", form.processChallenges],
+    ["Pain Points", painPointsValue],
+    ["Other Issues", form.otherIssues],
+    ["Required Features / Expectations", requiredFeaturesValue],
+    ["Custom Requirements", form.customRequirements],
+    ["Decision Maker Name", form.decisionMakerName],
+    ["Role", form.stakeholderRole],
+    ["Department", form.stakeholderDepartment],
+    ["Number of Users Required", form.userCount],
+    ["Approval Required", form.approvalRequired],
+    ["Budget", form.qualificationBudget],
+    ["Authority", form.qualificationAuthority],
+    ["Need", form.qualificationNeed],
+    ["Timeline", form.qualificationTimeline],
+    ["Interested Product/Service", form.interestedOffering],
+    ["Meeting Notes", form.meetingNotes],
+  ];
+
+  return sections
+    .map(([label, value]) => [label, String(value || "").trim()])
+    .filter(([, value]) => value)
+    .map(([label, value]) => `${label}: ${value}`)
+    .join("\n");
+};
+
+const formatDisplayValue = (value) => {
+  const text = String(value || "").trim();
+  return text || "-";
+};
+
+const emitDealPipelineRefresh = () => {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new Event("deal-updated"));
+  window.dispatchEvent(new Event("inventory-updated"));
+  window.dispatchEvent(new Event("customer-updated"));
+};
 
 const parseDateValue = (value) => {
   if (!value) return null;
@@ -434,23 +557,7 @@ function ActivityModule() {
   const [showCompleteModal, setShowCompleteModal] = useState(false);
   const [completeBusy, setCompleteBusy] = useState(false);
   const [completionTarget, setCompletionTarget] = useState(null);
-  const [completionForm, setCompletionForm] = useState({
-    outcome: "",
-    reason: "",
-    rescheduleDateTime: "",
-    usecaseNotes: "",
-    requirementSummary: "",
-    timeline: "",
-    needPriority: "Medium",
-    decisionMakerConfirmed: false,
-    needType: "",
-    productName: "",
-    quantity: "",
-    requiredModules: "",
-    servicePlan: "",
-    billingCycle: "",
-    usersOrSeats: "",
-  });
+  const [completionForm, setCompletionForm] = useState(createDefaultCompletionForm);
   const [returnToRequestsAfterSubmit, setReturnToRequestsAfterSubmit] = useState(false);
   const [redirectAfterProposalSubmit, setRedirectAfterProposalSubmit] = useState("");
   const autoOpenKeyRef = useRef("");
@@ -765,23 +872,7 @@ function ActivityModule() {
   const closeCompleteModal = () => {
     setShowCompleteModal(false);
     setCompletionTarget(null);
-    setCompletionForm({
-      outcome: "",
-      reason: "",
-      rescheduleDateTime: "",
-      usecaseNotes: "",
-      requirementSummary: "",
-      timeline: "",
-      needPriority: "Medium",
-      decisionMakerConfirmed: false,
-      needType: "",
-      productName: "",
-      quantity: "",
-      requiredModules: "",
-      servicePlan: "",
-      billingCycle: "",
-      usersOrSeats: "",
-    });
+    setCompletionForm(createDefaultCompletionForm());
   };
 
   const handleProposalFieldChange = (field, value) => {
@@ -1055,6 +1146,12 @@ function ActivityModule() {
   const openCompleteModal = (activity) => {
     const relatedType = String(activity?.relatedTo?.recordType || "").toLowerCase();
     const relatedDealId = String(activity?.relatedTo?.recordId?._id || activity?.relatedTo?.recordId || "").trim();
+    const relatedLead =
+      relatedType === "lead" &&
+      activity?.relatedTo?.recordId &&
+      typeof activity.relatedTo.recordId === "object"
+        ? activity.relatedTo.recordId
+        : null;
     const relatedDeal =
       relatedType === "deal" &&
       activity?.relatedTo?.recordId &&
@@ -1079,20 +1176,14 @@ function ActivityModule() {
 
     setCompletionTarget(activity);
     setCompletionForm({
+      ...createDefaultCompletionForm(),
       outcome: isNeedAnalysisDeal ? "interested" : "",
-      reason: "",
-      rescheduleDateTime: "",
-      requirementSummary: "",
-      timeline: "",
-      needPriority: "Medium",
-      decisionMakerConfirmed: false,
+      industryType: String(relatedLead?.industry || "").trim(),
       needType: isNeedAnalysisDeal ? inferredDealType : "",
       productName: autoFetchedItemName,
       quantity: resolvedDeal?.quantity ?? "",
-      requiredModules: "",
       servicePlan: autoFetchedItemName,
       billingCycle: String(resolvedDeal?.billingCycle || "").trim(),
-      usersOrSeats: "",
     });
     setShowCompleteModal(true);
   };
@@ -1162,6 +1253,31 @@ function ActivityModule() {
     return summaryOk && timelineOk && decisionMakerOk && (quantityOk || planAndCycleOk);
   }, [completionForm, isNeedAnalysisDealCompletion]);
 
+  const isValuePropositionDealCompletion = useMemo(() => {
+    const relatedType = String(completionTarget?.relatedTo?.recordType || "").toLowerCase();
+    const relatedRecord = completionTarget?.relatedTo?.recordId;
+    const relatedDeal = relatedRecord && typeof relatedRecord === "object" ? relatedRecord : null;
+    const normalizedDealStage = normalizeDealStage(relatedDeal?.stage);
+    const activityType = String(completionTarget?.activityType || "").toLowerCase();
+
+    return relatedType === "deal" && normalizedDealStage === "value_proposition" && activityType === "meeting";
+  }, [completionTarget]);
+
+  const isValuePropositionMinimumValid = useMemo(() => {
+    if (!isValuePropositionDealCompletion) return false;
+
+    const problemOk = Boolean(String(completionForm.problemStatement || "").trim());
+    const solutionOk = Boolean(String(completionForm.proposedSolution || "").trim());
+    const benefitsOk = Boolean(String(completionForm.keyBenefits || "").trim());
+    const interestOk = Boolean(String(completionForm.customerInterestLevel || "").trim());
+    const nextStepOk = Boolean(String(completionForm.nextStepAction || "").trim());
+    const followUpOk =
+      completionForm.nextStepAction === "Send Proposal" ||
+      Boolean(String(completionForm.followUpDate || "").trim());
+
+    return problemOk && solutionOk && benefitsOk && interestOk && nextStepOk && followUpOk;
+  }, [completionForm, isValuePropositionDealCompletion]);
+
   const isLeadMeetingInterestedCompletion = useMemo(() => {
     const outcome = String(completionForm.outcome || "").trim().toLowerCase();
     if (outcome !== "interested") return false;
@@ -1169,6 +1285,41 @@ function ActivityModule() {
     const relatedType = String(completionTarget?.relatedTo?.recordType || "").toLowerCase();
     return activityType === "meeting" && relatedType === "lead";
   }, [completionForm.outcome, completionTarget]);
+
+  const completionLeadDetails = useMemo(() => {
+    const lead =
+      completionTarget?.relatedTo?.recordId && typeof completionTarget.relatedTo.recordId === "object"
+        ? completionTarget.relatedTo.recordId
+        : null;
+    const assignedTo = lead?.assignedTo;
+    const assignedId =
+      assignedTo && typeof assignedTo === "object"
+        ? String(assignedTo._id || assignedTo.id || assignedTo.userId || "")
+        : String(assignedTo || "");
+    const assignedUser =
+      assignedTo && typeof assignedTo === "object"
+        ? assignedTo
+        : users.find((user) => String(user._id || user.id || "") === assignedId);
+
+    return {
+      leadName: lead?.name || completionTarget?.relatedTo?.recordName || "",
+      companyName: lead?.company || "",
+      contactNumber: lead?.phone || lead?.mobile || "",
+      email: lead?.email || "",
+      leadSource: lead?.source || "",
+      assignedTo: assignedUser?.name || assignedUser?.username || "",
+    };
+  }, [completionTarget, users]);
+
+  const toggleCompletionListValue = useCallback((field, value) => {
+    setCompletionForm((prev) => {
+      const currentValues = Array.isArray(prev[field]) ? prev[field] : [];
+      const nextValues = currentValues.includes(value)
+        ? currentValues.filter((item) => item !== value)
+        : [...currentValues, value];
+      return { ...prev, [field]: nextValues };
+    });
+  }, []);
 
   const handleComplete = async () => {
     if (!completionTarget?._id) return;
@@ -1230,7 +1381,7 @@ function ActivityModule() {
       ];
 
       const dealPayload = {
-        stage: "proposal_price_quote",
+        stage: "value_proposition",
         nextStep: requirementSummary,
         description: activitySummaryLines.join("\n"),
       };
@@ -1259,9 +1410,14 @@ function ActivityModule() {
           { headers: apiHeaders }
         );
 
-        setToast("Need Analysis completed and deal moved to Proposal stage.");
+        setToast("Need Analysis completed and deal moved to Value Proposition stage.");
+        emitDealPipelineRefresh();
         closeCompleteModal();
+        await fetchRelatedRecords();
         await refreshAll();
+        if (returnToRequestsAfterSubmit) {
+          navigate("/requests");
+        }
       } catch (error) {
         const errorMessage = error.response?.data?.message || "Failed to complete Need Analysis.";
         const isLowStockError = /low stock|insufficient stock/i.test(String(errorMessage));
@@ -1279,9 +1435,92 @@ function ActivityModule() {
       return;
     }
 
+    if (isValuePropositionDealCompletion) {
+      const dealIdRaw =
+        completionTarget?.relatedTo?.recordId?._id ||
+        completionTarget?.relatedTo?.recordId;
+      const dealId = String(dealIdRaw || "").trim();
+      if (!dealId) {
+        setToast("Linked deal not found for Value Proposition completion.");
+        return;
+      }
+
+      const problemStatement = String(completionForm.problemStatement || "").trim();
+      const proposedSolution = String(completionForm.proposedSolution || "").trim();
+      const keyBenefits = String(completionForm.keyBenefits || "").trim();
+      const customerInterestLevel = String(completionForm.customerInterestLevel || "").trim();
+      const nextStepAction = String(completionForm.nextStepAction || "").trim();
+      const followUpDate = String(completionForm.followUpDate || "").trim();
+      const objectionsRaised = String(completionForm.objectionsRaised || "").trim();
+      const uspExplained = String(completionForm.uspExplained || "").trim();
+      const valuePropositionNotes = String(completionForm.valuePropositionNotes || "").trim();
+      const requiresFollowUpDate = nextStepAction !== "Send Proposal";
+
+      if (!problemStatement || !proposedSolution || !keyBenefits || !customerInterestLevel || !nextStepAction) {
+        setToast("Please complete required fields.");
+        return;
+      }
+      if (requiresFollowUpDate && !followUpDate) {
+        setToast("Please complete required fields.");
+        return;
+      }
+
+      const activitySummaryLines = [
+        `Problem Statement: ${problemStatement}`,
+        `Proposed Solution: ${proposedSolution}`,
+        `Key Benefits: ${keyBenefits}`,
+        `Customer Interest Level: ${customerInterestLevel}`,
+        `Next Step: ${nextStepAction}`,
+        `Follow-up Date: ${followUpDate || "-"}`,
+        `Demo Given: ${completionForm.demoGiven || "-"}`,
+        `Objections Raised: ${objectionsRaised || "-"}`,
+        `USP Explained: ${uspExplained || "-"}`,
+        `Notes: ${valuePropositionNotes || "-"}`,
+      ];
+
+      try {
+        setCompleteBusy(true);
+
+        await axios.put(
+          `http://localhost:5000/api/deals/${dealId}/stage`,
+          {
+            stage: "proposal_price_quote",
+            nextStep: nextStepAction,
+            description: activitySummaryLines.join("\n"),
+          },
+          { headers: apiHeaders }
+        );
+
+        await axios.post(
+          `http://localhost:5000/api/activities/${completionTarget._id}/complete`,
+          {
+            outcome: "interested",
+            stage: getDefaultStageByActivityType(completionTarget.activityType),
+            outcomeReason: activitySummaryLines.join("\n"),
+            rescheduleDateTime: null,
+          },
+          { headers: apiHeaders }
+        );
+
+        setToast("Value Proposition completed and deal moved to Proposal stage.");
+        emitDealPipelineRefresh();
+        closeCompleteModal();
+        await fetchRelatedRecords();
+        await refreshAll();
+        if (returnToRequestsAfterSubmit) {
+          navigate("/requests");
+        }
+      } catch (error) {
+        setToast(error.response?.data?.message || "Failed to complete Value Proposition.");
+      } finally {
+        setCompleteBusy(false);
+      }
+      return;
+    }
+
     const outcome = String(completionForm.outcome || "").trim();
     const reason = String(completionForm.reason || "").trim();
-    const usecaseNotes = String(completionForm.usecaseNotes || "").trim();
+    const usecaseNotes = formatUsecaseNotes(completionForm);
     const needsReason = ["not_interested", "no_response", "follow_up_needed"].includes(outcome);
     const needsReschedule = ["no_response", "follow_up_needed"].includes(outcome);
 
@@ -1295,8 +1534,13 @@ function ActivityModule() {
       return;
     }
 
-    if (isLeadMeetingInterestedCompletion && !usecaseNotes) {
-      setToast("Please enter meeting details before completing.");
+    if (isLeadMeetingInterestedCompletion && !String(completionForm.businessRequirementSummary || "").trim()) {
+      setToast("Please fill in the Business Requirement Summary before completing.");
+      return;
+    }
+
+    if (isLeadMeetingInterestedCompletion && !String(completionForm.meetingNotes || "").trim()) {
+      setToast("Please fill in Meeting Notes before completing.");
       return;
     }
 
@@ -2556,7 +2800,9 @@ function ActivityModule() {
                     <h2>Complete Activity</h2>
                     <p>
                       {isNeedAnalysisDealCompletion
-                        ? `${completionTarget?.title || "Activity"} - fill Need Analysis details to move deal to Proposal stage.`
+                        ? `${completionTarget?.title || "Activity"} - fill Need Analysis details to move deal to Value Proposition stage.`
+                        : isValuePropositionDealCompletion
+                          ? `${completionTarget?.title || "Activity"} - complete Value Proposition details to move deal to Proposal stage.`
                         : `${completionTarget?.title || "Activity"} - choose outcome to update lead stage and follow-up actions.`}
                     </p>
                   </div>
@@ -2692,6 +2938,131 @@ function ActivityModule() {
                         Decision Maker Confirmed *
                       </label>
                     </div>
+                  ) : isValuePropositionDealCompletion ? (
+                    <div className="activity-usecase-form">
+                      <div className="activity-usecase-section">
+                        <div className="activity-usecase-section-title">Value Proposition Form (After Meeting)</div>
+                        <div className="activity-form-grid activity-usecase-grid">
+                          <label className="full-width">
+                            Problem Statement *
+                            <textarea
+                              rows="3"
+                              value={completionForm.problemStatement}
+                              onChange={(event) =>
+                                setCompletionForm((prev) => ({ ...prev, problemStatement: event.target.value }))
+                              }
+                              placeholder="Describe the customer's main problem or challenge identified during the meeting."
+                            />
+                          </label>
+                          <label className="full-width">
+                            Proposed Solution *
+                            <textarea
+                              rows="3"
+                              value={completionForm.proposedSolution}
+                              onChange={(event) =>
+                                setCompletionForm((prev) => ({ ...prev, proposedSolution: event.target.value }))
+                              }
+                              placeholder="Explain the solution you proposed to address the customer's problem."
+                            />
+                          </label>
+                          <label className="full-width">
+                            Key Benefits *
+                            <textarea
+                              rows="3"
+                              value={completionForm.keyBenefits}
+                              onChange={(event) =>
+                                setCompletionForm((prev) => ({ ...prev, keyBenefits: event.target.value }))
+                              }
+                              placeholder="List the key benefits explained to the customer."
+                            />
+                          </label>
+                          <label>
+                            Customer Interest Level *
+                            <select
+                              value={completionForm.customerInterestLevel}
+                              onChange={(event) =>
+                                setCompletionForm((prev) => ({ ...prev, customerInterestLevel: event.target.value }))
+                              }
+                            >
+                              <option value="">Select interest level</option>
+                              {CUSTOMER_INTEREST_LEVEL_OPTIONS.map((option) => (
+                                <option key={option} value={option}>{option}</option>
+                              ))}
+                            </select>
+                          </label>
+                          <label>
+                            Next Step *
+                            <select
+                              value={completionForm.nextStepAction}
+                              onChange={(event) =>
+                                setCompletionForm((prev) => ({ ...prev, nextStepAction: event.target.value }))
+                              }
+                            >
+                              <option value="">Select next step</option>
+                              {VALUE_PROPOSITION_NEXT_STEP_OPTIONS.map((option) => (
+                                <option key={option} value={option}>{option}</option>
+                              ))}
+                            </select>
+                          </label>
+                          <label>
+                            Follow-up Date {completionForm.nextStepAction !== "Send Proposal" ? "*" : ""}
+                            <input
+                              type="date"
+                              value={completionForm.followUpDate}
+                              onChange={(event) =>
+                                setCompletionForm((prev) => ({ ...prev, followUpDate: event.target.value }))
+                              }
+                            />
+                          </label>
+                          <label>
+                            Demo Given
+                            <select
+                              value={completionForm.demoGiven}
+                              onChange={(event) =>
+                                setCompletionForm((prev) => ({ ...prev, demoGiven: event.target.value }))
+                              }
+                            >
+                              <option value="">Select</option>
+                              <option value="Yes">Yes</option>
+                              <option value="No">No</option>
+                            </select>
+                          </label>
+                          <label className="full-width">
+                            Objections Raised
+                            <textarea
+                              rows="3"
+                              value={completionForm.objectionsRaised}
+                              onChange={(event) =>
+                                setCompletionForm((prev) => ({ ...prev, objectionsRaised: event.target.value }))
+                              }
+                              placeholder="Mention any concerns raised by the customer."
+                            />
+                          </label>
+                          <label className="full-width">
+                            USP Explained
+                            <textarea
+                              rows="2"
+                              value={completionForm.uspExplained}
+                              onChange={(event) =>
+                                setCompletionForm((prev) => ({ ...prev, uspExplained: event.target.value }))
+                              }
+                              placeholder="Explain why your solution is better."
+                            />
+                          </label>
+                          <label className="full-width">
+                            Notes
+                            <textarea
+                              rows="3"
+                              value={completionForm.valuePropositionNotes}
+                              onChange={(event) =>
+                                setCompletionForm((prev) => ({ ...prev, valuePropositionNotes: event.target.value }))
+                              }
+                              placeholder="Add any additional notes from the meeting."
+                            />
+                          </label>
+                        </div>
+                      </div>
+                    </div>
                   ) : (
                     <>
                       <div className="activity-complete-outcomes" role="group" aria-label="Completion outcome">
@@ -2726,17 +3097,333 @@ function ActivityModule() {
                       ) : null}
 
                       {isLeadMeetingInterestedCompletion ? (
-                        <label className="full-width">
-                          Meeting Details / Usecase Notes
-                          <textarea
-                            rows="3"
-                            value={completionForm.usecaseNotes}
-                            onChange={(event) =>
-                              setCompletionForm((prev) => ({ ...prev, usecaseNotes: event.target.value }))
-                            }
-                            placeholder="Add key points, requirements, and next steps from the meeting"
-                          />
-                        </label>
+                        <div className="full-width activity-usecase-form">
+                          <div className="activity-card-header" style={{ marginBottom: 0 }}>
+                            <h3>Use Case Information</h3>
+                            <p>Capture business requirement, process gaps, qualification, and meeting notes.</p>
+                          </div>
+
+                          <div className="activity-usecase-section">
+                            <div className="activity-usecase-section-title">1. Lead Basic Information</div>
+                            <div className="activity-form-grid activity-usecase-grid">
+                              <label>
+                                Lead Name
+                                <input type="text" value={formatDisplayValue(completionLeadDetails.leadName)} readOnly />
+                              </label>
+                              <label>
+                                Company Name
+                                <input type="text" value={formatDisplayValue(completionLeadDetails.companyName)} readOnly />
+                              </label>
+                              <label>
+                                Contact Number
+                                <input type="text" value={formatDisplayValue(completionLeadDetails.contactNumber)} readOnly />
+                              </label>
+                              <label>
+                                Email
+                                <input type="text" value={formatDisplayValue(completionLeadDetails.email)} readOnly />
+                              </label>
+                              <label>
+                                Lead Source
+                                <input type="text" value={formatDisplayValue(completionLeadDetails.leadSource)} readOnly />
+                              </label>
+                              <label>
+                                Assigned To
+                                <input type="text" value={formatDisplayValue(completionLeadDetails.assignedTo)} readOnly />
+                              </label>
+                            </div>
+                          </div>
+
+                          <div className="activity-usecase-section">
+                            <div className="activity-usecase-section-title">2. Business Requirement Summary</div>
+                            <div className="activity-form-grid activity-usecase-grid">
+                              <label className="full-width">
+                                Business Requirement Summary *
+                                <textarea
+                                  rows="3"
+                                  value={completionForm.businessRequirementSummary}
+                                  onChange={(event) =>
+                                    setCompletionForm((prev) => ({ ...prev, businessRequirementSummary: event.target.value }))
+                                  }
+                                  placeholder="Short description of the business requirement"
+                                />
+                              </label>
+                              <label>
+                                Customer Goal / Objective
+                                <textarea
+                                  rows="3"
+                                  value={completionForm.customerGoal}
+                                  onChange={(event) =>
+                                    setCompletionForm((prev) => ({ ...prev, customerGoal: event.target.value }))
+                                  }
+                                  placeholder="What outcome the customer wants to achieve"
+                                />
+                              </label>
+                              <label>
+                                Industry Type
+                                <input
+                                  type="text"
+                                  value={completionForm.industryType}
+                                  onChange={(event) =>
+                                    setCompletionForm((prev) => ({ ...prev, industryType: event.target.value }))
+                                  }
+                                  placeholder="Industry or business category"
+                                />
+                              </label>
+                            </div>
+                          </div>
+
+                          <div className="activity-usecase-section">
+                            <div className="activity-usecase-section-title">3. Current Process (As-Is)</div>
+                            <div className="activity-form-grid activity-usecase-grid">
+                              <label>
+                                Current System Used
+                                <input
+                                  type="text"
+                                  value={completionForm.currentSystemUsed}
+                                  onChange={(event) =>
+                                    setCompletionForm((prev) => ({ ...prev, currentSystemUsed: event.target.value }))
+                                  }
+                                  placeholder="Excel / Manual / Other CRM"
+                                />
+                              </label>
+                              <label>
+                                Communication Method
+                                <input
+                                  type="text"
+                                  value={completionForm.communicationMethod}
+                                  onChange={(event) =>
+                                    setCompletionForm((prev) => ({ ...prev, communicationMethod: event.target.value }))
+                                  }
+                                  placeholder="Call / Email / WhatsApp"
+                                />
+                              </label>
+                              <label className="full-width">
+                                How They Manage Leads Currently
+                                <textarea
+                                  rows="3"
+                                  value={completionForm.currentLeadManagement}
+                                  onChange={(event) =>
+                                    setCompletionForm((prev) => ({ ...prev, currentLeadManagement: event.target.value }))
+                                  }
+                                  placeholder="Describe the current workflow used to manage leads"
+                                />
+                              </label>
+                              <label className="full-width">
+                                Existing Challenges in Process
+                                <textarea
+                                  rows="3"
+                                  value={completionForm.processChallenges}
+                                  onChange={(event) =>
+                                    setCompletionForm((prev) => ({ ...prev, processChallenges: event.target.value }))
+                                  }
+                                  placeholder="Issues they face in the current process"
+                                />
+                              </label>
+                            </div>
+                          </div>
+
+                          <div className="activity-usecase-section">
+                            <div className="activity-usecase-section-title">4. Pain Points</div>
+                            <div className="activity-checkbox-grid">
+                              {PAIN_POINT_OPTIONS.map((item) => (
+                                <label key={item} className="activity-check-chip">
+                                  <input
+                                    type="checkbox"
+                                    checked={completionForm.painPoints.includes(item)}
+                                    onChange={() => toggleCompletionListValue("painPoints", item)}
+                                  />
+                                  <span>{item}</span>
+                                </label>
+                              ))}
+                            </div>
+                            <label className="full-width">
+                              Other Issues
+                              <textarea
+                                rows="2"
+                                value={completionForm.otherIssues}
+                                onChange={(event) =>
+                                  setCompletionForm((prev) => ({ ...prev, otherIssues: event.target.value }))
+                                }
+                                placeholder="Any other issue mentioned by the customer"
+                              />
+                            </label>
+                          </div>
+
+                          <div className="activity-usecase-section">
+                            <div className="activity-usecase-section-title">5. Required Features / Expectations</div>
+                            <div className="activity-checkbox-grid">
+                              {REQUIRED_FEATURE_OPTIONS.map((item) => (
+                                <label key={item} className="activity-check-chip">
+                                  <input
+                                    type="checkbox"
+                                    checked={completionForm.requiredFeatures.includes(item)}
+                                    onChange={() => toggleCompletionListValue("requiredFeatures", item)}
+                                  />
+                                  <span>{item}</span>
+                                </label>
+                              ))}
+                            </div>
+                            <label className="full-width">
+                              Custom Requirements
+                              <textarea
+                                rows="2"
+                                value={completionForm.customRequirements}
+                                onChange={(event) =>
+                                  setCompletionForm((prev) => ({ ...prev, customRequirements: event.target.value }))
+                                }
+                                placeholder="Describe any custom requirement or special expectation"
+                              />
+                            </label>
+                          </div>
+
+                          <div className="activity-usecase-section">
+                            <div className="activity-usecase-section-title">6. Stakeholders</div>
+                            <div className="activity-form-grid activity-usecase-grid">
+                              <label>
+                                Decision Maker Name
+                                <input
+                                  type="text"
+                                  value={completionForm.decisionMakerName}
+                                  onChange={(event) =>
+                                    setCompletionForm((prev) => ({ ...prev, decisionMakerName: event.target.value }))
+                                  }
+                                  placeholder="Decision maker name"
+                                />
+                              </label>
+                              <label>
+                                Role
+                                <input
+                                  type="text"
+                                  value={completionForm.stakeholderRole}
+                                  onChange={(event) =>
+                                    setCompletionForm((prev) => ({ ...prev, stakeholderRole: event.target.value }))
+                                  }
+                                  placeholder="Manager / CEO / etc."
+                                />
+                              </label>
+                              <label>
+                                Department
+                                <input
+                                  type="text"
+                                  value={completionForm.stakeholderDepartment}
+                                  onChange={(event) =>
+                                    setCompletionForm((prev) => ({ ...prev, stakeholderDepartment: event.target.value }))
+                                  }
+                                  placeholder="Sales / Marketing / Operations"
+                                />
+                              </label>
+                              <label>
+                                Number of Users Required
+                                <input
+                                  type="number"
+                                  min="1"
+                                  value={completionForm.userCount}
+                                  onChange={(event) =>
+                                    setCompletionForm((prev) => ({ ...prev, userCount: event.target.value }))
+                                  }
+                                  placeholder="Users required"
+                                />
+                              </label>
+                              <label>
+                                Approval Required
+                                <select
+                                  value={completionForm.approvalRequired}
+                                  onChange={(event) =>
+                                    setCompletionForm((prev) => ({ ...prev, approvalRequired: event.target.value }))
+                                  }
+                                >
+                                  <option value="">Select</option>
+                                  <option value="Yes">Yes</option>
+                                  <option value="No">No</option>
+                                </select>
+                              </label>
+                            </div>
+                          </div>
+
+                          <div className="activity-usecase-section">
+                            <div className="activity-usecase-section-title">7. Lead Qualification</div>
+                            <div className="activity-form-grid activity-usecase-grid">
+                              <label>
+                                Budget
+                                <select
+                                  value={completionForm.qualificationBudget}
+                                  onChange={(event) =>
+                                    setCompletionForm((prev) => ({ ...prev, qualificationBudget: event.target.value }))
+                                  }
+                                >
+                                  <option value="">Select budget</option>
+                                  {BUDGET_OPTIONS.map((item) => (
+                                    <option key={item} value={item}>{item}</option>
+                                  ))}
+                                </select>
+                              </label>
+                              <label>
+                                Authority
+                                <select
+                                  value={completionForm.qualificationAuthority}
+                                  onChange={(event) =>
+                                    setCompletionForm((prev) => ({ ...prev, qualificationAuthority: event.target.value }))
+                                  }
+                                >
+                                  <option value="">Select authority</option>
+                                  {AUTHORITY_OPTIONS.map((item) => (
+                                    <option key={item} value={item}>{item}</option>
+                                  ))}
+                                </select>
+                              </label>
+                              <label>
+                                Need
+                                <select
+                                  value={completionForm.qualificationNeed}
+                                  onChange={(event) =>
+                                    setCompletionForm((prev) => ({ ...prev, qualificationNeed: event.target.value }))
+                                  }
+                                >
+                                  <option value="">Select need level</option>
+                                  {NEED_LEVEL_OPTIONS.map((item) => (
+                                    <option key={item} value={item}>{item}</option>
+                                  ))}
+                                </select>
+                              </label>
+                              <label>
+                                Timeline
+                                <select
+                                  value={completionForm.qualificationTimeline}
+                                  onChange={(event) =>
+                                    setCompletionForm((prev) => ({ ...prev, qualificationTimeline: event.target.value }))
+                                  }
+                                >
+                                  <option value="">Select timeline</option>
+                                  {QUALIFICATION_TIMELINE_OPTIONS.map((item) => (
+                                    <option key={item} value={item}>{item}</option>
+                                  ))}
+                                </select>
+                              </label>
+                              <label className="full-width">
+                                Interested Product/Service
+                                <input
+                                  type="text"
+                                  value={completionForm.interestedOffering}
+                                  onChange={(event) =>
+                                    setCompletionForm((prev) => ({ ...prev, interestedOffering: event.target.value }))
+                                  }
+                                  placeholder="Product or service they are interested in"
+                                />
+                              </label>
+                              <label className="full-width">
+                                Meeting Notes *
+                                <textarea
+                                  rows="4"
+                                  value={completionForm.meetingNotes}
+                                  onChange={(event) =>
+                                    setCompletionForm((prev) => ({ ...prev, meetingNotes: event.target.value }))
+                                  }
+                                  placeholder="Important notes captured from the meeting"
+                                />
+                              </label>
+                            </div>
+                          </div>
+                        </div>
                       ) : null}
 
                       {["no_response", "follow_up_needed"].includes(completionForm.outcome) ? (
@@ -2762,12 +3449,18 @@ function ActivityModule() {
                       type="button"
                       className="activity-primary-btn"
                       onClick={handleComplete}
-                      disabled={completeBusy || (isNeedAnalysisDealCompletion && !isNeedAnalysisMinimumValid)}
+                      disabled={
+                        completeBusy ||
+                        (isNeedAnalysisDealCompletion && !isNeedAnalysisMinimumValid) ||
+                        (isValuePropositionDealCompletion && !isValuePropositionMinimumValid)
+                      }
                     >
                       {completeBusy
                         ? "Saving..."
                         : isNeedAnalysisDealCompletion
-                          ? "Save Need Analysis & Move to Proposal"
+                          ? "Save Need Analysis & Move to Value Proposition"
+                          : isValuePropositionDealCompletion
+                            ? "Save Value Proposition & Move to Proposal"
                           : "Confirm Completion"}
                     </button>
                   </div>

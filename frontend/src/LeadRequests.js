@@ -46,6 +46,34 @@ const normalizeDealStage = (value) => {
   return stage;
 };
 
+const normalizeDealRequest = (deal) => {
+  const stage = normalizeDealStage(deal?.stage);
+  const status = String(deal?.status || (stage === "lost" ? "Inactive" : "Active")).trim();
+
+  return {
+    ...deal,
+    stage,
+    status,
+    company: String(deal?.company || deal?.customerId?.company || "").trim(),
+    contact: String(deal?.contact || deal?.customerId?.name || "").trim(),
+    email: String(deal?.email || deal?.customerId?.email || "").trim(),
+    phone: String(deal?.phone || deal?.customerId?.phone || "").trim(),
+  };
+};
+
+const dedupeDealsById = (items) => {
+  const map = new Map();
+
+  (Array.isArray(items) ? items : []).forEach((item) => {
+    const normalized = normalizeDealRequest(item);
+    const key = String(normalized?._id || "").trim();
+    if (!key) return;
+    map.set(key, normalized);
+  });
+
+  return Array.from(map.values());
+};
+
 const getStatusClassName = (value) => {
   const status = normalizeStatus(value);
   if (["new", "contacted", "qualified", "proposal", "proposal_sent", "converted", "lost"].includes(status)) return status;
@@ -161,7 +189,7 @@ function LeadRequests() {
         }),
       ]);
 
-      setDealRequests(Array.isArray(dealRes.data) ? dealRes.data : []);
+      setDealRequests(dedupeDealsById(dealRes.data));
       setContactRequests(Array.isArray(contactRes.data) ? contactRes.data : []);
     } catch (err) {
       console.error("Requests fetch error:", err);
@@ -171,6 +199,10 @@ function LeadRequests() {
       setAuxiliaryLoading(false);
     }
   }, []);
+
+  useEffect(() => {
+    fetchAuxiliaryRequests();
+  }, [fetchAuxiliaryRequests]);
 
   useEffect(() => {
     if (activeRequestType === "lead") return;
@@ -187,6 +219,21 @@ function LeadRequests() {
     window.addEventListener("focus", handleRefreshOnFocus);
     return () => window.removeEventListener("focus", handleRefreshOnFocus);
   }, [activeRequestType, fetchAuxiliaryRequests]);
+
+  useEffect(() => {
+    const handleDealRefresh = () => {
+      fetchAuxiliaryRequests();
+    };
+
+    window.addEventListener("deal-updated", handleDealRefresh);
+    window.addEventListener("inventory-updated", handleDealRefresh);
+    window.addEventListener("customer-updated", handleDealRefresh);
+    return () => {
+      window.removeEventListener("deal-updated", handleDealRefresh);
+      window.removeEventListener("inventory-updated", handleDealRefresh);
+      window.removeEventListener("customer-updated", handleDealRefresh);
+    };
+  }, [fetchAuxiliaryRequests]);
 
   const handleManagerAssignLead = useCallback(
     async (leadId) => {
@@ -377,7 +424,11 @@ function LeadRequests() {
       );
       const updatedDeal = res.data || {};
       setDealRequests((prev) =>
-        prev.map((deal) => (String(deal._id) === String(item._id) ? { ...deal, ...updatedDeal } : deal))
+        dedupeDealsById(
+          prev.map((deal) =>
+            String(deal._id) === String(item._id) ? { ...deal, ...normalizeDealRequest(updatedDeal) } : deal
+          )
+        )
       );
       await fetchAuxiliaryRequests();
       setShowDealAdvanceModal(false);
@@ -706,7 +757,7 @@ function LeadRequests() {
         </div>
       ) : null}
 
-      {normalizeDealStage(item.stage) === "need_analysis" ? (
+      {normalizeDealStage(item.stage) === "value_proposition" ? (
         <div className="deal-request-actions">
           <button
             type="button"
@@ -725,7 +776,29 @@ function LeadRequests() {
               navigate(`/activities?${params.toString()}`);
             }}
           >
-            Connect to Customer
+            Connect to Meeting
+          </button>
+        </div>
+      ) : null}
+
+      {normalizeDealStage(item.stage) === "proposal_price_quote" ? (
+        <div className="deal-request-actions">
+          <button
+            type="button"
+            className="assignment-submit-btn deal-request-action-btn move"
+            onClick={() => {
+              const params = new URLSearchParams({
+                dealId: String(item._id || ""),
+                dealName: String(item.name || "Deal"),
+                company: String(item.company || ""),
+                contact: String(item.contact || ""),
+                email: String(item.email || ""),
+                amount: String(item.amount || ""),
+              });
+              navigate(`/documents?${params.toString()}`);
+            }}
+          >
+            Create Proposal
           </button>
         </div>
       ) : null}

@@ -180,6 +180,26 @@ const dealSchema = new mongoose.Schema(
       changedAt: { type: Date, default: Date.now },
       userName: String  // Denormalized for fast UI
     }],
+    proposalDraft: {
+      title: { type: String, trim: true, default: "" },
+      introduction: { type: String, trim: true, default: "" },
+      problem: { type: String, trim: true, default: "" },
+      solution: { type: String, trim: true, default: "" },
+      scope: { type: String, trim: true, default: "" },
+      pricingNotes: { type: String, trim: true, default: "" },
+      terms: { type: String, trim: true, default: "" },
+      status: {
+        type: String,
+        enum: ["draft", "pending_approval", "approved", "rejected", "sent_to_client"],
+        default: "draft",
+      },
+      approvalRequestedAt: { type: Date, default: null },
+      approvalRespondedAt: { type: Date, default: null },
+      approvedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+      approvalComment: { type: String, trim: true, default: "" },
+      clientSentAt: { type: Date, default: null },
+      clientSentBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+    },
   },
   {
     timestamps: true,

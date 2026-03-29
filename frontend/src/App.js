@@ -16,6 +16,7 @@ import LeadRequests from "./LeadRequests";
 
 import ActivityModule from "./ActivityModule";
 import UsecaseModule from "./UsecaseModule";
+import DocumentsModule from "./DocumentsModule";
 
 import Products from "./Products";
 import Inventory from "./Inventory";
@@ -345,6 +346,7 @@ function App() {
         <Route path="/requests" element={<LeadRequests />} />
         <Route path="/activities" element={<ActivityModule />} />
         <Route path="/usecases" element={<UsecaseModule />} />
+        <Route path="/documents" element={<DocumentsModule />} />
         <Route path="/products" element={<Products />} />
         <Route path="/inventory" element={<Inventory />} />
         <Route path="/notifications" element={<NotificationsPage />} />

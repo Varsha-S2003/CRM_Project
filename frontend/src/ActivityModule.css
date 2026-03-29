@@ -593,6 +593,278 @@
   height: 16px;
 }
 
+.activity-usecase-form {
+  display: grid;
+  gap: 16px;
+  padding-top: 8px;
+  max-height: 55vh;
+  overflow-y: auto;
+  padding-right: 6px;
+}
+
+.activity-usecase-form h3 {
+  margin: 0;
+  font-size: 17px;
+  color: var(--theme-text);
+}
+
+.activity-usecase-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.activity-usecase-section {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--theme-border);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.activity-usecase-section-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--theme-ink-soft);
+}
+
+.activity-checkbox-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.activity-check-chip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--theme-border);
+  border-radius: 12px;
+  padding: 12px 14px;
+  background: #fbfaf6;
+  color: var(--theme-text);
+  font-weight: 600;
+}
+
+.activity-check-chip input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+}
+
+.activity-usecase-notes {
+  display: grid;
+  gap: 6px;
+  white-space: normal;
+}
+
+.usecase-page {
+  display: grid;
+  gap: 24px;
+}
+
+.usecase-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(300px, 0.9fr);
+  gap: 20px;
+  align-items: stretch;
+}
+
+.usecase-hero__copy,
+.usecase-stat-card,
+.usecase-board__header,
+.usecase-state-card,
+.usecase-note-card {
+  border: 1px solid var(--theme-border);
+  box-shadow: var(--theme-shadow-sm);
+}
+
+.usecase-hero__copy {
+  padding: 28px;
+  border-radius: 28px;
+  background:
+    radial-gradient(circle at top left, rgba(239, 181, 33, 0.18), transparent 34%),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.94), rgba(246, 241, 231, 0.96));
+}
+
+.usecase-hero__eyebrow {
+  display: inline-flex;
+  margin-bottom: 10px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: rgba(32, 33, 36, 0.08);
+  color: var(--theme-ink-soft);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.usecase-hero__copy h1 {
+  margin: 0;
+  font-size: clamp(28px, 3vw, 40px);
+  line-height: 1.1;
+}
+
+.usecase-hero__copy p {
+  margin-top: 12px;
+  max-width: 720px;
+  font-size: 16px;
+  line-height: 1.7;
+}
+
+.usecase-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.usecase-stat-card {
+  display: grid;
+  align-content: space-between;
+  min-height: 150px;
+  padding: 20px;
+  border-radius: 24px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(246, 241, 231, 0.96));
+}
+
+.usecase-stat-card span {
+  color: var(--theme-text-muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.usecase-stat-card strong {
+  color: var(--theme-ink-soft);
+  font-size: 24px;
+  line-height: 1.3;
+}
+
+.usecase-board {
+  display: grid;
+  gap: 18px;
+}
+
+.usecase-board__header,
+.usecase-state-card {
+  width: 100%;
+}
+
+.usecase-state-card {
+  padding: 28px;
+  text-align: center;
+  color: var(--theme-text-muted);
+}
+
+.usecase-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 18px;
+  align-items: start;
+}
+
+.usecase-note-card {
+  display: grid;
+  gap: 16px;
+  padding: 22px;
+  border-radius: 24px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(246, 241, 231, 0.95));
+  align-self: start;
+}
+
+.usecase-note-card__top,
+.usecase-note-card__meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.usecase-note-card__lead {
+  margin-bottom: 8px;
+  color: var(--theme-text-muted);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.usecase-note-card h3 {
+  margin: 0;
+  color: var(--theme-ink-soft);
+  font-size: 20px;
+  line-height: 1.3;
+}
+
+.usecase-note-card__badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: rgba(157, 198, 59, 0.16);
+  color: #597d18;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.usecase-note-card__meta {
+  flex-wrap: wrap;
+  padding-top: 14px;
+  border-top: 1px solid rgba(32, 33, 36, 0.08);
+  color: var(--theme-text-muted);
+  font-size: 13px;
+}
+
+.usecase-note-card__notes {
+  display: grid;
+  gap: 16px;
+}
+
+.usecase-note-card__group {
+  display: grid;
+  gap: 10px;
+}
+
+.usecase-note-card__group-title {
+  color: var(--theme-ink-soft);
+  font-size: 13px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.usecase-note-card__group-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.usecase-note-card__note {
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.78);
+  border: 1px solid rgba(32, 33, 36, 0.08);
+}
+
+.usecase-note-card__note span {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--theme-ink-soft);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.usecase-note-card__note p {
+  margin: 0;
+  color: var(--theme-text);
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .record-activity-panel {
   margin-top: 20px;
 }
@@ -951,7 +1223,9 @@
 @media (max-width: 1200px) {
   .activity-dashboard-sections,
   .activity-stats-grid,
-  .activity-grid-two {
+  .activity-grid-two,
+  .usecase-hero,
+  .usecase-stats {
     grid-template-columns: 1fr 1fr;
   }
 }
@@ -975,7 +1249,12 @@
   .activity-stats-grid,
   .activity-grid-two,
   .record-activity-panel__grid,
-  .activity-form-grid {
+  .activity-form-grid,
+  .activity-checkbox-grid,
+  .usecase-hero,
+  .usecase-stats,
+  .usecase-card-grid,
+  .usecase-note-card__group-grid {
     grid-template-columns: 1fr;
   }
 
@@ -994,6 +1273,11 @@
 
   .task-page__search input {
     width: 100%;
+  }
+
+  .usecase-note-card__top,
+  .usecase-note-card__meta {
+    flex-direction: column;
   }
 }
 

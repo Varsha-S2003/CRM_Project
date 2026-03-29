@@ -226,6 +226,33 @@ const computeServiceLifecycle = (billingCycle, startDate = new Date()) => {
   };
 };
 
+const getUserDisplayName = (user) => user?.name || user?.username || "User";
+
+const getProposalApprovalRecipients = async (user) => {
+  const recipients = [];
+  const seen = new Set();
+
+  const pushUser = (candidate) => {
+    const id = String(candidate?._id || candidate || "").trim();
+    if (!id || seen.has(id)) return;
+    seen.add(id);
+    recipients.push(id);
+  };
+
+  let managerId = user?.reportsTo;
+  while (managerId) {
+    const manager = await User.findById(managerId).select("_id reportsTo");
+    if (!manager?._id) break;
+    pushUser(manager._id);
+    managerId = manager.reportsTo;
+  }
+
+  const admins = await User.find({ role: { $regex: /^admin$/i } }).select("_id");
+  admins.forEach((admin) => pushUser(admin._id));
+
+  return recipients;
+};
+
 const resolveDealItem = async (itemId) => {
   if (!itemId) {
     return null;
@@ -1755,6 +1782,190 @@ router.delete("/:id", verifyToken, permitDealAccess(), async (req, res) => {
         console.error("Failed to rollback inventory after deal delete error:", rollbackErr);
       }
     }
+    res.status(500).json({ message: err.message });
+  }
+});
+
+router.get("/:id/proposal-workspace", verifyToken, permitDealAccess(), async (req, res) => {
+  try {
+    const deal = await Deal.findById(req.params.id)
+      .populate("assignedTo", "name username role reportsTo")
+      .populate("customerId", "name company email phone")
+      .populate("product", "name sku category price type status stock serviceType billingCycle")
+      .populate("proposalDraft.approvedBy", "name username")
+      .lean();
+
+    if (!deal) {
+      return res.status(404).json({ message: "Deal not found" });
+    }
+
+    const historyCriteria = [
+      ...(deal.customerId ? [{ customerId: deal.customerId._id || deal.customerId }] : []),
+      ...(deal.company ? [{ company: deal.company }] : []),
+      ...(deal.contact ? [{ contact: deal.contact }] : []),
+    ];
+
+    const history = historyCriteria.length
+      ? await Deal.find({
+          _id: { $ne: deal._id },
+          $or: historyCriteria,
+        })
+          .select("name company contact amount stage status updatedAt createdAt")
+          .sort({ updatedAt: -1 })
+          .limit(8)
+          .lean()
+      : [];
+
+    const notifications = await Notification.find({
+      dealId: deal._id,
+      recipients: req.user._id,
+    })
+      .select("message isRead createdAt fromStage toStage changedByName")
+      .sort({ createdAt: -1 })
+      .limit(10)
+      .lean();
+
+    res.json({ deal, history, notifications });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+router.post("/:id/proposal-draft", verifyToken, permitDealAccess(), async (req, res) => {
+  try {
+    const update = {
+      "proposalDraft.title": String(req.body?.title || "").trim(),
+      "proposalDraft.introduction": String(req.body?.introduction || "").trim(),
+      "proposalDraft.problem": String(req.body?.problem || "").trim(),
+      "proposalDraft.solution": String(req.body?.solution || "").trim(),
+      "proposalDraft.scope": String(req.body?.scope || "").trim(),
+      "proposalDraft.pricingNotes": String(req.body?.pricingNotes || "").trim(),
+      "proposalDraft.terms": String(req.body?.terms || "").trim(),
+    };
+
+    const deal = await Deal.findByIdAndUpdate(
+      req.params.id,
+      { $set: update },
+      { new: true, runValidators: true }
+    )
+      .populate("assignedTo", "name username role reportsTo")
+      .populate("proposalDraft.approvedBy", "name username");
+
+    if (!deal) {
+      return res.status(404).json({ message: "Deal not found" });
+    }
+
+    res.json({ deal });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+router.post("/:id/proposal-approval-request", verifyToken, permitDealAccess(), async (req, res) => {
+  try {
+    const deal = await Deal.findById(req.params.id).populate("assignedTo", "name username role reportsTo");
+    if (!deal) {
+      return res.status(404).json({ message: "Deal not found" });
+    }
+
+    const recipients = await getProposalApprovalRecipients(req.user);
+    if (!recipients.length) {
+      return res.status(400).json({ message: "No manager or admin found for approval." });
+    }
+
+    deal.proposalDraft = deal.proposalDraft || {};
+    deal.proposalDraft.status = "pending_approval";
+    deal.proposalDraft.approvalRequestedAt = new Date();
+    deal.proposalDraft.approvalRespondedAt = null;
+    deal.proposalDraft.approvedBy = null;
+    deal.proposalDraft.approvalComment = "";
+    await deal.save();
+
+    const requesterName = getUserDisplayName(req.user);
+    await Notification.insertMany(
+      recipients.map((recipient) => ({
+        dealId: deal._id,
+        message: `Proposal approval requested for deal "${deal.name}" by ${requesterName}`,
+        fromStage: String(deal.stage || ""),
+        toStage: "proposal_approval_requested",
+        changedBy: req.user._id,
+        changedByName: requesterName,
+        recipients: [recipient],
+        isRead: false,
+      }))
+    );
+
+    res.json({ message: "Proposal sent to manager for approval.", status: deal.proposalDraft.status });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+router.post("/:id/proposal-approval", verifyToken, permitDealAccess(), async (req, res) => {
+  try {
+    const role = String(req.user?.role || "").toUpperCase();
+    if (!["ADMIN", "MANAGER"].includes(role)) {
+      return res.status(403).json({ message: "Only managers or admins can approve proposals." });
+    }
+
+    const action = String(req.body?.action || "").trim().toLowerCase();
+    if (!["approve", "reject"].includes(action)) {
+      return res.status(400).json({ message: "action must be approve or reject" });
+    }
+
+    const comment = String(req.body?.comment || "").trim();
+    const deal = await Deal.findById(req.params.id).populate("assignedTo", "name username");
+    if (!deal) {
+      return res.status(404).json({ message: "Deal not found" });
+    }
+
+    deal.proposalDraft = deal.proposalDraft || {};
+    deal.proposalDraft.status = action === "approve" ? "approved" : "rejected";
+    deal.proposalDraft.approvalRespondedAt = new Date();
+    deal.proposalDraft.approvedBy = req.user._id;
+    deal.proposalDraft.approvalComment = comment;
+    await deal.save();
+
+    if (deal.assignedTo?._id) {
+      await Notification.create({
+        dealId: deal._id,
+        message:
+          action === "approve"
+            ? `Proposal approved for deal "${deal.name}" by ${getUserDisplayName(req.user)}`
+            : `Proposal rejected for deal "${deal.name}" by ${getUserDisplayName(req.user)}`,
+        fromStage: String(deal.stage || ""),
+        toStage: action === "approve" ? "proposal_approved" : "proposal_rejected",
+        changedBy: req.user._id,
+        changedByName: getUserDisplayName(req.user),
+        recipients: [deal.assignedTo._id],
+        isRead: false,
+      });
+    }
+
+    res.json({ message: `Proposal ${action}d successfully.`, status: deal.proposalDraft.status });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+router.post("/:id/proposal-send-client", verifyToken, permitDealAccess(), async (req, res) => {
+  try {
+    const deal = await Deal.findById(req.params.id);
+    if (!deal) {
+      return res.status(404).json({ message: "Deal not found" });
+    }
+
+    if (String(deal?.proposalDraft?.status || "") !== "approved") {
+      return res.status(400).json({ message: "Proposal must be approved before sending to client." });
+    }
+
+    deal.proposalDraft.status = "sent_to_client";
+    deal.proposalDraft.clientSentAt = new Date();
+    deal.proposalDraft.clientSentBy = req.user._id;
+    await deal.save();
+
+    res.json({ message: "Proposal sent to client.", status: deal.proposalDraft.status });
+  } catch (err) {
     res.status(500).json({ message: err.message });
   }
 });

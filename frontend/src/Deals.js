@@ -75,6 +75,7 @@ const getItemType = (item) => {
 };
 
 const emitDealDataRefresh = () => {
+  window.dispatchEvent(new Event("deal-updated"));
   window.dispatchEvent(new Event("inventory-updated"));
   window.dispatchEvent(new Event("customer-updated"));
 };
@@ -368,6 +369,21 @@ function Deals() {
 
   useEffect(() => {
     fetchDeals();
+  }, [fetchDeals]);
+
+  useEffect(() => {
+    const handleDealRefresh = () => {
+      fetchDeals();
+    };
+
+    window.addEventListener("deal-updated", handleDealRefresh);
+    window.addEventListener("inventory-updated", handleDealRefresh);
+    window.addEventListener("customer-updated", handleDealRefresh);
+    return () => {
+      window.removeEventListener("deal-updated", handleDealRefresh);
+      window.removeEventListener("inventory-updated", handleDealRefresh);
+      window.removeEventListener("customer-updated", handleDealRefresh);
+    };
   }, [fetchDeals]);
 
   useEffect(() => {
@@ -833,7 +849,7 @@ function Deals() {
       return;
     }
 
-    if (currentStage === "need_analysis" && stageId === "proposal_price_quote") {
+    if (currentStage === "need_analysis" && stageId === "value_proposition") {
       const currentItem = currentDeal.product;
       const currentItemType = getItemType(currentItem);
       setPendingQualificationAdvance({
@@ -862,7 +878,7 @@ function Deals() {
 
     if (itemType === "product") {
       if (quantityValue === null || quantityValue <= 0) {
-        alert("Quantity is required when moving a product deal to Proposal stage.");
+        alert("Quantity is required when moving a product deal to Value Proposition stage.");
         return;
       }
       if (Number.isFinite(Number(pendingQualificationAdvance.availableStock)) && quantityValue > Number(pendingQualificationAdvance.availableStock)) {
@@ -877,7 +893,7 @@ function Deals() {
 
     if (itemType === "service") {
       if (!billingCycleValue) {
-        alert("Plan / Billing Cycle is required when moving a service deal to Proposal stage.");
+        alert("Plan / Billing Cycle is required when moving a service deal to Value Proposition stage.");
         return;
       }
     }
