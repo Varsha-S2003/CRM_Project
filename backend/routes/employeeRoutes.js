@@ -33,7 +33,7 @@ router.get("/check-email", verifyToken, isAdmin, async (req, res) => {
 // this actually creates a User with role "EMPLOYEE" or "MANAGER". password will be hashed.
 router.post("/", verifyToken, isAdmin, async (req, res) => {
   try {
-    const { name, username, email, phone, department, designation, password, role } = req.body;
+    const { name, username, email, phone, department, designation, password, role, reportsTo, managerId } = req.body;
     
     if (!username || !email || !password) {
       return res.status(400).json({ message: "Username, email and password are required" });
@@ -51,6 +51,28 @@ router.post("/", verifyToken, isAdmin, async (req, res) => {
     
     // Role defaults to EMPLOYEE if not specified
     const userRole = role && ["ADMIN", "MANAGER", "EMPLOYEE"].includes(role) ? role : "EMPLOYEE";
+    const requestedManagerId = String(reportsTo || managerId || "").trim();
+    let resolvedReportsTo = null;
+
+    if (requestedManagerId) {
+      const managerUser = await User.findOne({
+        _id: requestedManagerId,
+        role: { $regex: "^MANAGER$", $options: "i" },
+      }).select("_id");
+
+      if (!managerUser) {
+        return res.status(400).json({ message: "Selected manager is invalid." });
+      }
+      resolvedReportsTo = managerUser._id;
+    }
+
+    if (userRole === "EMPLOYEE" && !resolvedReportsTo) {
+      return res.status(400).json({ message: "Manager assignment is required for employee role." });
+    }
+
+    if (userRole !== "EMPLOYEE") {
+      resolvedReportsTo = null;
+    }
 
     // Generate employee_id (EMP-001, EMP-002, etc.)
     const lastEmployee = await User.findOne({ employee_id: { $regex: /^EMP-/ } })
@@ -72,7 +94,8 @@ router.post("/", verifyToken, isAdmin, async (req, res) => {
       designation: designation || "",
       password: hashed, 
       role: userRole,
-      employee_id: employee_id
+      employee_id: employee_id,
+      reportsTo: resolvedReportsTo,
     });
 
     // Return basic info including employee_id
@@ -85,7 +108,8 @@ router.post("/", verifyToken, isAdmin, async (req, res) => {
       department: employee.department,
       designation: employee.designation,
       role: employee.role,
-      employee_id: employee.employee_id
+      employee_id: employee.employee_id,
+      reportsTo: employee.reportsTo || null,
     });
   } catch (err) {
     res.status(500).json({ message: err.message });

@@ -62,6 +62,8 @@ function Leads() {
     mobile: "",
     company: "",
     website: "",
+    itemType: "",
+    itemId: "",
     industry: "",
     annualRevenue: "",
     employeeCount: "",
@@ -91,6 +93,8 @@ function Leads() {
   const isManager = role === "MANAGER";
 
   const [employees, setEmployees] = useState([]);
+  const [leadItems, setLeadItems] = useState([]);
+  const [loadingLeadItems, setLoadingLeadItems] = useState(false);
 
   const getEntityId = (value) => {
     if (!value) return "";
@@ -239,6 +243,22 @@ function Leads() {
     }
   }, [isAdmin]);
 
+  const fetchLeadItems = useCallback(async () => {
+    try {
+      setLoadingLeadItems(true);
+      const token = localStorage.getItem("token");
+      const res = await axios.get("http://localhost:5000/api/items", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setLeadItems(Array.isArray(res.data) ? res.data : []);
+    } catch (err) {
+      console.error("Failed to fetch lead items", err);
+      setLeadItems([]);
+    } finally {
+      setLoadingLeadItems(false);
+    }
+  }, []);
+
   const navigate = useNavigate();
 
   const stages = [
@@ -353,6 +373,12 @@ function Leads() {
   }, [fetchLeads]);
 
   useEffect(() => {
+    if (showModal) {
+      fetchLeadItems();
+    }
+  }, [showModal, fetchLeadItems]);
+
+  useEffect(() => {
     const handleClickOutside = (event) => {
       if (createMenuRef.current && !createMenuRef.current.contains(event.target)) {
         setShowCreateMenu(false);
@@ -378,6 +404,8 @@ function Leads() {
       mobile: "",
       company: "",
       website: "",
+      itemType: "",
+      itemId: "",
       industry: "",
       annualRevenue: "",
       employeeCount: "",
@@ -396,11 +424,20 @@ function Leads() {
   };
 
   const setNewLeadField = (field, value) => {
-    setNewLead((prev) => ({ ...prev, [field]: value }));
+    setNewLead((prev) => {
+      const next = { ...prev, [field]: value };
+      if (field === "itemType") {
+        next.itemId = "";
+      }
+      return next;
+    });
     setNewLeadErrors((prev) => {
       if (!prev[field]) return prev;
       const next = { ...prev };
       delete next[field];
+      if (field === "itemType" && next.itemId) {
+        delete next.itemId;
+      }
       return next;
     });
   };
@@ -445,6 +482,14 @@ function Leads() {
       } catch {
         errors.website = "Enter a valid website URL";
       }
+    }
+
+    if (String(lead.itemType || "").trim() && !["product", "service"].includes(String(lead.itemType).toLowerCase())) {
+      errors.itemType = "Type must be Product or Service";
+    }
+
+    if (String(lead.itemType || "").trim() && !String(lead.itemId || "").trim()) {
+      errors.itemId = `Please select a ${String(lead.itemType || "item").toLowerCase()}`;
     }
 
     if (String(lead.annualRevenue || "").trim() && Number(lead.annualRevenue) < 0) {
@@ -738,6 +783,8 @@ function Leads() {
         mobile: newLead.mobile,
         company: newLead.company,
         website: newLead.website,
+        itemType: newLead.itemType,
+        itemId: newLead.itemId,
         industry: newLead.industry,
         annualRevenue: newLead.annualRevenue,
         employeeCount: newLead.employeeCount,
@@ -2487,6 +2534,50 @@ ET`;
                         ))}
                       </select>
                     </div>
+                  </div>
+                  <div className="form-row-zoho">
+                    <div className="form-group">
+                      <label>Type</label>
+                      <select
+                        value={newLead.itemType}
+                        onChange={(e) => setNewLeadField("itemType", e.target.value)}
+                        className={newLeadErrors.itemType ? "form-input-error" : ""}
+                      >
+                        <option value="">Select type</option>
+                        <option value="product">Product</option>
+                        <option value="service">Service</option>
+                      </select>
+                      {newLeadErrors.itemType && <span className="form-error-text">{newLeadErrors.itemType}</span>}
+                    </div>
+
+                    {newLead.itemType ? (
+                      <div className="form-group">
+                        <label>{newLead.itemType === "product" ? "Product" : "Service"}</label>
+                        <select
+                          value={newLead.itemId}
+                          onChange={(e) => setNewLeadField("itemId", e.target.value)}
+                          className={newLeadErrors.itemId ? "form-input-error" : ""}
+                          disabled={loadingLeadItems}
+                        >
+                          <option value="">
+                            {loadingLeadItems ? "Loading..." : `Select ${newLead.itemType === "product" ? "product" : "service"}`}
+                          </option>
+                          {leadItems
+                            .filter((item) => item.type === newLead.itemType)
+                            .map((item) => (
+                              <option key={item._id} value={item._id}>
+                                {item.name}
+                              </option>
+                            ))}
+                        </select>
+                        {newLeadErrors.itemId && <span className="form-error-text">{newLeadErrors.itemId}</span>}
+                      </div>
+                    ) : (
+                      <div className="form-group">
+                        <label>Selection</label>
+                        <input type="text" value="Choose type first" readOnly />
+                      </div>
+                    )}
                   </div>
                   <div className="form-row-zoho">
                     <div className="form-group">

@@ -21,6 +21,16 @@ const leadSchema = new mongoose.Schema(
     phone: { type: String, trim: true },
     mobile: { type: String, trim: true },
     website: { type: String, trim: true },
+    itemType: {
+      type: String,
+      enum: ["product", "service", ""],
+      default: "",
+    },
+    itemId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Item",
+      default: null,
+    },
     industry: { type: String, trim: true },
     annualRevenue: { type: Number, min: 0, default: null },
     employeeCount: { type: Number, min: 0, default: null },

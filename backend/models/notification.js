@@ -4,8 +4,14 @@ const notificationSchema = new mongoose.Schema({
   dealId: { 
     type: mongoose.Schema.Types.ObjectId, 
     ref: "Deal", 
-    required: true,
+    required: false,
     index: true
+  },
+  leadId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "Lead",
+    required: false,
+    index: true,
   },
   message: { 
     type: String, 

@@ -10,10 +10,20 @@ const Deal = require("../models/deal");
 const Product = require("../models/product");
 const Activity = require("../models/activity");
 const User = require("../models/user");
+const Notification = require("../models/notification");
 const { applyLeadScoring } = require("../utils/leadScoring");
 const { sendLeadProposalEmail } = require("../utils/mailer");
 
 const normalizeText = (value) => String(value || "").trim();
+const normalizeLeadItemType = (value) => {
+  const normalized = String(value || "").trim().toLowerCase();
+  return ["product", "service"].includes(normalized) ? normalized : "";
+};
+const normalizeOptionalObjectId = (value) => {
+  const normalized = String(value || "").trim();
+  if (!normalized) return null;
+  return mongoose.Types.ObjectId.isValid(normalized) ? normalized : null;
+};
 const normalizeOptionalNumber = (value) => {
   if (value === undefined || value === null || value === "") return null;
   const parsed = Number(value);
@@ -43,6 +53,8 @@ const normalizeLeadPayload = (payload = {}) => {
     phone: normalizeText(payload.phone),
     mobile: normalizeText(payload.mobile),
     website: normalizeText(payload.website),
+    itemType: normalizeLeadItemType(payload.itemType),
+    itemId: normalizeOptionalObjectId(payload.itemId),
     industry: normalizeText(payload.industry),
     annualRevenue: normalizeOptionalNumber(payload.annualRevenue),
     employeeCount: normalizeOptionalNumber(payload.employeeCount),
@@ -64,6 +76,9 @@ const normalizeLeadPayload = (payload = {}) => {
   };
 
   if (!Object.values(normalized.address).some(Boolean)) delete normalized.address;
+  if (!normalized.itemType) {
+    normalized.itemId = null;
+  }
   if (Number.isNaN(normalized.lastActivityDate?.getTime?.())) normalized.lastActivityDate = null;
 
   return normalized;
@@ -380,6 +395,43 @@ const ROLE_ORDER = {
 
 const normalizeRole = (role) => String(role || "").toUpperCase();
 
+const resolveLeadAssignmentForCreator = async (creatorId) => {
+  const creator = await User.findById(creatorId)
+    .select("_id name username role reportsTo")
+    .populate("reportsTo", "_id name username role");
+
+  if (!creator) {
+    throw Object.assign(new Error("Lead creator not found"), { statusCode: 404 });
+  }
+
+  const creatorRole = normalizeRole(creator.role);
+  if (creatorRole !== "EMPLOYEE") {
+    return {
+      assignedTo: null,
+      assignedBy: null,
+      assignedByRole: null,
+      assignedAt: null,
+      manager: null,
+    };
+  }
+
+  const manager = creator.reportsTo;
+  if (!manager?._id || normalizeRole(manager.role) !== "MANAGER") {
+    throw Object.assign(
+      new Error("Employee is not linked to a valid manager. Ask admin to assign a manager first."),
+      { statusCode: 400 }
+    );
+  }
+
+  return {
+    assignedTo: manager._id,
+    assignedBy: creator._id,
+    assignedByRole: "EMPLOYEE",
+    assignedAt: new Date(),
+    manager,
+  };
+};
+
 const hasRoleLevel = (role, minimumRole) => {
   const userLevel = ROLE_ORDER[normalizeRole(role)] || 0;
   const requiredLevel = ROLE_ORDER[normalizeRole(minimumRole)] || Number.MAX_SAFE_INTEGER;
@@ -529,6 +581,9 @@ router.get("/all", verifyToken, permit("ADMIN", "MANAGER"), async (req, res, nex
     const leads = await Lead.find(filter).sort({ [sort]: parseInt(order) }).limit(parseInt(limit)).skip(parseInt(skip));
     res.json(leads);
   } catch (err) {
+    if (err.statusCode) {
+      return res.status(err.statusCode).json({ message: err.message });
+    }
     next(err);
   }
 });
@@ -572,6 +627,9 @@ router.get("/my", verifyToken, permit("EMPLOYEE"), async (req, res, next) => {
     const leads = await Lead.find(filter).sort({ [sort]: parseInt(order) }).limit(parseInt(limit)).skip(parseInt(skip));
     res.json(leads);
   } catch (err) {
+    if (err.statusCode) {
+      return res.status(err.statusCode).json({ message: err.message });
+    }
     next(err);
   }
 });
@@ -646,19 +704,16 @@ router.get("/assignment-dashboard", verifyToken, permit("MANAGER", "EMPLOYEE"), 
     if (role === "MANAGER") {
       filter = {
         $or: [
-        {
-          $and: [
-            { assignedTo: req.user._id },
-            { $or: [{ assignedByRole: "ADMIN" }, { assignedByRole: { $exists: false } }] },
-          ],
-        },
-        {
-          $and: [
-            { assignedBy: req.user._id },
-            { assignedByRole: "MANAGER" },
-          ],
-        },
-      ],
+          {
+            assignedTo: req.user._id,
+          },
+          {
+            $and: [
+              { assignedBy: req.user._id },
+              { assignedByRole: "MANAGER" },
+            ],
+          },
+        ],
       };
     }
     if (role === "EMPLOYEE") {
@@ -966,7 +1021,32 @@ router.post("/", verifyToken, async (req, res, next) => {
       });
     }
 
+    const assignment = await resolveLeadAssignmentForCreator(req.user._id);
+    if (assignment.assignedTo) {
+      payload.assignedTo = assignment.assignedTo;
+      payload.assignedBy = assignment.assignedBy;
+      payload.assignedByRole = assignment.assignedByRole;
+      payload.assignedAt = assignment.assignedAt;
+    }
+
     const lead = await Lead.create(payload);
+
+    if (assignment.manager?._id) {
+      const managerName = assignment.manager.name || assignment.manager.username || "Manager";
+      const actorName = req.user.name || req.user.username || "Employee";
+      await Notification.create({
+        dealId: null,
+        leadId: lead._id,
+        message: `New lead "${lead.name}" created by ${actorName} and auto-assigned to ${managerName}.`,
+        fromStage: "new",
+        toStage: "manager_review",
+        changedBy: req.user._id,
+        changedByName: actorName,
+        recipients: [assignment.manager._id],
+        isRead: false,
+      });
+    }
+
     res.status(201).json(lead);
   } catch (err) {
     next(err);
@@ -988,6 +1068,16 @@ router.post("/bulk", verifyToken, async (req, res, next) => {
 
     if (normalizedLeads.length === 0) {
       return res.status(400).json({ message: "No valid leads found in import" });
+    }
+
+    const assignment = await resolveLeadAssignmentForCreator(req.user._id);
+    if (assignment.assignedTo) {
+      normalizedLeads.forEach((lead) => {
+        lead.assignedTo = assignment.assignedTo;
+        lead.assignedBy = assignment.assignedBy;
+        lead.assignedByRole = assignment.assignedByRole;
+        lead.assignedAt = new Date();
+      });
     }
 
     const seenEmails = new Set();
@@ -1034,6 +1124,23 @@ router.post("/bulk", verifyToken, async (req, res, next) => {
     }
 
     const createdLeads = leadsToCreate.length ? await Lead.insertMany(leadsToCreate) : [];
+
+    if (assignment.manager?._id && createdLeads.length > 0) {
+      const managerName = assignment.manager.name || assignment.manager.username || "Manager";
+      const actorName = req.user.name || req.user.username || "Employee";
+      await Notification.create({
+        dealId: null,
+        leadId: createdLeads[0]._id,
+        message: `${createdLeads.length} new leads were imported by ${actorName} and auto-assigned to ${managerName}.`,
+        fromStage: "new",
+        toStage: "manager_review",
+        changedBy: req.user._id,
+        changedByName: actorName,
+        recipients: [assignment.manager._id],
+        isRead: false,
+      });
+    }
+
     res.status(201).json({
       message: `${createdLeads.length} leads imported successfully${skipped.length ? `, ${skipped.length} skipped as duplicates` : ""}`,
       count: createdLeads.length,

@@ -14,12 +14,15 @@ function AddEmployee() {
     designation: "",
     password: "",
     confirmPassword: "",
-    role: "EMPLOYEE"
+    role: "EMPLOYEE",
+    reportsTo: "",
   });
   
   const [errors, setErrors] = useState({});
   const [availability, setAvailability] = useState({ username: null, email: null });
   const [loading, setLoading] = useState(false);
+  const [managers, setManagers] = useState([]);
+  const [loadingManagers, setLoadingManagers] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [touched, setTouched] = useState({});
@@ -61,9 +64,38 @@ function AddEmployee() {
     }
   }, [navigate]);
 
+  useEffect(() => {
+    const fetchManagers = async () => {
+      try {
+        setLoadingManagers(true);
+        const token = localStorage.getItem("token");
+        if (!token) return;
+        const res = await axios.get(`${API_BASE}/api/employees/assignable`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const managerUsers = Array.isArray(res.data)
+          ? res.data.filter((user) => String(user.role || "").toUpperCase() === "MANAGER")
+          : [];
+        setManagers(managerUsers);
+      } catch (err) {
+        console.error("Failed to fetch managers", err);
+      } finally {
+        setLoadingManagers(false);
+      }
+    };
+
+    fetchManagers();
+  }, [API_BASE]);
+
   const handleChange = (e) => {
     const { name, value } = e.target;
-    setFormData({ ...formData, [name]: value });
+    const nextFormData = { ...formData, [name]: value };
+
+    if (name === "role" && value !== "EMPLOYEE") {
+      nextFormData.reportsTo = "";
+    }
+
+    setFormData(nextFormData);
     
     // if user starts typing username/email again, clear any previous availability state
     if (name === "username" || name === "email") {
@@ -158,6 +190,12 @@ function AddEmployee() {
         }
         break;
 
+      case "reportsTo":
+        if (formData.role === "EMPLOYEE" && !String(formData.reportsTo || "").trim()) {
+          fieldError = "Please select a manager for this employee";
+        }
+        break;
+
       default:
         break;
     }
@@ -176,7 +214,7 @@ function AddEmployee() {
 
   const validateForm = () => {
     // mark all fields touched and run field-level validation
-    const fields = ["name", "username", "email", "phone", "password", "confirmPassword", "role"];
+    const fields = ["name", "username", "email", "phone", "password", "confirmPassword", "role", "reportsTo"];
     let valid = true;
     fields.forEach(field => {
       setTouched(prev => ({ ...prev, [field]: true }));
@@ -243,7 +281,8 @@ function AddEmployee() {
           department: formData.department,
           designation: formData.designation,
           password: formData.password,
-          role: formData.role
+          role: formData.role,
+          reportsTo: formData.role === "EMPLOYEE" ? String(formData.reportsTo || "").trim() : null,
         },
         {
           headers: { Authorization: `Bearer ${token}` },
@@ -272,7 +311,8 @@ function AddEmployee() {
     formData.email.trim() &&
     formData.password &&
     formData.confirmPassword &&
-    formData.role;
+    formData.role &&
+    (formData.role !== "EMPLOYEE" || String(formData.reportsTo || "").trim());
 
   const canSubmit =
     !loading &&
@@ -467,6 +507,38 @@ function AddEmployee() {
                   </select>
                 </div>
                 {isFieldInvalid("role") && <span className="error-message">{errors.role}</span>}
+              </div>
+
+              <div className={`form-group-zoho ${isFieldInvalid("reportsTo") ? "has-error" : ""}`}>
+                <label>
+                  Reporting Manager {formData.role === "EMPLOYEE" ? <span className="required">*</span> : null}
+                </label>
+                <div className="input-wrapper">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                    <circle cx="8.5" cy="7" r="4"></circle>
+                    <path d="M20 8v6"></path>
+                    <path d="M17 11h6"></path>
+                  </svg>
+                  <select
+                    name="reportsTo"
+                    value={formData.reportsTo || ""}
+                    onChange={handleChange}
+                    onBlur={handleBlur}
+                    disabled={formData.role !== "EMPLOYEE" || loadingManagers}
+                  >
+                    <option value="">{loadingManagers ? "Loading managers..." : "Select Reporting Manager"}</option>
+                    {managers.map((manager) => (
+                      <option key={manager._id} value={manager._id}>
+                        {(manager.name || manager.username || manager.email || "Manager").trim()}{manager.employee_id ? ` (${manager.employee_id})` : ""}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                {formData.role === "EMPLOYEE" && !loadingManagers && managers.length === 0 ? (
+                  <span className="error-message">No managers found. Create a manager account first.</span>
+                ) : null}
+                {isFieldInvalid("reportsTo") && <span className="error-message">{errors.reportsTo}</span>}
               </div>
             </div>
           </div>

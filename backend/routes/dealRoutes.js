@@ -1977,6 +1977,7 @@ router.get("/notifications", verifyToken, async (req, res) => {
       recipients: req.user._id 
     })
       .populate('dealId', 'name stage amount company')
+      .populate('leadId', 'name company status')
       .populate('changedBy', 'name username')
       .sort({ createdAt: -1 });
 
