@@ -124,7 +124,7 @@ function UsecaseModule() {
       try {
         setLoading(true);
         setError("");
-        const res = await axios.get("http://localhost:5000/api/activities", {
+        const res = await axios.get("http://localhost:5000/api/activities/usecases", {
           headers: { Authorization: `Bearer ${token}` },
         });
         setActivities(Array.isArray(res.data) ? res.data : []);

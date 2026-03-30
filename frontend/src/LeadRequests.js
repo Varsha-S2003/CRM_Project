@@ -49,6 +49,11 @@ const normalizeDealStage = (value) => {
 const normalizeDealRequest = (deal) => {
   const stage = normalizeDealStage(deal?.stage);
   const status = String(deal?.status || (stage === "lost" ? "Inactive" : "Active")).trim();
+  const leadAssignedBy = normalizeAssignedUser(deal?.sourceLeadId?.assignedBy);
+  const leadAssignedTo = normalizeAssignedUser(deal?.sourceLeadId?.assignedTo);
+  const dealAssignedTo = normalizeAssignedUser(deal?.assignedTo);
+  const managerAssignedBy = normalizeAssignedUser(dealAssignedTo?.reportsTo);
+  const directAssignedBy = normalizeAssignedUser(deal?.assignedBy);
 
   return {
     ...deal,
@@ -58,6 +63,8 @@ const normalizeDealRequest = (deal) => {
     contact: String(deal?.contact || deal?.customerId?.name || "").trim(),
     email: String(deal?.email || deal?.customerId?.email || "").trim(),
     phone: String(deal?.phone || deal?.customerId?.phone || "").trim(),
+    assignedBy: leadAssignedBy || managerAssignedBy || directAssignedBy || null,
+    assignedTo: dealAssignedTo || leadAssignedTo || null,
   };
 };
 
@@ -741,8 +748,8 @@ function LeadRequests() {
         </div>
       </div>
       <div className="assignment-lead-meta">Company: {item.company || "-"}</div>
-      <div className="assignment-lead-meta">Assigned by: {item.sourceLeadId?.assignedBy?.name || item.sourceLeadId?.assignedBy?.username || "System"}</div>
-      <div className="assignment-lead-meta">Assigned to: {item.sourceLeadId?.assignedTo?.name || item.sourceLeadId?.assignedTo?.username || "Unassigned"}</div>
+      <div className="assignment-lead-meta">Assigned by: {item.assignedBy?.name || item.assignedBy?.username || "System"}</div>
+      <div className="assignment-lead-meta">Assigned to: {item.assignedTo?.name || item.assignedTo?.username || "Unassigned"}</div>
       <div className="assignment-lead-meta">Amount: {item.amount ? `₹${Number(item.amount).toLocaleString()}` : "-"}</div>
       <div className="assignment-lead-meta">Contact: {item.contact || item.email || "-"}</div>
       {normalizeDealStage(item.stage) === "need_analysis" && getWaitingForRestockNote(item) ? (

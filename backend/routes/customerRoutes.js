@@ -4,6 +4,7 @@ const { verifyToken } = require("../middleware/authMiddleware");
 const Customer = require("../models/customer");
 const Deal = require("../models/deal");
 const Lead = require("../models/lead");
+const { getTeamMembers } = require("../middleware/dealAuth");
 
 const normalizeDealStage = (stage) => {
   const value = String(stage || "").trim().toLowerCase().replace(/\s+/g, "_");
@@ -88,6 +89,8 @@ router.get("/", verifyToken, async (req, res) => {
     let customerFilter = {};
 
     if (role === "MANAGER") {
+      const teamIds = await getTeamMembers(req.user._id);
+      const visibleAssigneeIds = [req.user._id, ...teamIds];
       const assignedLeadIds = await Lead.find({
         $or: [
           {
@@ -111,26 +114,34 @@ router.get("/", verifyToken, async (req, res) => {
           },
         ],
       }).distinct("_id");
-      const customerIdsFromDeals = await Deal.find({
+      const customerIdsFromLeadDeals = await Deal.find({
         sourceLeadId: { $in: assignedLeadIds },
       }).distinct("customerId");
+      const customerIdsFromAssignedDeals = await Deal.find({
+        assignedTo: { $in: visibleAssigneeIds },
+      }).distinct("customerId");
+      const visibleCustomerIds = [...customerIdsFromLeadDeals, ...customerIdsFromAssignedDeals].filter(Boolean);
 
       customerFilter = {
         $or: [
           { leadId: { $in: assignedLeadIds } },
-          { _id: { $in: customerIdsFromDeals.filter(Boolean) } },
+          { _id: { $in: visibleCustomerIds } },
         ],
       };
     } else if (role === "EMPLOYEE") {
       const assignedLeadIds = await Lead.find({ assignedTo: req.user._id }).distinct("_id");
-      const customerIdsFromDeals = await Deal.find({
+      const customerIdsFromLeadDeals = await Deal.find({
         sourceLeadId: { $in: assignedLeadIds },
       }).distinct("customerId");
+      const customerIdsFromAssignedDeals = await Deal.find({
+        assignedTo: req.user._id,
+      }).distinct("customerId");
+      const visibleCustomerIds = [...customerIdsFromLeadDeals, ...customerIdsFromAssignedDeals].filter(Boolean);
 
       customerFilter = {
         $or: [
           { leadId: { $in: assignedLeadIds } },
-          { _id: { $in: customerIdsFromDeals.filter(Boolean) } },
+          { _id: { $in: visibleCustomerIds } },
         ],
       };
     }

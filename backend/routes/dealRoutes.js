@@ -228,7 +228,7 @@ const computeServiceLifecycle = (billingCycle, startDate = new Date()) => {
 
 const getUserDisplayName = (user) => user?.name || user?.username || "User";
 
-const getProposalApprovalRecipients = async (user) => {
+const getProposalApprovalRecipients = async ({ requester, deal }) => {
   const recipients = [];
   const seen = new Set();
 
@@ -239,16 +239,20 @@ const getProposalApprovalRecipients = async (user) => {
     recipients.push(id);
   };
 
-  let managerId = user?.reportsTo;
-  while (managerId) {
-    const manager = await User.findById(managerId).select("_id reportsTo");
-    if (!manager?._id) break;
-    pushUser(manager._id);
-    managerId = manager.reportsTo;
+  const assignedManagerId = deal?.assignedTo?.reportsTo;
+  if (assignedManagerId) {
+    const manager = await User.findById(assignedManagerId).select("_id role");
+    if (manager?._id && String(manager.role || "").toUpperCase() === "MANAGER") {
+      pushUser(manager._id);
+    }
   }
 
-  const admins = await User.find({ role: { $regex: /^admin$/i } }).select("_id");
-  admins.forEach((admin) => pushUser(admin._id));
+  if (!recipients.length && requester?.reportsTo) {
+    const manager = await User.findById(requester.reportsTo).select("_id role");
+    if (manager?._id && String(manager.role || "").toUpperCase() === "MANAGER") {
+      pushUser(manager._id);
+    }
+  }
 
   return recipients;
 };
@@ -859,7 +863,14 @@ router.post("/filter", verifyToken, async (req, res) => {
       baseConditions.length === 0 ? {} : baseConditions.length === 1 ? baseConditions[0] : { $and: baseConditions };
 
     const deals = await Deal.find(finalFilter)
-      .populate("assignedTo", "name username role employee_id")
+      .populate({
+        path: "assignedTo",
+        select: "name username role employee_id reportsTo",
+        populate: {
+          path: "reportsTo",
+          select: "name username role employee_id",
+        },
+      })
       .populate({
         path: "sourceLeadId",
         select: "assignedBy assignedTo",
@@ -976,7 +987,14 @@ router.get("/", verifyToken, permitDealAccess(), async (req, res) => {
     }
     
     const deals = await Deal.find(filter)
-      .populate('assignedTo', 'name username role employee_id')
+      .populate({
+        path: "assignedTo",
+        select: "name username role employee_id reportsTo",
+        populate: {
+          path: "reportsTo",
+          select: "name username role employee_id",
+        },
+      })
       .populate({
         path: "sourceLeadId",
         select: "assignedBy assignedTo",
@@ -1184,7 +1202,14 @@ router.post("/", verifyToken, async (req, res) => {
     await syncCustomerStatusFromLatestDeal(deal.customerId);
 
     const populatedDeal = await Deal.findById(deal._id)
-      .populate("assignedTo", "name username role employee_id")
+      .populate({
+        path: "assignedTo",
+        select: "name username role employee_id reportsTo",
+        populate: {
+          path: "reportsTo",
+          select: "name username role employee_id",
+        },
+      })
       .populate("product", "name sku category price type status stock serviceType billingCycle");
 
     const responseDeal = populatedDeal.toObject ? populatedDeal.toObject() : populatedDeal;
@@ -1272,8 +1297,13 @@ router.post("/bulk", verifyToken, async (req, res) => {
     });
 
     const createdDeals = await Deal.insertMany(dealsWithStatus);
-    await Promise.all(createdDeals.map((deal) => syncDealContact(deal)));
-    await Promise.all(createdDeals.map((deal) => syncCustomerStatusFromLatestDeal(deal.customerId)));
+    await Promise.all(
+      createdDeals.map(async (deal) => {
+        await syncDealContact(deal);
+        await syncCustomerFromDeal(deal);
+        await syncCustomerStatusFromLatestDeal(deal.customerId);
+      })
+    );
 
     res.status(201).json({
       message: `${createdDeals.length} deals imported successfully`,
@@ -1476,7 +1506,14 @@ const updateDealHandler = async (req, res) => {
         new: true,
         runValidators: true,
       })
-        .populate("assignedTo", "name username role employee_id")
+        .populate({
+          path: "assignedTo",
+          select: "name username role employee_id reportsTo",
+          populate: {
+            path: "reportsTo",
+            select: "name username role employee_id",
+          },
+        })
         .populate("product", "name sku category price type status stock serviceType billingCycle");
     } catch (error) {
       if (stockRollback?.itemId && stockRollback.quantity > 0) {
@@ -1884,9 +1921,9 @@ router.post("/:id/proposal-approval-request", verifyToken, permitDealAccess(), a
       return res.status(404).json({ message: "Deal not found" });
     }
 
-    const recipients = await getProposalApprovalRecipients(req.user);
+    const recipients = await getProposalApprovalRecipients({ requester: req.user, deal });
     if (!recipients.length) {
-      return res.status(400).json({ message: "No manager or admin found for approval." });
+      return res.status(400).json({ message: "No assigned manager found for approval notification." });
     }
 
     deal.proposalDraft = deal.proposalDraft || {};

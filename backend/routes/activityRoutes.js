@@ -566,7 +566,7 @@ const updateLeadStageFromCompletedActivity = async (activity, actorId = null) =>
   await lead.save();
 };
 
-const buildFilters = (query) => {
+const buildFilters = (query, user = null) => {
   const filter = {};
   const now = new Date();
   const todayStart = getStartOfDay(now);
@@ -579,7 +579,13 @@ const buildFilters = (query) => {
   if (query.activityType && query.activityType !== "all") {
     filter.activityType = String(query.activityType).toLowerCase();
   }
-  if (query.owner && query.owner !== "all") {
+  const role = String(user?.role || "").toUpperCase();
+  if (role === "EMPLOYEE") {
+    const employeeOwnerId = asObjectId(user?._id);
+    if (employeeOwnerId) {
+      filter.owner = employeeOwnerId;
+    }
+  } else if (query.owner && query.owner !== "all") {
     const ownerId = asObjectId(query.owner);
     if (ownerId) filter.owner = ownerId;
   }
@@ -638,9 +644,27 @@ const populateActivity = (query) =>
     .populate("owner", "username email role name")
     .populate("relatedTo.recordId");
 
+const getAssignedUserId = (activity) => {
+  const assignedTo = activity?.relatedTo?.recordId?.assignedTo;
+  if (!assignedTo) return "";
+  if (typeof assignedTo === "object") {
+    return String(assignedTo._id || assignedTo.id || assignedTo.userId || "");
+  }
+  return String(assignedTo);
+};
+
+const getOwnerId = (activity) => {
+  const owner = activity?.owner;
+  if (!owner) return "";
+  if (typeof owner === "object") {
+    return String(owner._id || owner.id || "");
+  }
+  return String(owner);
+};
+
 router.get("/", verifyToken, async (req, res) => {
   try {
-    const filter = buildFilters(req.query);
+    const filter = buildFilters(req.query, req.user);
     const activities = await populateActivity(Activity.find(filter).sort({ startDateTime: 1, dueDate: 1, createdAt: -1 }));
     res.json(activities);
   } catch (err) {
@@ -650,7 +674,8 @@ router.get("/", verifyToken, async (req, res) => {
 
 router.get("/dashboard", verifyToken, async (req, res) => {
   try {
-    const activities = await populateActivity(Activity.find({}).sort({ startDateTime: 1, dueDate: 1 }));
+    const filter = buildFilters({}, req.user);
+    const activities = await populateActivity(Activity.find(filter).sort({ startDateTime: 1, dueDate: 1 }));
     const now = new Date();
     const todayStart = getStartOfDay(now);
     const todayEnd = getEndOfDay(now);
@@ -711,8 +736,10 @@ router.get("/calendar", verifyToken, async (req, res) => {
       to = getEndOfDay(new Date(date.getFullYear(), date.getMonth() + 1, 0));
     }
 
+    const scopeFilter = buildFilters({}, req.user);
     const activities = await populateActivity(
       Activity.find({
+        ...scopeFilter,
         $or: [
           { startDateTime: { $gte: from, $lte: to } },
           { dueDate: { $gte: from, $lte: to } },
@@ -730,8 +757,9 @@ router.get("/reports", verifyToken, async (req, res) => {
   try {
     const now = new Date();
     const todayStart = getStartOfDay(now);
+    const filter = buildFilters({}, req.user);
 
-    const activities = await Activity.find({});
+    const activities = await Activity.find(filter);
     const tasks = activities.filter((activity) => activity.activityType === "task");
     const meetings = activities.filter((activity) => activity.activityType === "meeting");
     const calls = activities.filter((activity) => activity.activityType === "call");
@@ -766,6 +794,35 @@ router.get("/reports", verifyToken, async (req, res) => {
         byOwner: ownerChart,
       },
     });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+router.get("/usecases", verifyToken, async (req, res) => {
+  try {
+    const role = String(req.user?.role || "").toUpperCase();
+    const currentUserId = String(req.user?._id || "");
+
+    const baseFilter = {
+      activityType: "meeting",
+      outcome: "interested",
+      "relatedTo.recordType": "Lead",
+    };
+
+    const activities = await populateActivity(
+      Activity.find(baseFilter).sort({ startDateTime: -1, dueDate: -1, createdAt: -1 })
+    );
+
+    const scopedActivities = role === "EMPLOYEE"
+      ? activities.filter((activity) => {
+          const assignedId = getAssignedUserId(activity);
+          const ownerId = getOwnerId(activity);
+          return assignedId === currentUserId || ownerId === currentUserId;
+        })
+      : activities;
+
+    res.json(scopedActivities);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

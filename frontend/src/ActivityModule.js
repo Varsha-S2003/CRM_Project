@@ -568,6 +568,7 @@ function ActivityModule() {
   const currentUserId = localStorage.getItem("userId") || "";
   const currentUsername = localStorage.getItem("username") || "Current User";
   const role = (localStorage.getItem("role") || "").toUpperCase();
+  const isEmployee = role === "EMPLOYEE";
 
   const apiHeaders = useMemo(() => ({ Authorization: `Bearer ${token}` }), [token]);
 
@@ -580,13 +581,13 @@ function ActivityModule() {
     const params = {
       filter,
       activityType: activeSidebar === "all" ? activityType : activeSidebar,
-      owner: ownerFilter,
+      owner: isEmployee ? currentUserId || "all" : ownerFilter,
       priority: priorityFilter,
       search,
     };
     const res = await axios.get("http://localhost:5000/api/activities", { headers: apiHeaders, params });
     setActivities(res.data);
-  }, [activeSidebar, activityType, apiHeaders, filter, ownerFilter, priorityFilter, search]);
+  }, [activeSidebar, activityType, apiHeaders, currentUserId, filter, isEmployee, ownerFilter, priorityFilter, search]);
 
   const fetchReports = useCallback(async () => {
     const res = await axios.get("http://localhost:5000/api/activities/reports", { headers: apiHeaders });
@@ -660,7 +661,19 @@ function ActivityModule() {
 
   const fetchUsers = useCallback(async () => {
     try {
-      const res = await axios.get("http://localhost:5000/api/employees", { headers: apiHeaders });
+      const usersEndpoint =
+        role === "ADMIN"
+          ? "http://localhost:5000/api/employees"
+          : role === "MANAGER"
+            ? "http://localhost:5000/api/employees/assignable"
+            : "";
+
+      if (!usersEndpoint) {
+        setUsers(currentUserId ? [{ _id: currentUserId, name: currentUsername, username: currentUsername }] : []);
+        return;
+      }
+
+      const res = await axios.get(usersEndpoint, { headers: apiHeaders });
       const employeeUsers = res.data.map((user) => ({
         _id: user._id || user.id,
         name: user.name || user.username,
@@ -670,7 +683,7 @@ function ActivityModule() {
     } catch (error) {
       setUsers(currentUserId ? [{ _id: currentUserId, name: currentUsername, username: currentUsername }] : []);
     }
-  }, [apiHeaders, currentUserId, currentUsername]);
+  }, [apiHeaders, currentUserId, currentUsername, role]);
 
   const refreshAll = useCallback(async () => {
     setLoading(true);
@@ -1631,12 +1644,14 @@ function ActivityModule() {
               <option key={item.value} value={item.value}>{item.label}</option>
             ))}
           </select>
-          <select value={ownerFilter} onChange={(event) => setOwnerFilter(event.target.value)} className="task-page__select">
-            <option value="all">All Owners</option>
-            {users.map((user) => (
-              <option key={user._id} value={user._id}>{user.name || user.username}</option>
-            ))}
-          </select>
+          {!isEmployee ? (
+            <select value={ownerFilter} onChange={(event) => setOwnerFilter(event.target.value)} className="task-page__select">
+              <option value="all">All Owners</option>
+              {users.map((user) => (
+                <option key={user._id} value={user._id}>{user.name || user.username}</option>
+              ))}
+            </select>
+          ) : null}
           <select value={priorityFilter} onChange={(event) => setPriorityFilter(event.target.value)} className="task-page__select">
             <option value="all">All Priorities</option>
             {PRIORITY_OPTIONS.map((priority) => (
@@ -1726,12 +1741,14 @@ function ActivityModule() {
 
       <div className="task-page__toolbar">
         <div className="task-page__toolbar-right">
-          <select value={ownerFilter} onChange={(event) => setOwnerFilter(event.target.value)} className="task-page__select">
-            <option value="all">All Owners</option>
-            {users.map((user) => (
-              <option key={user._id} value={user._id}>{user.name || user.username}</option>
-            ))}
-          </select>
+          {!isEmployee ? (
+            <select value={ownerFilter} onChange={(event) => setOwnerFilter(event.target.value)} className="task-page__select">
+              <option value="all">All Owners</option>
+              {users.map((user) => (
+                <option key={user._id} value={user._id}>{user.name || user.username}</option>
+              ))}
+            </select>
+          ) : null}
           <select value={priorityFilter} onChange={(event) => setPriorityFilter(event.target.value)} className="task-page__select">
             <option value="all">All Priorities</option>
             {PRIORITY_OPTIONS.map((priority) => (
@@ -1821,12 +1838,14 @@ function ActivityModule() {
 
       <div className="task-page__toolbar">
         <div className="task-page__toolbar-right">
-          <select value={ownerFilter} onChange={(event) => setOwnerFilter(event.target.value)} className="task-page__select">
-            <option value="all">All Owners</option>
-            {users.map((user) => (
-              <option key={user._id} value={user._id}>{user.name || user.username}</option>
-            ))}
-          </select>
+          {!isEmployee ? (
+            <select value={ownerFilter} onChange={(event) => setOwnerFilter(event.target.value)} className="task-page__select">
+              <option value="all">All Owners</option>
+              {users.map((user) => (
+                <option key={user._id} value={user._id}>{user.name || user.username}</option>
+              ))}
+            </select>
+          ) : null}
           <select value={priorityFilter} onChange={(event) => setPriorityFilter(event.target.value)} className="task-page__select">
             <option value="all">All Priorities</option>
             {PRIORITY_OPTIONS.map((priority) => (
@@ -1976,12 +1995,14 @@ function ActivityModule() {
                   ))}
                 </select>
               ) : null}
-              <select value={ownerFilter} onChange={(event) => setOwnerFilter(event.target.value)}>
-                <option value="all">All Owners</option>
-                {users.map((user) => (
-                  <option key={user._id} value={user._id}>{user.name || user.username}</option>
-                ))}
-              </select>
+              {!isEmployee ? (
+                <select value={ownerFilter} onChange={(event) => setOwnerFilter(event.target.value)}>
+                  <option value="all">All Owners</option>
+                  {users.map((user) => (
+                    <option key={user._id} value={user._id}>{user.name || user.username}</option>
+                  ))}
+                </select>
+              ) : null}
               <select value={priorityFilter} onChange={(event) => setPriorityFilter(event.target.value)}>
                 <option value="all">All Priorities</option>
                 {PRIORITY_OPTIONS.map((priority) => (

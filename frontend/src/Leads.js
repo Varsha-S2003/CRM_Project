@@ -2078,6 +2078,8 @@ ET`;
                     const assignedToId = getEntityId(lead.assignedTo);
                     const selectedAssignTarget = cardAssignSelection[lead._id] ?? assignedToId;
                     const assignedDisplayName = getAssignedUserLabel(lead.assignedTo);
+                    const assignedRole = String(lead?.assignedTo?.role || "").toUpperCase();
+                    const showAsUnassigned = !assignedToId || (isManager && assignedRole === "MANAGER");
 
                     return (
                     <div
@@ -2133,44 +2135,63 @@ ET`;
                       {(isAdmin || isManager) && assignableUsers.length > 0 && (
                         <div className="card-assign-inline" onClick={(event) => event.stopPropagation()}>
                           <div className="card-assigned-name">
-                            Assigned: {assignedDisplayName || "Unassigned"}
+                            <span className="card-assigned-label">Assigned</span>
+                            {showAsUnassigned ? (
+                              <button
+                                type="button"
+                                className="card-assigned-link"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  navigate("/requests");
+                                }}
+                              >
+                                Unassigned
+                              </button>
+                            ) : (
+                              <span className="card-assigned-value">{assignedDisplayName || "Unassigned"}</span>
+                            )}
                           </div>
-                          <select
-                            className="card-assign-select"
-                            value={selectedAssignTarget}
-                            onChange={(event) => {
-                              setCardAssignSelection((prev) => ({
-                                ...prev,
-                                [lead._id]: event.target.value,
-                              }));
-                            }}
-                          >
-                            <option value="">Unassigned</option>
-                            {assignableUsers.map((emp) => (
-                              <option key={emp._id} value={emp._id}>
-                                {getUserDisplayLabel(emp)}
-                              </option>
-                            ))}
-                          </select>
-                          <button
-                            type="button"
-                            className="card-assign-btn"
-                            onClick={async () => {
-                              if (!selectedAssignTarget && !assignedToId) {
-                                window.alert("Please select an employee to assign this lead.");
-                                return;
-                              }
 
-                              await handleAssign(lead._id, selectedAssignTarget);
-                              setCardAssignSelection((prev) => {
-                                const next = { ...prev };
-                                delete next[lead._id];
-                                return next;
-                              });
-                            }}
-                          >
-                            Assign
-                          </button>
+                          {!showAsUnassigned ? null : !assignedToId ? (
+                            <>
+                              <select
+                                className="card-assign-select"
+                                value={selectedAssignTarget}
+                                onChange={(event) => {
+                                  setCardAssignSelection((prev) => ({
+                                    ...prev,
+                                    [lead._id]: event.target.value,
+                                  }));
+                                }}
+                              >
+                                <option value="">Unassigned</option>
+                                {assignableUsers.map((emp) => (
+                                  <option key={emp._id} value={emp._id}>
+                                    {getUserDisplayLabel(emp)}
+                                  </option>
+                                ))}
+                              </select>
+                              <button
+                                type="button"
+                                className="card-assign-btn"
+                                onClick={async () => {
+                                  if (!selectedAssignTarget && !assignedToId) {
+                                    window.alert("Please select an employee to assign this lead.");
+                                    return;
+                                  }
+
+                                  await handleAssign(lead._id, selectedAssignTarget);
+                                  setCardAssignSelection((prev) => {
+                                    const next = { ...prev };
+                                    delete next[lead._id];
+                                    return next;
+                                  });
+                                }}
+                              >
+                                Assign
+                              </button>
+                            </>
+                          ) : null}
                         </div>
                       )}
                     </div>

@@ -11,6 +11,29 @@ const REFILL_KEYWORDS = [
   "please refill inventory",
 ];
 
+const PROPOSAL_KEYWORDS = [
+  "proposal approval requested",
+  "proposal approved",
+  "proposal rejected",
+  "proposal",
+];
+
+const isRefillNotification = (item) => {
+  const text = String(item?.message || "").toLowerCase();
+  return REFILL_KEYWORDS.some((word) => text.includes(word));
+};
+
+const isProposalNotification = (item) => {
+  const text = String(item?.message || "").toLowerCase();
+  return PROPOSAL_KEYWORDS.some((word) => text.includes(word));
+};
+
+const getNotificationPill = (item) => {
+  if (isRefillNotification(item)) return "Need Analysis";
+  if (isProposalNotification(item)) return "Proposal Approval";
+  return "General";
+};
+
 const parseRefillDetails = (message = "") => {
   const text = String(message || "");
 
@@ -49,12 +72,7 @@ export default function NotificationsPage() {
     fetchNotifications();
   }, [fetchNotifications]);
 
-  const refillNotifications = useMemo(() => {
-    return notifications.filter((item) => {
-      const text = String(item?.message || "").toLowerCase();
-      return REFILL_KEYWORDS.some((word) => text.includes(word));
-    });
-  }, [notifications]);
+  const visibleNotifications = useMemo(() => notifications, [notifications]);
 
   const markSingleAsRead = async (id) => {
     if (!id) return;
@@ -111,7 +129,7 @@ export default function NotificationsPage() {
           <div className="notifications-page-header">
             <div>
               <h1>Notifications</h1>
-              <p>Review stock alerts and create purchases quickly from one page.</p>
+              <p>Review stock, proposal approval, and system alerts from one page.</p>
             </div>
             <div className="notifications-page-actions">
               <button
@@ -134,19 +152,20 @@ export default function NotificationsPage() {
 
           {loading ? (
             <div className="notifications-empty-card">Loading notifications...</div>
-          ) : refillNotifications.length === 0 ? (
-            <div className="notifications-empty-card">No refill-related alerts right now.</div>
+          ) : visibleNotifications.length === 0 ? (
+            <div className="notifications-empty-card">No notifications right now.</div>
           ) : (
             <div className="notifications-grid">
-              {refillNotifications.map((item) => {
-                const details = parseRefillDetails(item?.message || "");
+              {visibleNotifications.map((item) => {
+                const refillType = isRefillNotification(item);
+                const details = refillType ? parseRefillDetails(item?.message || "") : null;
                 return (
                   <article
                     key={item._id}
                     className={`notification-card ${item?.isRead ? "read" : "unread"}`}
                   >
                     <div className="notification-card-top">
-                      <span className="notification-pill">Need Analysis</span>
+                      <span className="notification-pill">{getNotificationPill(item)}</span>
                       <span className="notification-time">
                         {item?.createdAt ? new Date(item.createdAt).toLocaleString() : ""}
                       </span>
@@ -154,27 +173,36 @@ export default function NotificationsPage() {
 
                     <h3>{item?.dealId?.name ? `Deal: ${item.dealId.name}` : "Deal Alert"}</h3>
 
-                    <div className="notification-details">
-                      <div><strong>Product:</strong> {details.product}</div>
-                      <div><strong>Requested Qty:</strong> {details.requested}</div>
-                      <div><strong>Available Qty:</strong> {details.available}</div>
-                      <div><strong>Customer:</strong> {details.customer}</div>
-                      <div><strong>Company:</strong> {details.company}</div>
-                      <div><strong>Email:</strong> {details.email}</div>
-                      <div><strong>Phone:</strong> {details.phone}</div>
-                      <div><strong>Updated By:</strong> {item?.changedByName || "Employee"}</div>
-                    </div>
+                    {refillType ? (
+                      <div className="notification-details">
+                        <div><strong>Product:</strong> {details.product}</div>
+                        <div><strong>Requested Qty:</strong> {details.requested}</div>
+                        <div><strong>Available Qty:</strong> {details.available}</div>
+                        <div><strong>Customer:</strong> {details.customer}</div>
+                        <div><strong>Company:</strong> {details.company}</div>
+                        <div><strong>Email:</strong> {details.email}</div>
+                        <div><strong>Phone:</strong> {details.phone}</div>
+                        <div><strong>Updated By:</strong> {item?.changedByName || "Employee"}</div>
+                      </div>
+                    ) : (
+                      <div className="notification-details">
+                        <div><strong>Type:</strong> {String(item?.toStage || "notification").replaceAll("_", " ")}</div>
+                        <div><strong>Updated By:</strong> {item?.changedByName || "System"}</div>
+                      </div>
+                    )}
 
                     <p className="notification-message">{item?.message || ""}</p>
 
                     <div className="notification-actions">
-                      <button
-                        type="button"
-                        className="notifications-btn"
-                        onClick={() => openVendorsForPurchase(item)}
-                      >
-                        Make Purchase
-                      </button>
+                      {refillType ? (
+                        <button
+                          type="button"
+                          className="notifications-btn"
+                          onClick={() => openVendorsForPurchase(item)}
+                        >
+                          Make Purchase
+                        </button>
+                      ) : null}
                       <button
                         type="button"
                         className="notifications-btn secondary"
