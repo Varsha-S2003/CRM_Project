@@ -581,6 +581,7 @@ router.get("/all", verifyToken, permit("ADMIN", "MANAGER"), async (req, res, nex
     const leads = await Lead.find(filter)
       .populate("assignedBy", "name username role employee_id")
       .populate("assignedTo", "name username role employee_id")
+      .populate("itemId", "name type serviceType billingCycle")
       .sort({ [sort]: parseInt(order) })
       .limit(parseInt(limit))
       .skip(parseInt(skip));
@@ -632,6 +633,7 @@ router.get("/my", verifyToken, permit("EMPLOYEE"), async (req, res, next) => {
     const leads = await Lead.find(filter)
       .populate("assignedBy", "name username role employee_id")
       .populate("assignedTo", "name username role employee_id")
+      .populate("itemId", "name type serviceType billingCycle")
       .sort({ [sort]: parseInt(order) })
       .limit(parseInt(limit))
       .skip(parseInt(skip));
@@ -1013,6 +1015,8 @@ router.post("/merge", verifyToken, permit("ADMIN", "MANAGER"), async (req, res, 
 router.post("/", verifyToken, async (req, res, next) => {
   try {
     const payload = normalizeLeadPayload(req.body);
+    const actorRole = normalizeRole(req.user?.role);
+    const requestedAssignedTo = normalizeOptionalObjectId(req.body?.assignedTo);
     if (!payload.name) return res.status(400).json({ message: "Lead name required" });
 
     // New incoming leads always start in New stage.
@@ -1031,18 +1035,41 @@ router.post("/", verifyToken, async (req, res, next) => {
       });
     }
 
-    const assignment = await resolveLeadAssignmentForCreator(req.user._id);
-    if (assignment.assignedTo) {
-      payload.assignedTo = assignment.assignedTo;
-      payload.assignedBy = assignment.assignedBy;
-      payload.assignedByRole = assignment.assignedByRole;
-      payload.assignedAt = assignment.assignedAt;
+    let autoAssignment = null;
+
+    if (actorRole === "EMPLOYEE") {
+      autoAssignment = await resolveLeadAssignmentForCreator(req.user._id);
+      if (autoAssignment.assignedTo) {
+        payload.assignedTo = autoAssignment.assignedTo;
+        payload.assignedBy = autoAssignment.assignedBy;
+        payload.assignedByRole = autoAssignment.assignedByRole;
+        payload.assignedAt = autoAssignment.assignedAt;
+      }
+    } else if ((actorRole === "ADMIN" || actorRole === "MANAGER") && requestedAssignedTo) {
+      const assignee = await User.findById(requestedAssignedTo).select("_id role username name");
+      if (!assignee) {
+        return res.status(404).json({ message: "Assignee user not found" });
+      }
+
+      const assigneeRole = normalizeRole(assignee.role);
+      if (actorRole === "ADMIN" && assigneeRole !== "MANAGER") {
+        return res.status(403).json({ message: "Admin can assign leads only to managers" });
+      }
+
+      if (actorRole === "MANAGER" && assigneeRole !== "EMPLOYEE") {
+        return res.status(403).json({ message: "Manager can assign leads only to employees" });
+      }
+
+      payload.assignedTo = assignee._id;
+      payload.assignedBy = req.user._id;
+      payload.assignedByRole = actorRole;
+      payload.assignedAt = new Date();
     }
 
     const lead = await Lead.create(payload);
 
-    if (assignment.manager?._id) {
-      const managerName = assignment.manager.name || assignment.manager.username || "Manager";
+    if (autoAssignment?.manager?._id) {
+      const managerName = autoAssignment.manager.name || autoAssignment.manager.username || "Manager";
       const actorName = req.user.name || req.user.username || "Employee";
       await Notification.create({
         dealId: null,
@@ -1052,7 +1079,7 @@ router.post("/", verifyToken, async (req, res, next) => {
         toStage: "manager_review",
         changedBy: req.user._id,
         changedByName: actorName,
-        recipients: [assignment.manager._id],
+        recipients: [autoAssignment.manager._id],
         isRead: false,
       });
     }
@@ -1201,6 +1228,19 @@ router.put("/:id", verifyToken, permit("ADMIN", "MANAGER", "EMPLOYEE"), async (r
         shouldSave = true;
       }
     });
+
+    if (Object.prototype.hasOwnProperty.call(req.body, "itemType")) {
+      lead.itemType = normalizeLeadItemType(req.body.itemType);
+      if (!lead.itemType) {
+        lead.itemId = null;
+      }
+      shouldSave = true;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(req.body, "itemId")) {
+      lead.itemId = normalizeOptionalObjectId(req.body.itemId);
+      shouldSave = true;
+    }
 
     if (Object.prototype.hasOwnProperty.call(req.body, "annualRevenue")) {
       lead.annualRevenue = normalizeOptionalNumber(req.body.annualRevenue);
@@ -2235,6 +2275,9 @@ router.post("/filter", verifyToken, async (req, res, next) => {
     }
     
     const leads = await Lead.find(baseFilter)
+      .populate("assignedBy", "name username role employee_id")
+      .populate("assignedTo", "name username role employee_id")
+      .populate("itemId", "name type serviceType billingCycle")
       .sort(sort)
       .limit(limit)
       .skip(skip)
@@ -2281,7 +2324,13 @@ router.get("/all", verifyToken, permit("ADMIN", "MANAGER"), async (req, res, nex
       }
     }
     
-    const leads = await Lead.find(filter).sort({ [sort]: parseInt(order) }).limit(parseInt(limit)).skip(parseInt(skip));
+    const leads = await Lead.find(filter)
+      .populate("assignedBy", "name username role employee_id")
+      .populate("assignedTo", "name username role employee_id")
+      .populate("itemId", "name type serviceType billingCycle")
+      .sort({ [sort]: parseInt(order) })
+      .limit(parseInt(limit))
+      .skip(parseInt(skip));
     res.json(leads);
   } catch (err) {
     next(err);
@@ -2323,7 +2372,13 @@ router.get("/my", verifyToken, permit("EMPLOYEE"), async (req, res, next) => {
       }
     }
     
-    const leads = await Lead.find(filter).sort({ [sort]: parseInt(order) }).limit(parseInt(limit)).skip(parseInt(skip));
+    const leads = await Lead.find(filter)
+      .populate("assignedBy", "name username role employee_id")
+      .populate("assignedTo", "name username role employee_id")
+      .populate("itemId", "name type serviceType billingCycle")
+      .sort({ [sort]: parseInt(order) })
+      .limit(parseInt(limit))
+      .skip(parseInt(skip));
     res.json(leads);
   } catch (err) {
     next(err);

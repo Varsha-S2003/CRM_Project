@@ -53,6 +53,9 @@ export default function NotificationsPage() {
   const [notifications, setNotifications] = useState([]);
   const [loading, setLoading] = useState(false);
   const [actionLoadingId, setActionLoadingId] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [searchTerm, setSearchTerm] = useState("");
+  const [selectedDeal, setSelectedDeal] = useState("");
 
   const fetchNotifications = useCallback(async () => {
     try {
@@ -72,7 +75,78 @@ export default function NotificationsPage() {
     fetchNotifications();
   }, [fetchNotifications]);
 
-  const visibleNotifications = useMemo(() => notifications, [notifications]);
+  const unreadCount = notifications.filter((item) => !item?.isRead).length;
+  const readCount = notifications.length - unreadCount;
+  const dealOptions = useMemo(() => {
+    const counters = new Map();
+
+    notifications.forEach((item) => {
+      const dealKey = String(item?.dealId?._id || item?.dealId || "");
+      const dealName = String(item?.dealId?.name || "Deal Alert").trim();
+      if (!dealKey) return;
+
+      const existing = counters.get(dealKey) || { key: dealKey, name: dealName, count: 0 };
+      existing.count += 1;
+      counters.set(dealKey, existing);
+    });
+
+    return Array.from(counters.values()).sort((a, b) => a.name.localeCompare(b.name));
+  }, [notifications]);
+
+  const selectedDealMeta = useMemo(
+    () => dealOptions.find((deal) => deal.key === selectedDeal) || null,
+    [dealOptions, selectedDeal]
+  );
+
+  const matchingDealOptions = useMemo(() => {
+    const normalizedQuery = searchTerm.trim().toLowerCase();
+    if (!normalizedQuery) {
+      return dealOptions.slice(0, 8);
+    }
+
+    return dealOptions
+      .filter((deal) => deal.name.toLowerCase().includes(normalizedQuery))
+      .slice(0, 8);
+  }, [dealOptions, searchTerm]);
+
+  useEffect(() => {
+    if (!selectedDeal) return;
+    const stillExists = dealOptions.some((deal) => deal.key === selectedDeal);
+    if (!stillExists) {
+      setSelectedDeal("");
+    }
+  }, [dealOptions, selectedDeal]);
+
+  const visibleNotifications = useMemo(() => {
+    const normalizedSearch = searchTerm.trim().toLowerCase();
+
+    return notifications.filter((item) => {
+      const passesStatusFilter =
+        statusFilter === "all" ||
+        (statusFilter === "unread" && !item?.isRead) ||
+        (statusFilter === "read" && Boolean(item?.isRead));
+
+      if (!passesStatusFilter) return false;
+
+      const itemDealKey = String(item?.dealId?._id || item?.dealId || "");
+      const passesDealFilter = !selectedDeal || itemDealKey === selectedDeal;
+      if (!passesDealFilter) return false;
+
+      if (!normalizedSearch) return true;
+
+      const haystack = [
+        item?.dealId?.name,
+        item?.message,
+        item?.toStage,
+        item?.changedByName,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+
+      return haystack.includes(normalizedSearch);
+    });
+  }, [notifications, searchTerm, selectedDeal, statusFilter]);
 
   const markSingleAsRead = async (id) => {
     if (!id) return;
@@ -119,18 +193,32 @@ export default function NotificationsPage() {
     });
   };
 
-  const unreadCount = notifications.filter((item) => !item?.isRead).length;
-
   return (
     <div className="dashboard-layout">
       <Sidebar />
       <div className="main-content">
         <div className="notifications-page">
           <div className="notifications-page-header">
-            <div>
-              <h1>Notifications</h1>
-              <p>Review stock, proposal approval, and system alerts from one page.</p>
+            <div className="notifications-page-header-text">
+              <h1>Notifications Center</h1>
+              <p>Review stock, proposal approvals, and system alerts from one place.</p>
             </div>
+
+            <div className="notifications-summary">
+              <div className="notifications-summary-card">
+                <span className="notifications-summary-label">Total</span>
+                <strong>{notifications.length}</strong>
+              </div>
+              <div className="notifications-summary-card unread">
+                <span className="notifications-summary-label">Unread</span>
+                <strong>{unreadCount}</strong>
+              </div>
+              <div className="notifications-summary-card read">
+                <span className="notifications-summary-label">Read</span>
+                <strong>{readCount}</strong>
+              </div>
+            </div>
+
             <div className="notifications-page-actions">
               <button
                 type="button"
@@ -150,10 +238,94 @@ export default function NotificationsPage() {
             </div>
           </div>
 
+          <div className="notifications-toolbar">
+            <div className="notifications-filter-group" role="tablist" aria-label="Filter notifications">
+              <button
+                type="button"
+                className={`notifications-filter-btn ${statusFilter === "all" ? "active" : ""}`}
+                onClick={() => setStatusFilter("all")}
+              >
+                All
+              </button>
+              <button
+                type="button"
+                className={`notifications-filter-btn ${statusFilter === "unread" ? "active" : ""}`}
+                onClick={() => setStatusFilter("unread")}
+              >
+                Unread
+              </button>
+              <button
+                type="button"
+                className={`notifications-filter-btn ${statusFilter === "read" ? "active" : ""}`}
+                onClick={() => setStatusFilter("read")}
+              >
+                Read
+              </button>
+            </div>
+
+            <label className="notifications-search-wrap" htmlFor="notifications-search">
+              <input
+                id="notifications-search"
+                type="search"
+                className="notifications-search"
+                placeholder="Search by deal, message, type, or user"
+                value={searchTerm}
+                onChange={(event) => setSearchTerm(event.target.value)}
+              />
+            </label>
+          </div>
+
+          {dealOptions.length > 0 ? (
+            <div className="notifications-deal-filter" role="group" aria-label="Deal filter">
+              <div className="notifications-deal-filter-top">
+                <label className="notifications-deal-filter-label" htmlFor="deal-filter-input">
+                  Filter by Deal
+                </label>
+                {selectedDealMeta ? (
+                  <button
+                    type="button"
+                    className="notifications-btn secondary"
+                    onClick={() => {
+                      setSelectedDeal("");
+                    }}
+                  >
+                    Clear Deal Filter
+                  </button>
+                ) : null}
+              </div>
+
+              {selectedDealMeta ? (
+                <p className="notifications-deal-current">
+                  Showing notifications for: <strong>{selectedDealMeta.name}</strong>
+                </p>
+              ) : null}
+
+              <div className="notifications-deal-results" aria-label="Matching deals">
+                {matchingDealOptions.map((deal) => (
+                  <button
+                    key={deal.key}
+                    type="button"
+                    className={`notifications-deal-result ${selectedDeal === deal.key ? "active" : ""}`}
+                    onClick={() => {
+                      setSelectedDeal(deal.key);
+                    }}
+                  >
+                    {deal.name} ({deal.count})
+                  </button>
+                ))}
+                {!matchingDealOptions.length ? (
+                  <span className="notifications-deal-empty">No deals found</span>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
+
           {loading ? (
             <div className="notifications-empty-card">Loading notifications...</div>
           ) : visibleNotifications.length === 0 ? (
-            <div className="notifications-empty-card">No notifications right now.</div>
+            <div className="notifications-empty-card">
+              No notifications match this view. Try changing filters or search text.
+            </div>
           ) : (
             <div className="notifications-grid">
               {visibleNotifications.map((item) => {
@@ -171,10 +343,26 @@ export default function NotificationsPage() {
                       </span>
                     </div>
 
-                    <h3>{item?.dealId?.name ? `Deal: ${item.dealId.name}` : "Deal Alert"}</h3>
+                    <h3>
+                      Deal:{" "}
+                      {item?.dealId?.name ? (
+                        <button
+                          type="button"
+                          className="notification-deal-link"
+                          onClick={() => {
+                            const key = String(item?.dealId?._id || item?.dealId || "");
+                            setSelectedDeal(key);
+                          }}
+                        >
+                          {item.dealId.name}
+                        </button>
+                      ) : (
+                        "Deal Alert"
+                      )}
+                    </h3>
 
                     {refillType ? (
-                      <div className="notification-details">
+                      <div className="notification-details two-column">
                         <div><strong>Product:</strong> {details.product}</div>
                         <div><strong>Requested Qty:</strong> {details.requested}</div>
                         <div><strong>Available Qty:</strong> {details.available}</div>

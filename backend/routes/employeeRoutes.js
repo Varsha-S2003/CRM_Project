@@ -6,13 +6,66 @@ const { permit } = require("../middleware/authorize");
 const bcrypt = require("bcryptjs");
 const User = require("../models/user");
 
+const USERNAME_REGEX = /^(?!\.)(?!.*\.$)[a-z]+(?:\.[a-z]+)*(?:\d+)?$/;
+const USERNAME_PREFIX_BY_ROLE = {
+  EMPLOYEE: "emp.",
+  MANAGER: "mgr.",
+  ADMIN: "adm.",
+};
+const EMPLOYEE_ID_PREFIX_BY_ROLE = {
+  EMPLOYEE: "EMP",
+  MANAGER: "MGR",
+  ADMIN: "ADM",
+};
+
+const getUniqueUsername = async (baseUsername) => {
+  let candidate = baseUsername;
+  let counter = 2;
+
+  while (await User.findOne({ username: candidate })) {
+    candidate = `${baseUsername}${counter}`;
+    counter += 1;
+  }
+
+  return candidate;
+};
+
+const getNextEmployeeId = async (role) => {
+  const prefix = EMPLOYEE_ID_PREFIX_BY_ROLE[String(role || "").toUpperCase()];
+  if (!prefix) return null;
+
+  const lastCreatedUserForPrefix = await User.findOne({
+    employee_id: { $regex: `^${prefix}\\d+$` },
+  })
+    .sort({ createdAt: -1 })
+    .select("employee_id");
+
+  let nextNumber = 1;
+  if (lastCreatedUserForPrefix && lastCreatedUserForPrefix.employee_id) {
+    const numericPart = lastCreatedUserForPrefix.employee_id.replace(prefix, "");
+    const parsedNumber = parseInt(numericPart, 10);
+    if (!Number.isNaN(parsedNumber)) {
+      nextNumber = parsedNumber + 1;
+    }
+  }
+
+  return `${prefix}${String(nextNumber).padStart(3, "0")}`;
+};
+
 // utility endpoint for front-end validation: check if username/email already exists
 router.get("/check-username", verifyToken, isAdmin, async (req, res) => {
   try {
     const { username } = req.query;
     if (!username) return res.status(400).json({ message: "username query parameter required" });
-    const exists = await User.findOne({ username: username.trim() });
-    res.json({ available: !exists });
+
+    const normalizedUsername = String(username).trim().toLowerCase();
+    const exists = await User.findOne({ username: normalizedUsername });
+    if (!exists) {
+      return res.json({ available: true });
+    }
+
+    const suggestedUsername = await getUniqueUsername(normalizedUsername);
+    res.json({ available: false, suggestedUsername });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -34,23 +87,44 @@ router.get("/check-email", verifyToken, isAdmin, async (req, res) => {
 router.post("/", verifyToken, isAdmin, async (req, res) => {
   try {
     const { name, username, email, phone, department, designation, password, role, reportsTo, managerId } = req.body;
-    
-    if (!username || !email || !password) {
-      return res.status(400).json({ message: "Username, email and password are required" });
+
+    const normalizedRole = String(role || "").trim().toUpperCase();
+    const normalizedName = String(name || "").trim();
+    const normalizedEmail = String(email || "").trim().toLowerCase();
+    const normalizedUsername = String(username || "").trim().toLowerCase();
+    const normalizedDepartment = String(department || "").trim();
+
+    if (!normalizedName || !normalizedUsername || !normalizedEmail || !password || !normalizedRole || !normalizedDepartment) {
+      return res.status(400).json({ message: "Full name, username, email, department, role and password are required" });
+    }
+
+    if (!["ADMIN", "MANAGER", "EMPLOYEE"].includes(normalizedRole)) {
+      return res.status(400).json({ message: "Invalid role selected" });
+    }
+
+    if (normalizedUsername.length < 5 || normalizedUsername.length > 20) {
+      return res.status(400).json({ message: "Username must be 5 to 20 characters long" });
+    }
+
+    if (!USERNAME_REGEX.test(normalizedUsername)) {
+      return res.status(400).json({ message: "Username must contain lowercase letters and dots only, with optional number suffix" });
+    }
+
+    const expectedPrefix = USERNAME_PREFIX_BY_ROLE[normalizedRole];
+    if (expectedPrefix && !normalizedUsername.startsWith(expectedPrefix)) {
+      return res.status(400).json({ message: `Username must start with '${expectedPrefix}' for role ${normalizedRole}` });
     }
 
     // Ensure email not already taken
-    const emailExists = await User.findOne({ email });
+    const emailExists = await User.findOne({ email: normalizedEmail });
     if (emailExists) return res.status(400).json({ message: "Email already in use" });
 
-    // Ensure username not already taken
-    const usernameExists = await User.findOne({ username });
-    if (usernameExists) return res.status(400).json({ message: "Username already in use" });
+    // Auto-adjust duplicate username by appending number suffix: emp.veda -> emp.veda2
+    const uniqueUsername = await getUniqueUsername(normalizedUsername);
 
     const hashed = await bcrypt.hash(password, 10);
-    
-    // Role defaults to EMPLOYEE if not specified
-    const userRole = role && ["ADMIN", "MANAGER", "EMPLOYEE"].includes(role) ? role : "EMPLOYEE";
+
+    const userRole = normalizedRole;
     const requestedManagerId = String(reportsTo || managerId || "").trim();
     let resolvedReportsTo = null;
 
@@ -74,24 +148,15 @@ router.post("/", verifyToken, isAdmin, async (req, res) => {
       resolvedReportsTo = null;
     }
 
-    // Generate employee_id (EMP-001, EMP-002, etc.)
-    const lastEmployee = await User.findOne({ employee_id: { $regex: /^EMP-/ } })
-      .sort({ employee_id: -1 });
-    
-    let newEmpNumber = 1;
-    if (lastEmployee && lastEmployee.employee_id) {
-      const lastNum = parseInt(lastEmployee.employee_id.replace('EMP-', ''));
-      newEmpNumber = lastNum + 1;
-    }
-    const employee_id = `EMP-${String(newEmpNumber).padStart(3, '0')}`;
+    const employee_id = await getNextEmployeeId(userRole);
 
     const employee = await User.create({ 
-      name: name || "",
-      username, 
-      email, 
-      phone: phone || "",
-      department: department || "",
-      designation: designation || "",
+      name: normalizedName,
+      username: uniqueUsername,
+      email: normalizedEmail,
+      phone: String(phone || "").trim(),
+      department: normalizedDepartment,
+      designation: String(designation || "").trim(),
       password: hashed, 
       role: userRole,
       employee_id: employee_id,
@@ -123,6 +188,86 @@ router.get("/", verifyToken, isAdmin, async (req, res) => {
       .select("-password")
       .sort({ createdAt: -1 });
     res.json(employees);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// PUT /api/employees/:id -- update an employee (admin only)
+router.put("/:id", verifyToken, isAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, email, phone, department, designation, role, reportsTo, managerId } = req.body;
+
+    const normalizedRole = String(role || "").trim().toUpperCase();
+    const normalizedName = String(name || "").trim();
+    const normalizedEmail = String(email || "").trim().toLowerCase();
+    const normalizedDepartment = String(department || "").trim();
+
+    if (!normalizedName || !normalizedEmail || !normalizedDepartment || !normalizedRole) {
+      return res.status(400).json({ message: "Full name, email, department and role are required" });
+    }
+
+    if (!["MANAGER", "EMPLOYEE"].includes(normalizedRole)) {
+      return res.status(400).json({ message: "Invalid role selected" });
+    }
+
+    const employee = await User.findById(id);
+    if (!employee || String(employee.role || "").toUpperCase() === "ADMIN") {
+      return res.status(404).json({ message: "Employee not found" });
+    }
+
+    const emailExists = await User.findOne({ email: normalizedEmail, _id: { $ne: id } }).select("_id");
+    if (emailExists) {
+      return res.status(400).json({ message: "Email already in use" });
+    }
+
+    const requestedManagerId = String(reportsTo || managerId || "").trim();
+    let resolvedReportsTo = null;
+
+    if (normalizedRole === "EMPLOYEE") {
+      if (!requestedManagerId) {
+        return res.status(400).json({ message: "Manager assignment is required for employee role." });
+      }
+
+      if (requestedManagerId === String(id)) {
+        return res.status(400).json({ message: "Employee cannot report to themselves." });
+      }
+
+      const managerUser = await User.findOne({
+        _id: requestedManagerId,
+        role: { $regex: "^MANAGER$", $options: "i" },
+      }).select("_id");
+
+      if (!managerUser) {
+        return res.status(400).json({ message: "Selected manager is invalid." });
+      }
+
+      resolvedReportsTo = managerUser._id;
+    }
+
+    employee.name = normalizedName;
+    employee.email = normalizedEmail;
+    employee.phone = String(phone || "").trim();
+    employee.department = normalizedDepartment;
+    employee.designation = String(designation || "").trim();
+    employee.role = normalizedRole;
+    employee.reportsTo = resolvedReportsTo;
+
+    await employee.save();
+
+    res.json({
+      id: employee._id,
+      username: employee.username,
+      email: employee.email,
+      name: employee.name,
+      phone: employee.phone,
+      department: employee.department,
+      designation: employee.designation,
+      role: employee.role,
+      employee_id: employee.employee_id,
+      reportsTo: employee.reportsTo || null,
+    });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

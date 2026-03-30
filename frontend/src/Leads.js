@@ -44,6 +44,7 @@ function Leads() {
   const [selectedLead, setSelectedLead] = useState(null);
   const [isEditingLead, setIsEditingLead] = useState(false);
   const [editLeadForm, setEditLeadForm] = useState(null);
+  const [editLeadErrors, setEditLeadErrors] = useState({});
   const [exportView, setExportView] = useState("all");
   const [exportFieldScope, setExportFieldScope] = useState("custom");
   const [exportType, setExportType] = useState("csv");
@@ -128,6 +129,19 @@ function Leads() {
     }
 
     return "";
+  };
+
+  const getLeadItemName = (lead) => {
+    const item = lead?.itemId;
+    if (item && typeof item === "object") {
+      return item.name || item.title || "-";
+    }
+
+    const itemId = getEntityId(item);
+    if (!itemId) return "-";
+
+    const fromList = leadItems.find((entry) => String(entry?._id) === String(itemId));
+    return fromList?.name || "-";
   };
 
   // 🆕 VIEWS FUNCTIONS 🆕
@@ -373,10 +387,10 @@ function Leads() {
   }, [fetchLeads]);
 
   useEffect(() => {
-    if (showModal) {
+    if (showModal || isEditingLead || selectedLead) {
       fetchLeadItems();
     }
-  }, [showModal, fetchLeadItems]);
+  }, [showModal, isEditingLead, selectedLead, fetchLeadItems]);
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -432,9 +446,16 @@ function Leads() {
       return next;
     });
     setNewLeadErrors((prev) => {
-      if (!prev[field]) return prev;
+      const shouldClearContactError =
+        ["email", "phone", "mobile"].includes(field) && Boolean(prev.contact);
+
+      if (!prev[field] && !shouldClearContactError) return prev;
+
       const next = { ...prev };
       delete next[field];
+      if (shouldClearContactError) {
+        delete next.contact;
+      }
       if (field === "itemType" && next.itemId) {
         delete next.itemId;
       }
@@ -445,7 +466,15 @@ function Leads() {
   const validateNewLeadForm = (lead) => {
     const errors = {};
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    const phoneRegex = /^[+]?[-()\s0-9]{7,20}$/;
+    const phoneCharsRegex = /^[+]?[-()\s0-9]{7,20}$/;
+    const isValidPhoneNumber = (value) => {
+      const trimmed = String(value || "").trim();
+      if (!trimmed) return true;
+      if (!phoneCharsRegex.test(trimmed)) return false;
+
+      const digitCount = trimmed.replace(/\D/g, "").length;
+      return digitCount >= 10 && digitCount <= 15;
+    };
 
     if (!String(lead.firstName || "").trim()) {
       errors.firstName = "First name is required";
@@ -455,9 +484,15 @@ function Leads() {
       errors.lastName = "Last name is required";
     }
 
-    if (!String(lead.email || "").trim()) {
-      errors.email = "Email is required";
-    } else if (!emailRegex.test(String(lead.email || "").trim())) {
+    const email = String(lead.email || "").trim();
+    const phone = String(lead.phone || "").trim();
+    const mobile = String(lead.mobile || "").trim();
+
+    if (!email && !phone) {
+      errors.contact = "Provide at least one contact detail: Email or Phone";
+    }
+
+    if (email && !emailRegex.test(email)) {
       errors.email = "Enter a valid email address";
     }
 
@@ -465,12 +500,24 @@ function Leads() {
       errors.secondaryEmail = "Enter a valid secondary email";
     }
 
-    if (String(lead.phone || "").trim() && !phoneRegex.test(String(lead.phone || "").trim())) {
+    if (!isValidPhoneNumber(phone)) {
       errors.phone = "Enter a valid phone number";
     }
 
-    if (String(lead.mobile || "").trim() && !phoneRegex.test(String(lead.mobile || "").trim())) {
+    if (!isValidPhoneNumber(mobile)) {
       errors.mobile = "Enter a valid mobile number";
+    }
+
+    if (!String(lead.company || "").trim()) {
+      errors.company = "Company is required";
+    }
+
+    if (!String(lead.source || "").trim()) {
+      errors.source = "Lead source is required";
+    }
+
+    if (!String(lead.itemType || "").trim()) {
+      errors.itemType = "Type is required";
     }
 
     if (String(lead.website || "").trim()) {
@@ -768,7 +815,7 @@ function Leads() {
       const token = localStorage.getItem("token");
       const fullName = [newLead.firstName.trim(), newLead.lastName.trim()].filter(Boolean).join(' ').trim();
       if (!fullName) {
-        alert('First name or last name required');
+        alert('First name is required');
         return;
       }
 
@@ -858,6 +905,8 @@ function Leads() {
     mobile: lead?.mobile || "",
     company: lead?.company || "",
     website: lead?.website || "",
+    itemType: lead?.itemType || "",
+    itemId: getEntityId(lead?.itemId),
     industry: lead?.industry || "",
     annualRevenue: lead?.annualRevenue ?? "",
     employeeCount: lead?.employeeCount ?? "",
@@ -874,27 +923,142 @@ function Leads() {
     if (!selectedLead) {
       setIsEditingLead(false);
       setEditLeadForm(null);
+      setEditLeadErrors({});
       return;
     }
 
     setIsEditingLead(false);
     setEditLeadForm(buildEditLeadForm(selectedLead));
+    setEditLeadErrors({});
   }, [selectedLead]);
 
   const handleEditLeadFieldChange = (field, value) => {
-    setEditLeadForm((prev) => ({ ...(prev || {}), [field]: value }));
+    setEditLeadForm((prev) => {
+      const next = { ...(prev || {}), [field]: value };
+      if (field === "itemType") {
+        next.itemId = "";
+      }
+      return next;
+    });
+
+    setEditLeadErrors((prev) => {
+      const shouldClearContactError =
+        ["email", "phone", "mobile"].includes(field) && Boolean(prev.contact);
+
+      if (!prev[field] && !shouldClearContactError) return prev;
+
+      const next = { ...prev };
+      delete next[field];
+      if (shouldClearContactError) {
+        delete next.contact;
+      }
+      if (field === "itemType" && next.itemId) {
+        delete next.itemId;
+      }
+      return next;
+    });
+  };
+
+  const validateEditLeadForm = (lead) => {
+    const errors = {};
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const phoneCharsRegex = /^[+]?[-()\s0-9]{7,20}$/;
+    const isValidPhoneNumber = (value) => {
+      const trimmed = String(value || "").trim();
+      if (!trimmed) return true;
+      if (!phoneCharsRegex.test(trimmed)) return false;
+
+      const digitCount = trimmed.replace(/\D/g, "").length;
+      return digitCount >= 10 && digitCount <= 15;
+    };
+
+    if (!String(lead.firstName || "").trim()) {
+      errors.firstName = "First name is required";
+    }
+
+    if (!String(lead.lastName || "").trim()) {
+      errors.lastName = "Last name is required";
+    }
+
+    const email = String(lead.email || "").trim();
+    const phone = String(lead.phone || "").trim();
+    const mobile = String(lead.mobile || "").trim();
+
+    if (!email && !phone) {
+      errors.contact = "Provide at least one contact detail: Email or Phone";
+    }
+
+    if (email && !emailRegex.test(email)) {
+      errors.email = "Enter a valid email address";
+    }
+
+    if (String(lead.secondaryEmail || "").trim() && !emailRegex.test(String(lead.secondaryEmail || "").trim())) {
+      errors.secondaryEmail = "Enter a valid secondary email";
+    }
+
+    if (!isValidPhoneNumber(phone)) {
+      errors.phone = "Enter a valid phone number";
+    }
+
+    if (!isValidPhoneNumber(mobile)) {
+      errors.mobile = "Enter a valid mobile number";
+    }
+
+    if (!String(lead.company || "").trim()) {
+      errors.company = "Company is required";
+    }
+
+    if (!String(lead.source || "").trim()) {
+      errors.source = "Lead source is required";
+    }
+
+    if (!String(lead.itemType || "").trim()) {
+      errors.itemType = "Type is required";
+    }
+
+    if (String(lead.itemType || "").trim() && !["product", "service"].includes(String(lead.itemType).toLowerCase())) {
+      errors.itemType = "Type must be Product or Service";
+    }
+
+    if (String(lead.itemType || "").trim() && !String(lead.itemId || "").trim()) {
+      errors.itemId = `Please select a ${String(lead.itemType || "item").toLowerCase()}`;
+    }
+
+    if (String(lead.website || "").trim()) {
+      try {
+        const url = new URL(String(lead.website || "").trim());
+        if (!["http:", "https:"].includes(url.protocol)) {
+          errors.website = "Website must start with http:// or https://";
+        }
+      } catch {
+        errors.website = "Enter a valid website URL";
+      }
+    }
+
+    if (String(lead.annualRevenue || "").trim() && Number(lead.annualRevenue) < 0) {
+      errors.annualRevenue = "Annual revenue cannot be negative";
+    }
+
+    if (String(lead.employeeCount || "").trim()) {
+      const count = Number(lead.employeeCount);
+      if (!Number.isInteger(count) || count < 0) {
+        errors.employeeCount = "Employee count must be a non-negative whole number";
+      }
+    }
+
+    return errors;
   };
 
   const handleSaveLeadDetails = async () => {
     if (!selectedLead || !editLeadForm) return;
 
-    const fullName = [editLeadForm.firstName?.trim(), editLeadForm.lastName?.trim()]
-      .filter(Boolean)
-      .join(" ")
-      .trim();
-
-    if (!fullName) {
-      alert("First name or last name required");
+    const validationErrors = validateEditLeadForm(editLeadForm);
+    if (Object.keys(validationErrors).length > 0) {
+      setEditLeadErrors(validationErrors);
+      const firstError = Object.values(validationErrors)[0];
+      if (firstError) {
+        alert(firstError);
+      }
       return;
     }
 
@@ -911,6 +1075,8 @@ function Leads() {
         mobile: editLeadForm.mobile,
         company: editLeadForm.company,
         website: editLeadForm.website,
+        itemType: editLeadForm.itemType,
+        itemId: editLeadForm.itemId,
         industry: editLeadForm.industry,
         annualRevenue: editLeadForm.annualRevenue,
         employeeCount: editLeadForm.employeeCount,
@@ -935,6 +1101,7 @@ function Leads() {
       setLeads((prev) => prev.map((lead) => (lead._id === updatedLead._id ? updatedLead : lead)));
       setSelectedLead(updatedLead);
       setIsEditingLead(false);
+      setEditLeadErrors({});
       fetchLeads();
       fetchStats();
       alert("Lead details updated successfully.");
@@ -2437,7 +2604,9 @@ ET`;
                       </select>
                     </div>
                     <div className="form-group">
-                      <label>First Name *</label>
+                      <label>
+                        First Name <span className="required-star">*</span>
+                      </label>
                       <input
                         type="text"
                         placeholder="Enter first name"
@@ -2449,7 +2618,9 @@ ET`;
                       {newLeadErrors.firstName && <span className="form-error-text">{newLeadErrors.firstName}</span>}
                     </div>
                     <div className="form-group">
-                      <label>Last Name *</label>
+                      <label>
+                        Last Name <span className="required-star">*</span>
+                      </label>
                       <input
                         type="text"
                         placeholder="Enter last name"
@@ -2472,14 +2643,15 @@ ET`;
                       />
                     </div>
                     <div className="form-group">
-                      <label>Email *</label>
+                      <label>
+                        Email <span className="required-star">*</span>
+                      </label>
                       <input
                         type="email"
                         placeholder="Enter email address"
                         value={newLead.email}
                         onChange={(e) => setNewLeadField("email", e.target.value)}
                         className={newLeadErrors.email ? "form-input-error" : ""}
-                        required
                       />
                       {newLeadErrors.email && <span className="form-error-text">{newLeadErrors.email}</span>}
                     </div>
@@ -2497,13 +2669,16 @@ ET`;
                       {newLeadErrors.secondaryEmail && <span className="form-error-text">{newLeadErrors.secondaryEmail}</span>}
                     </div>
                     <div className="form-group">
-                      <label>Phone</label>
+                      <label>
+                        Phone <span className="required-star">*</span>
+                      </label>
                       <input
                         type="tel"
                         placeholder="Enter phone number"
                         value={newLead.phone}
                         onChange={(e) => setNewLeadField("phone", e.target.value)}
                         className={newLeadErrors.phone ? "form-input-error" : ""}
+                        maxLength={20}
                       />
                       {newLeadErrors.phone && <span className="form-error-text">{newLeadErrors.phone}</span>}
                     </div>
@@ -2515,22 +2690,29 @@ ET`;
                         value={newLead.mobile}
                         onChange={(e) => setNewLeadField("mobile", e.target.value)}
                         className={newLeadErrors.mobile ? "form-input-error" : ""}
+                        maxLength={20}
                       />
                       {newLeadErrors.mobile && <span className="form-error-text">{newLeadErrors.mobile}</span>}
                     </div>
                   </div>
+                  {newLeadErrors.contact && <span className="form-error-text">{newLeadErrors.contact}</span>}
                 </div>
                 <div className="form-section">
                   <h3>Additional Details</h3>
                   <div className="form-row-zoho">
                     <div className="form-group">
-                      <label>Company</label>
+                      <label>
+                        Company <span className="required-star">*</span>
+                      </label>
                       <input
                         type="text"
                         placeholder="Enter company name"
                         value={newLead.company}
-                        onChange={(e) => setNewLead({ ...newLead, company: e.target.value })}
+                        onChange={(e) => setNewLeadField("company", e.target.value)}
+                        className={newLeadErrors.company ? "form-input-error" : ""}
+                        required
                       />
+                      {newLeadErrors.company && <span className="form-error-text">{newLeadErrors.company}</span>}
                     </div>
                     <div className="form-group">
                       <label>Website</label>
@@ -2544,25 +2726,33 @@ ET`;
                       {newLeadErrors.website && <span className="form-error-text">{newLeadErrors.website}</span>}
                     </div>
                     <div className="form-group">
-                      <label>Lead Source</label>
+                      <label>
+                        Lead Source <span className="required-star">*</span>
+                      </label>
                       <select
                         value={newLead.source}
-                        onChange={(e) => setNewLead({ ...newLead, source: e.target.value })}
+                        onChange={(e) => setNewLeadField("source", e.target.value)}
+                        className={newLeadErrors.source ? "form-input-error" : ""}
+                        required
                       >
                         <option value="">Select source</option>
                         {sources.map((source) => (
                           <option key={source} value={source}>{source}</option>
                         ))}
                       </select>
+                      {newLeadErrors.source && <span className="form-error-text">{newLeadErrors.source}</span>}
                     </div>
                   </div>
                   <div className="form-row-zoho">
                     <div className="form-group">
-                      <label>Type</label>
+                      <label>
+                        Type <span className="required-star">*</span>
+                      </label>
                       <select
                         value={newLead.itemType}
                         onChange={(e) => setNewLeadField("itemType", e.target.value)}
                         className={newLeadErrors.itemType ? "form-input-error" : ""}
+                        required
                       >
                         <option value="">Select type</option>
                         <option value="product">Product</option>
@@ -2600,6 +2790,7 @@ ET`;
                       </div>
                     )}
                   </div>
+
                   <div className="form-row-zoho">
                     <div className="form-group">
                       <label>Industry</label>
@@ -2811,7 +3002,14 @@ ET`;
               </div>
               <div className="modal-actions" style={{ justifyContent: "flex-end", marginBottom: "8px" }}>
                 {!isEditingLead ? (
-                  <button type="button" className="btn-submit" onClick={() => setIsEditingLead(true)}>
+                  <button
+                    type="button"
+                    className="btn-submit"
+                    onClick={() => {
+                      setEditLeadErrors({});
+                      setIsEditingLead(true);
+                    }}
+                  >
                     Edit Details
                   </button>
                 ) : (
@@ -2821,6 +3019,7 @@ ET`;
                       className="btn-cancel"
                       onClick={() => {
                         setEditLeadForm(buildEditLeadForm(selectedLead));
+                        setEditLeadErrors({});
                         setIsEditingLead(false);
                       }}
                     >
@@ -2988,6 +3187,20 @@ ET`;
                     <span className="detail-value">{selectedLead.website || "-"}</span>
                   </div>
                   <div className="detail-row">
+                    <span className="detail-label">Type</span>
+                    <span className="detail-value">
+                      {selectedLead.itemType
+                        ? `${String(selectedLead.itemType).charAt(0).toUpperCase()}${String(selectedLead.itemType).slice(1)}`
+                        : "-"}
+                    </span>
+                  </div>
+                  <div className="detail-row">
+                    <span className="detail-label">
+                      {selectedLead.itemType === "service" ? "Service" : "Product"}
+                    </span>
+                    <span className="detail-value">{getLeadItemName(selectedLead)}</span>
+                  </div>
+                  <div className="detail-row">
                     <span className="detail-label">Industry</span>
                     <span className="detail-value">{selectedLead.industry || "-"}</span>
                   </div>
@@ -3052,12 +3265,30 @@ ET`;
                         </select>
                       </div>
                       <div className="form-group">
-                        <label>First Name *</label>
-                        <input type="text" value={editLeadForm.firstName} onChange={(e) => handleEditLeadFieldChange("firstName", e.target.value)} required />
+                        <label>
+                          First Name <span className="required-star">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          value={editLeadForm.firstName}
+                          onChange={(e) => handleEditLeadFieldChange("firstName", e.target.value)}
+                          className={editLeadErrors.firstName ? "form-input-error" : ""}
+                          required
+                        />
+                        {editLeadErrors.firstName && <span className="form-error-text">{editLeadErrors.firstName}</span>}
                       </div>
                       <div className="form-group">
-                        <label>Last Name *</label>
-                        <input type="text" value={editLeadForm.lastName} onChange={(e) => handleEditLeadFieldChange("lastName", e.target.value)} required />
+                        <label>
+                          Last Name <span className="required-star">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          value={editLeadForm.lastName}
+                          onChange={(e) => handleEditLeadFieldChange("lastName", e.target.value)}
+                          className={editLeadErrors.lastName ? "form-input-error" : ""}
+                          required
+                        />
+                        {editLeadErrors.lastName && <span className="form-error-text">{editLeadErrors.lastName}</span>}
                       </div>
                     </div>
 
@@ -3067,47 +3298,149 @@ ET`;
                         <input type="text" value={editLeadForm.title} onChange={(e) => handleEditLeadFieldChange("title", e.target.value)} />
                       </div>
                       <div className="form-group">
-                        <label>Email</label>
-                        <input type="email" value={editLeadForm.email} onChange={(e) => handleEditLeadFieldChange("email", e.target.value)} />
+                        <label>
+                          Email <span className="required-star">*</span>
+                        </label>
+                        <input
+                          type="email"
+                          value={editLeadForm.email}
+                          onChange={(e) => handleEditLeadFieldChange("email", e.target.value)}
+                          className={editLeadErrors.email ? "form-input-error" : ""}
+                        />
+                        {editLeadErrors.email && <span className="form-error-text">{editLeadErrors.email}</span>}
                       </div>
                     </div>
 
                     <div className="form-row-zoho">
                       <div className="form-group">
                         <label>Secondary Email</label>
-                        <input type="email" value={editLeadForm.secondaryEmail} onChange={(e) => handleEditLeadFieldChange("secondaryEmail", e.target.value)} />
+                        <input
+                          type="email"
+                          value={editLeadForm.secondaryEmail}
+                          onChange={(e) => handleEditLeadFieldChange("secondaryEmail", e.target.value)}
+                          className={editLeadErrors.secondaryEmail ? "form-input-error" : ""}
+                        />
+                        {editLeadErrors.secondaryEmail && <span className="form-error-text">{editLeadErrors.secondaryEmail}</span>}
                       </div>
                       <div className="form-group">
-                        <label>Phone</label>
-                        <input type="tel" value={editLeadForm.phone} onChange={(e) => handleEditLeadFieldChange("phone", e.target.value)} />
+                        <label>
+                          Phone <span className="required-star">*</span>
+                        </label>
+                        <input
+                          type="tel"
+                          value={editLeadForm.phone}
+                          onChange={(e) => handleEditLeadFieldChange("phone", e.target.value)}
+                          className={editLeadErrors.phone ? "form-input-error" : ""}
+                          maxLength={20}
+                        />
+                        {editLeadErrors.phone && <span className="form-error-text">{editLeadErrors.phone}</span>}
                       </div>
                       <div className="form-group">
                         <label>Mobile</label>
-                        <input type="tel" value={editLeadForm.mobile} onChange={(e) => handleEditLeadFieldChange("mobile", e.target.value)} />
+                        <input
+                          type="tel"
+                          value={editLeadForm.mobile}
+                          onChange={(e) => handleEditLeadFieldChange("mobile", e.target.value)}
+                          className={editLeadErrors.mobile ? "form-input-error" : ""}
+                          maxLength={20}
+                        />
+                        {editLeadErrors.mobile && <span className="form-error-text">{editLeadErrors.mobile}</span>}
                       </div>
                     </div>
+                    {editLeadErrors.contact && <span className="form-error-text">{editLeadErrors.contact}</span>}
                   </div>
 
                   <div className="form-section">
                     <h3>Additional Details</h3>
                     <div className="form-row-zoho">
                       <div className="form-group">
-                        <label>Company</label>
-                        <input type="text" value={editLeadForm.company} onChange={(e) => handleEditLeadFieldChange("company", e.target.value)} />
+                        <label>
+                          Company <span className="required-star">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          value={editLeadForm.company}
+                          onChange={(e) => handleEditLeadFieldChange("company", e.target.value)}
+                          className={editLeadErrors.company ? "form-input-error" : ""}
+                          required
+                        />
+                        {editLeadErrors.company && <span className="form-error-text">{editLeadErrors.company}</span>}
                       </div>
                       <div className="form-group">
                         <label>Website</label>
-                        <input type="url" value={editLeadForm.website} onChange={(e) => handleEditLeadFieldChange("website", e.target.value)} />
+                        <input
+                          type="url"
+                          value={editLeadForm.website}
+                          onChange={(e) => handleEditLeadFieldChange("website", e.target.value)}
+                          className={editLeadErrors.website ? "form-input-error" : ""}
+                        />
+                        {editLeadErrors.website && <span className="form-error-text">{editLeadErrors.website}</span>}
                       </div>
                       <div className="form-group">
-                        <label>Lead Source</label>
-                        <select value={editLeadForm.source} onChange={(e) => handleEditLeadFieldChange("source", e.target.value)}>
+                        <label>
+                          Lead Source <span className="required-star">*</span>
+                        </label>
+                        <select
+                          value={editLeadForm.source}
+                          onChange={(e) => handleEditLeadFieldChange("source", e.target.value)}
+                          className={editLeadErrors.source ? "form-input-error" : ""}
+                          required
+                        >
                           <option value="">Select source</option>
                           {sources.map((source) => (
                             <option key={source} value={source}>{source}</option>
                           ))}
                         </select>
+                        {editLeadErrors.source && <span className="form-error-text">{editLeadErrors.source}</span>}
                       </div>
+                    </div>
+
+                    <div className="form-row-zoho">
+                      <div className="form-group">
+                        <label>
+                          Type <span className="required-star">*</span>
+                        </label>
+                        <select
+                          value={editLeadForm.itemType}
+                          onChange={(e) => handleEditLeadFieldChange("itemType", e.target.value)}
+                          className={editLeadErrors.itemType ? "form-input-error" : ""}
+                          required
+                        >
+                          <option value="">Select type</option>
+                          <option value="product">Product</option>
+                          <option value="service">Service</option>
+                        </select>
+                        {editLeadErrors.itemType && <span className="form-error-text">{editLeadErrors.itemType}</span>}
+                      </div>
+
+                      {editLeadForm.itemType ? (
+                        <div className="form-group">
+                          <label>{editLeadForm.itemType === "product" ? "Product" : "Service"}</label>
+                          <select
+                            value={editLeadForm.itemId}
+                            onChange={(e) => handleEditLeadFieldChange("itemId", e.target.value)}
+                            className={editLeadErrors.itemId ? "form-input-error" : ""}
+                            disabled={loadingLeadItems}
+                          >
+                            <option value="">
+                              {loadingLeadItems ? "Loading..." : `Select ${editLeadForm.itemType === "product" ? "product" : "service"}`}
+                            </option>
+                            {leadItems
+                              .filter((item) => item.type === editLeadForm.itemType)
+                              .map((item) => (
+                                <option key={item._id} value={item._id}>
+                                  {item.name}
+                                </option>
+                              ))}
+                          </select>
+                          {editLeadErrors.itemId && <span className="form-error-text">{editLeadErrors.itemId}</span>}
+                        </div>
+                      ) : (
+                        <div className="form-group">
+                          <label>Selection</label>
+                          <input type="text" value="Choose type first" readOnly />
+                        </div>
+                      )}
                     </div>
 
                     <div className="form-row-zoho">
@@ -3122,11 +3455,25 @@ ET`;
                       </div>
                       <div className="form-group">
                         <label>Annual Revenue</label>
-                        <input type="number" min="0" value={editLeadForm.annualRevenue} onChange={(e) => handleEditLeadFieldChange("annualRevenue", e.target.value)} />
+                        <input
+                          type="number"
+                          min="0"
+                          value={editLeadForm.annualRevenue}
+                          onChange={(e) => handleEditLeadFieldChange("annualRevenue", e.target.value)}
+                          className={editLeadErrors.annualRevenue ? "form-input-error" : ""}
+                        />
+                        {editLeadErrors.annualRevenue && <span className="form-error-text">{editLeadErrors.annualRevenue}</span>}
                       </div>
                       <div className="form-group">
                         <label>Employee Count</label>
-                        <input type="number" min="0" value={editLeadForm.employeeCount} onChange={(e) => handleEditLeadFieldChange("employeeCount", e.target.value)} />
+                        <input
+                          type="number"
+                          min="0"
+                          value={editLeadForm.employeeCount}
+                          onChange={(e) => handleEditLeadFieldChange("employeeCount", e.target.value)}
+                          className={editLeadErrors.employeeCount ? "form-input-error" : ""}
+                        />
+                        {editLeadErrors.employeeCount && <span className="form-error-text">{editLeadErrors.employeeCount}</span>}
                       </div>
                     </div>
 
@@ -3175,82 +3522,6 @@ ET`;
                   </div>
                 </div>
               )}
-              { (isAdmin || isManager) && (
-                <div className="assign-section">
-                  <h3>Assign To</h3>
-                  <select
-                    value={getEntityId(selectedLead.assignedTo)}
-                    onChange={(e) => handleAssign(selectedLead._id, e.target.value)}
-                  >
-                    <option value="">Unassigned</option>
-                    {assignableUsers.map((emp) => (
-                      <option key={emp._id} value={emp._id}>
-                        {getUserDisplayLabel(emp)}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-              <div className="status-section">
-                <h3>Change Status</h3>
-                <div className="status-grid">
-{stages.map((stage) => {
-                    const currentStatus = selectedLead.status;
-                    const allowedStages = new Set([
-                      currentStatus,
-                      ...(allowedTransitions[currentStatus] || [])
-                    ]);
-                    return (
-                      <button
-                        key={stage.id}
-                        className={`status-btn-zoho ${selectedLead.status === stage.id ? "active" : ""} ${!allowedStages.has(stage.id) ? "disabled" : ""}`}
-                        style={{ 
-                          borderColor: stage.color,
-                          color: selectedLead.status === stage.id ? stage.color : "",
-                          opacity: allowedStages.has(stage.id) ? 1 : 0.5
-                        }}
-                        disabled={!allowedStages.has(stage.id)}
-                        title={!allowedStages.has(stage.id) ? `Invalid transition from ${stages.find(s => s.id === currentStatus)?.name}` : ""}
-                        onClick={() => handleUpdateStatus(selectedLead._id, stage.id)}
-                      >
-                        {stage.name}
-                      </button>
-                    );
-                  })}
-
-                </div>
-              </div>
-
-              {selectedLead.pendingTransitionApproval?.toStatus && (isAdmin || isManager) && (
-                <div className="status-section">
-                  <h3>Pending Transition Approval</h3>
-                  <p className="import-helper-text" style={{ marginBottom: "10px" }}>
-                    {`${selectedLead.pendingTransitionApproval.fromStatus} -> ${selectedLead.pendingTransitionApproval.toStatus}`}
-                  </p>
-                  {selectedLead.pendingTransitionApproval.reason && (
-                    <p className="import-helper-text" style={{ marginBottom: "10px" }}>
-                      {`Reason: ${selectedLead.pendingTransitionApproval.reason}`}
-                    </p>
-                  )}
-                  <div className="modal-actions" style={{ justifyContent: "flex-start" }}>
-                    <button
-                      type="button"
-                      className="btn-submit"
-                      onClick={() => handleTransitionApproval(selectedLead._id, true)}
-                    >
-                      Approve Transition
-                    </button>
-                    <button
-                      type="button"
-                      className="btn-cancel"
-                      onClick={() => handleTransitionApproval(selectedLead._id, false)}
-                    >
-                      Reject Transition
-                    </button>
-                  </div>
-                </div>
-              )}
-
               <button className="delete-btn-zoho" onClick={() => handleDeleteLead(selectedLead._id)}>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <polyline points="3 6 5 6 21 6"></polyline>

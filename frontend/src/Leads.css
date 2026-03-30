@@ -1012,6 +1012,11 @@
   color: #374151;
 }
 
+.required-star {
+  color: #dc2626;
+  font-weight: 700;
+}
+
 .form-group input,
 .form-group select,
 .form-group textarea {

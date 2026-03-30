@@ -1,5 +1,10 @@
 const mongoose = require("mongoose");
 
+const EMPLOYEE_ID_PREFIX_BY_ROLE = {
+  EMPLOYEE: "EMP",
+  MANAGER: "MGR",
+};
+
 const userSettingsSchema = new mongoose.Schema(
   {
     preferences: {
@@ -91,13 +96,30 @@ const userSchema = new mongoose.Schema({
   }
 }, { timestamps: true });
 
-// Auto-generate employee_id for non-admin users
+// Auto-generate employee_id for employee/manager users when caller did not provide one.
 // when using an async pre hook, Mongoose does not provide a callback, so
 // don't declare or call `next`. just await the work and return.
 userSchema.pre('save', async function() {
-  if (this.isNew && !this.employee_id && this.role !== 'ADMIN') {
-    const count = await this.constructor.countDocuments({ role: { $ne: 'ADMIN' } });
-    this.employee_id = `EMP-${String(count + 1).padStart(3, '0')}`;
+  if (this.isNew && !this.employee_id) {
+    const prefix = EMPLOYEE_ID_PREFIX_BY_ROLE[String(this.role || "").toUpperCase()];
+    if (prefix) {
+      const lastCreatedUserForPrefix = await this.constructor.findOne({
+        employee_id: { $regex: `^${prefix}\\d+$` },
+      })
+        .sort({ createdAt: -1 })
+        .select("employee_id");
+
+      let nextNumber = 1;
+      if (lastCreatedUserForPrefix && lastCreatedUserForPrefix.employee_id) {
+        const numericPart = lastCreatedUserForPrefix.employee_id.replace(prefix, "");
+        const parsedNumber = parseInt(numericPart, 10);
+        if (!Number.isNaN(parsedNumber)) {
+          nextNumber = parsedNumber + 1;
+        }
+      }
+
+      this.employee_id = `${prefix}${String(nextNumber).padStart(3, "0")}`;
+    }
   }
   // Ensure reportsTo doesn't create self-reference or admin hierarchy
   if (this.reportsTo && String(this.reportsTo) === String(this._id)) {

@@ -164,12 +164,23 @@
   border: 1px solid var(--theme-border);
   box-shadow: 0 14px 34px rgba(42, 27, 77, 0.08);
   transition: transform 0.28s ease, box-shadow 0.28s ease, border-color 0.28s ease;
+  cursor: pointer;
 }
 
 .employee-card:hover {
   transform: translateY(-6px);
   box-shadow: var(--theme-shadow-md);
   border-color: var(--theme-border-strong);
+}
+
+.employee-card.is-selected {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.2), var(--theme-shadow-md);
+}
+
+.employee-card:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
 }
 
 .employee-card-top {
@@ -241,6 +252,72 @@
   font-weight: 600;
   text-align: right;
   word-break: break-word;
+}
+
+.employee-card-actions {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid #e5e7eb;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.employee-action-btn {
+  border: 1px solid #d1d5db;
+  background: #ffffff;
+  color: #1f2937;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.employee-action-btn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.employee-action-btn.edit {
+  border-color: #bfdbfe;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.employee-action-btn.delete {
+  border-color: #fecaca;
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
+.employee-edit-form {
+  width: 100%;
+  display: grid;
+  gap: 10px;
+}
+
+.employee-edit-form label {
+  display: grid;
+  gap: 6px;
+  font-size: 12px;
+  color: #4b5563;
+  font-weight: 600;
+}
+
+.employee-edit-form input,
+.employee-edit-form select {
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 13px;
+  background: #ffffff;
+  color: #111827;
+}
+
+.employee-edit-actions {
+  display: flex;
+  gap: 8px;
 }
 
 @media (max-width: 768px) {

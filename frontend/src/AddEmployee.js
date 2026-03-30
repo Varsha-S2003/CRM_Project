@@ -4,6 +4,23 @@ import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import "./AddEmployee.css";
 
+const USERNAME_REGEX = /^(?!\.)(?!.*\.$)[a-z]+(?:\.[a-z]+)*(?:\d+)?$/;
+const USERNAME_PREFIX_BY_ROLE = {
+  EMPLOYEE: "emp.",
+  MANAGER: "mgr.",
+};
+
+const buildRoleBasedUsername = (fullName, role) => {
+  const prefix = USERNAME_PREFIX_BY_ROLE[String(role || "").toUpperCase()] || "emp.";
+  const firstName = String(fullName || "")
+    .trim()
+    .split(/\s+/)[0]
+    ?.toLowerCase()
+    .replace(/[^a-z]/g, "") || "user";
+
+  return `${prefix}${firstName}`;
+};
+
 function AddEmployee() {
   const [formData, setFormData] = useState({
     name: "",
@@ -26,6 +43,8 @@ function AddEmployee() {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [touched, setTouched] = useState({});
+  const [usernameManuallyEdited, setUsernameManuallyEdited] = useState(false);
+  const [usernameAutoMessage, setUsernameAutoMessage] = useState("");
   const navigate = useNavigate();
   const API_BASE = process.env.REACT_APP_API_URL || "http://localhost:5000";
 
@@ -41,6 +60,18 @@ function AddEmployee() {
           headers: { Authorization: `Bearer ${token}` },
         }
       );
+      if (field === "username" && !res.data.available && res.data.suggestedUsername) {
+        setFormData(prev => ({ ...prev, username: res.data.suggestedUsername }));
+        setAvailability(prev => ({ ...prev, username: true }));
+        setUsernameAutoMessage(`Username updated to '${res.data.suggestedUsername}' because it already existed.`);
+        setErrors(prev => {
+          const next = { ...prev };
+          delete next.username;
+          return next;
+        });
+        return;
+      }
+
       setAvailability(prev => ({ ...prev, [field]: res.data.available }));
 
       setErrors(prev => {
@@ -90,9 +121,27 @@ function AddEmployee() {
   const handleChange = (e) => {
     const { name, value } = e.target;
     const nextFormData = { ...formData, [name]: value };
+    const roleForGeneration = name === "role" ? value : formData.role;
+    const nameForGeneration = name === "name" ? value : formData.name;
 
     if (name === "role" && value !== "EMPLOYEE") {
       nextFormData.reportsTo = "";
+      setErrors(prev => {
+        const next = { ...prev };
+        delete next.reportsTo;
+        return next;
+      });
+      setTouched(prev => {
+        const next = { ...prev };
+        delete next.reportsTo;
+        return next;
+      });
+    }
+
+    if ((name === "name" || name === "role") && !usernameManuallyEdited) {
+      nextFormData.username = buildRoleBasedUsername(nameForGeneration, roleForGeneration);
+      setAvailability(prev => ({ ...prev, username: null }));
+      setUsernameAutoMessage("");
     }
 
     setFormData(nextFormData);
@@ -102,10 +151,9 @@ function AddEmployee() {
       setAvailability(prev => ({ ...prev, [name]: null }));
     }
 
-    // Auto-generate username from name
-    if (name === "name" && !formData.username) {
-      const username = value.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
-      setFormData(prev => ({ ...prev, username }));
+    if (name === "username") {
+      setUsernameManuallyEdited(true);
+      setUsernameAutoMessage("");
     }
     
     if (errors[name]) {
@@ -116,9 +164,9 @@ function AddEmployee() {
   const handleBlur = (e) => {
     const { name, value } = e.target;
     setTouched({ ...touched, [name]: true });
-    validateField(name);
+    const isValid = validateField(name);
 
-    if ((name === "username" || name === "email") && value) {
+    if (isValid && (name === "username" || name === "email") && value) {
       checkAvailability(name, value);
     }
   };
@@ -139,10 +187,15 @@ function AddEmployee() {
       case "username":
         if (!formData.username.trim()) {
           fieldError = "Username is required";
-        } else if (formData.username.length < 3) {
-          fieldError = "Username must be at least 3 characters";
-        } else if (!/^[a-zA-Z0-9_]+$/.test(formData.username)) {
-          fieldError = "Only letters, numbers and underscores allowed";
+        } else if (formData.username.length < 5 || formData.username.length > 20) {
+          fieldError = "Username must be 5 to 20 characters";
+        } else if (!USERNAME_REGEX.test(formData.username)) {
+          fieldError = "Use lowercase letters and dots only (number suffix allowed for duplicates)";
+        } else {
+          const expectedPrefix = USERNAME_PREFIX_BY_ROLE[String(formData.role || "").toUpperCase()];
+          if (expectedPrefix && !formData.username.startsWith(expectedPrefix)) {
+            fieldError = `Username must start with '${expectedPrefix}' for selected role`;
+          }
         }
         break;
 
@@ -151,6 +204,12 @@ function AddEmployee() {
           fieldError = "Email is required";
         } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
           fieldError = "Please enter a valid email address";
+        }
+        break;
+
+      case "department":
+        if (!String(formData.department || "").trim()) {
+          fieldError = "Department is required";
         }
         break;
 
@@ -214,7 +273,7 @@ function AddEmployee() {
 
   const validateForm = () => {
     // mark all fields touched and run field-level validation
-    const fields = ["name", "username", "email", "phone", "password", "confirmPassword", "role", "reportsTo"];
+    const fields = ["name", "username", "email", "phone", "department", "password", "confirmPassword", "role", "reportsTo"];
     let valid = true;
     fields.forEach(field => {
       setTouched(prev => ({ ...prev, [field]: true }));
@@ -249,19 +308,6 @@ function AddEmployee() {
       return;
     }
 
-    // make sure we checked availability -- if we haven't yet or previous check flagged unavailable,
-    // run it again so we can give immediate feedback
-    if (availability.username !== true) {
-      await checkAvailability("username", formData.username);
-    }
-    if (availability.email !== true) {
-      await checkAvailability("email", formData.email);
-    }
-    if (availability.username === false || availability.email === false) {
-      alert("Please resolve the errors before submitting");
-      return;
-    }
-
     setLoading(true);
     try {
       const token = localStorage.getItem("token");
@@ -275,7 +321,7 @@ function AddEmployee() {
         `${API_BASE}/api/employees`,
         {
           name: formData.name.trim(),
-          username: formData.username.trim(),
+          username: formData.username.trim().toLowerCase(),
           email: formData.email.trim().toLowerCase(),
           phone: formData.phone.trim(),
           department: formData.department,
@@ -301,6 +347,9 @@ function AddEmployee() {
   };
 
   const isFieldInvalid = (field) => {
+    if (field === "reportsTo" && formData.role !== "EMPLOYEE") {
+      return false;
+    }
     return touched[field] && errors[field];
   };
 
@@ -309,6 +358,7 @@ function AddEmployee() {
     formData.name.trim() &&
     formData.username.trim() &&
     formData.email.trim() &&
+    String(formData.department || "").trim() &&
     formData.password &&
     formData.confirmPassword &&
     formData.role &&
@@ -317,9 +367,7 @@ function AddEmployee() {
   const canSubmit =
     !loading &&
     allRequiredFilled &&
-    Object.keys(errors).length === 0 &&
-    availability.username !== false &&
-    availability.email !== false;
+    Object.keys(errors).length === 0;
 
   return (
     <div className="add-employee-page-zoho">
@@ -386,10 +434,16 @@ function AddEmployee() {
                     value={formData.username}
                     onChange={handleChange}
                     onBlur={handleBlur}
-                    placeholder="Enter username"
+                    placeholder="emp.firstname or mgr.firstname"
                   />
                 </div>
                 {isFieldInvalid("username") && <span className="error-message">{errors.username}</span>}
+                {!errors.username && !usernameAutoMessage && (
+                  <span className="availability">Format: role prefix + first name (example: emp.veda)</span>
+                )}
+                {!errors.username && usernameAutoMessage && (
+                  <span className="availability valid">{usernameAutoMessage}</span>
+                )}
                 {!errors.username && availability.username === true && (
                   <span className="availability valid">Username is available</span>
                 )}
@@ -447,8 +501,10 @@ function AddEmployee() {
             </div>
             
             <div className="form-grid-zoho">
-              <div className="form-group-zoho">
-                <label>Department</label>
+              <div className={`form-group-zoho ${isFieldInvalid("department") ? "has-error" : ""}`}>
+                <label>
+                  Department <span className="required">*</span>
+                </label>
                 <div className="input-wrapper">
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
@@ -458,6 +514,7 @@ function AddEmployee() {
                     name="department"
                     value={formData.department}
                     onChange={handleChange}
+                    onBlur={handleBlur}
                   >
                     <option value="">Select Department</option>
                     <option value="Sales">Sales</option>
@@ -469,6 +526,7 @@ function AddEmployee() {
                     <option value="Operations">Operations</option>
                   </select>
                 </div>
+                {isFieldInvalid("department") && <span className="error-message">{errors.department}</span>}
               </div>
               
               <div className="form-group-zoho">
