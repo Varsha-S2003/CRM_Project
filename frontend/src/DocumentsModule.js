@@ -56,6 +56,7 @@ function DocumentsModule() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [busyAction, setBusyAction] = useState("");
+  const [showEditor, setShowEditor] = useState(false);
   const [form, setForm] = useState(fallbackDraft);
 
   const fetchWorkspace = useCallback(async () => {
@@ -215,6 +216,14 @@ function DocumentsModule() {
   const history = workspace?.history || [];
   const notifications = workspace?.notifications || [];
   const timeline = Array.isArray(deal.timeline) ? [...deal.timeline].reverse() : [];
+  const heroMeta = [
+    { label: "Deal", value: deal.name || searchParams.get("dealName") || "-" },
+    { label: "Company", value: deal.company || searchParams.get("company") || "-" },
+    { label: "Product", value: deal.product?.name || "-" },
+  ];
+
+  const openEditor = () => setShowEditor(true);
+  const closeEditor = () => setShowEditor(false);
 
   return (
     <div className="dashboard-layout">
@@ -224,21 +233,21 @@ function DocumentsModule() {
           <div className="documents-hero__copy">
             <span className="documents-eyebrow">Documents Workspace</span>
             <h1>{form.title || "Proposal Draft"}</h1>
-            <p>Build the proposal, review customer history, and route approval before sending it to the client.</p>
+            <p>Keep the page clean, open the proposal editor only when needed, and review history at a glance.</p>
+            <div className="documents-hero__meta">
+              {heroMeta.map((item) => (
+                <div className="documents-meta-pill" key={item.label}>
+                  <span>{item.label}</span>
+                  <strong>{item.value}</strong>
+                </div>
+              ))}
+            </div>
           </div>
           <div className="documents-hero__status">
             <div className={`documents-status-pill ${draftStatus}`}>{getStatusLabel(draftStatus)}</div>
-            <div className="documents-actions documents-actions--stack">
-              <button type="button" className="documents-primary-btn" onClick={handleSaveDraft} disabled={busyAction !== ""}>
-                {busyAction === "save" ? "Saving..." : "Create Proposal"}
-              </button>
-              <button type="button" className="documents-secondary-btn" onClick={handleSendForApproval} disabled={busyAction !== ""}>
-                {busyAction === "approval" ? "Sending..." : "Send To Manager For Approval"}
-              </button>
-              <button type="button" className="documents-secondary-btn" onClick={handleSendToClient} disabled={!canSendToClient || busyAction !== ""}>
-                {busyAction === "client" ? "Sending..." : "Send To Client"}
-              </button>
-            </div>
+            <button type="button" className="documents-primary-btn documents-primary-btn--hero" onClick={openEditor} disabled={busyAction !== ""}>
+              {busyAction === "save" ? "Saving..." : "Create Proposal"}
+            </button>
           </div>
         </div>
 
@@ -248,155 +257,193 @@ function DocumentsModule() {
         {loading ? (
           <div className="documents-card">Loading document workspace...</div>
         ) : (
-          <div className="documents-layout">
-            <section className="documents-main">
-              <div className="documents-card">
-                <div className="documents-card__header">
-                  <h2>Introduction</h2>
-                </div>
-                <textarea rows="4" value={form.introduction} onChange={(event) => updateField("introduction", event.target.value)} />
-              </div>
-
-              <div className="documents-card">
-                <div className="documents-card__header">
-                  <h2>Problem</h2>
-                </div>
-                <textarea rows="4" value={form.problem} onChange={(event) => updateField("problem", event.target.value)} />
-              </div>
-
-              <div className="documents-card">
-                <div className="documents-card__header">
-                  <h2>Solution</h2>
-                </div>
-                <textarea rows="4" value={form.solution} onChange={(event) => updateField("solution", event.target.value)} />
-              </div>
-
-              <div className="documents-card">
-                <div className="documents-card__header">
-                  <h2>Scope</h2>
-                </div>
-                <textarea rows="4" value={form.scope} onChange={(event) => updateField("scope", event.target.value)} />
-              </div>
-
-              <div className="documents-card">
-                <div className="documents-card__header">
-                  <h2>Pricing Table</h2>
-                </div>
-                <div className="documents-pricing-table">
-                  <div>
-                    <span>Deal Value</span>
-                    <strong>{deal.amount ? `Rs.${Number(deal.amount).toLocaleString()}` : "-"}</strong>
-                  </div>
-                  <div>
-                    <span>Stage</span>
-                    <strong>{String(deal.stage || "-").replaceAll("_", " ")}</strong>
-                  </div>
-                  <div>
-                    <span>Pricing Notes</span>
-                    <textarea rows="3" value={form.pricingNotes} onChange={(event) => updateField("pricingNotes", event.target.value)} />
-                  </div>
-                </div>
-              </div>
-
-              <div className="documents-card">
-                <div className="documents-card__header">
-                  <h2>Terms</h2>
-                </div>
-                <textarea rows="4" value={form.terms} onChange={(event) => updateField("terms", event.target.value)} />
-              </div>
-            </section>
-
-            <aside className="documents-side">
-              <div className="documents-card">
-                <div className="documents-card__header">
-                  <h2>Deal Info</h2>
-                </div>
-                <div className="documents-info-list">
-                  <div><span>Deal</span><strong>{deal.name || searchParams.get("dealName") || "-"}</strong></div>
-                  <div><span>Company</span><strong>{deal.company || searchParams.get("company") || "-"}</strong></div>
-                  <div><span>Contact</span><strong>{deal.contact || searchParams.get("contact") || "-"}</strong></div>
-                  <div><span>Email</span><strong>{deal.email || searchParams.get("email") || "-"}</strong></div>
-                  <div><span>Product</span><strong>{deal.product?.name || "-"}</strong></div>
-                </div>
-              </div>
-
-              <div className="documents-card">
-                <div className="documents-card__header">
-                  <h2>Status</h2>
-                </div>
-                <div className="documents-status-panel">
-                  <div><span>Proposal Status</span><strong>{getStatusLabel(draftStatus)}</strong></div>
-                  <div><span>Approval Requested</span><strong>{formatDateTime(workspace?.deal?.proposalDraft?.approvalRequestedAt)}</strong></div>
-                  <div><span>Approval Response</span><strong>{formatDateTime(workspace?.deal?.proposalDraft?.approvalRespondedAt)}</strong></div>
-                  <div><span>Client Sent</span><strong>{formatDateTime(workspace?.deal?.proposalDraft?.clientSentAt)}</strong></div>
-                </div>
-                {isManagerOrAdmin && draftStatus === "pending_approval" ? (
-                  <div className="documents-approval-box">
-                    <textarea
-                      rows="3"
-                      value={form.approvalComment}
-                      onChange={(event) => updateField("approvalComment", event.target.value)}
-                      placeholder="Approval comment"
-                    />
-                    <div className="documents-actions">
-                      <button type="button" className="documents-primary-btn" onClick={() => handleApprove("approve")} disabled={busyAction !== ""}>
-                        Approve
-                      </button>
-                      <button type="button" className="documents-secondary-btn" onClick={() => handleApprove("reject")} disabled={busyAction !== ""}>
-                        Reject
-                      </button>
-                    </div>
-                  </div>
-                ) : null}
-              </div>
-
-              <div className="documents-card">
-                <div className="documents-card__header">
-                  <h2>Activity Timeline</h2>
-                </div>
-                <div className="documents-stack-list">
-                  {timeline.length ? timeline.map((event, index) => (
-                    <div className="documents-stack-item" key={`${event.changedAt}-${index}`}>
-                      <strong>{event.userName || "User"}</strong>
-                      <p>{String(event.fromStage || "-").replaceAll("_", " ")} to {String(event.toStage || "-").replaceAll("_", " ")}</p>
-                      <span>{formatDateTime(event.changedAt)}</span>
-                    </div>
-                  )) : <div className="documents-empty">No activity timeline yet.</div>}
-                </div>
-              </div>
-
-              <div className="documents-card">
-                <div className="documents-card__header">
+          <div className="documents-empty-page">
+            <div className="documents-card documents-history-card">
+              <div className="documents-card__header documents-card__header--row">
+                <div>
                   <h2>History</h2>
-                </div>
-                <div className="documents-stack-list">
-                  {history.length ? history.map((item) => (
-                    <div className="documents-stack-item" key={item._id}>
-                      <strong>{item.name || "Deal"}</strong>
-                      <p>{item.company || "-"} • {String(item.stage || "-").replaceAll("_", " ")}</p>
-                      <span>{formatDateTime(item.updatedAt || item.createdAt)}</span>
-                    </div>
-                  )) : <div className="documents-empty">No previous customer history found.</div>}
+                  <p>Completed proposals and prior customer activity stay visible here.</p>
                 </div>
               </div>
-
-              <div className="documents-card">
-                <div className="documents-card__header">
-                  <h2>Notifications</h2>
-                </div>
-                <div className="documents-stack-list">
-                  {notifications.length ? notifications.map((item) => (
-                    <div className="documents-stack-item" key={item._id}>
-                      <strong>{item.changedByName || "System"}</strong>
-                      <p>{item.message || "-"}</p>
-                      <span>{formatDateTime(item.createdAt)}</span>
-                    </div>
-                  )) : <div className="documents-empty">No notifications for this proposal yet.</div>}
-                </div>
+              <div className="documents-stack-list">
+                {history.length ? history.map((item) => (
+                  <div className="documents-stack-item" key={item._id}>
+                    <strong>{item.name || "Deal"}</strong>
+                    <p>{item.company || "-"} • {String(item.stage || "-").replaceAll("_", " ")}</p>
+                    <span>{formatDateTime(item.updatedAt || item.createdAt)}</span>
+                  </div>
+                )) : <div className="documents-empty">No previous customer history found.</div>}
               </div>
-            </aside>
+            </div>
           </div>
         )}
+
+        {showEditor ? (
+          <div className="documents-modal" role="dialog" aria-modal="true" aria-label="Proposal editor">
+            <div className="documents-modal__backdrop" onClick={closeEditor} />
+            <div className="documents-modal__panel">
+              <div className="documents-modal__header">
+                <div>
+                  <span className="documents-eyebrow">Proposal Builder</span>
+                  <h2>{form.title || "Proposal Draft"}</h2>
+                  <p>Edit the proposal, then save or route it for approval.</p>
+                </div>
+                <button type="button" className="documents-modal__close" onClick={closeEditor} aria-label="Close proposal editor">
+                  ×
+                </button>
+              </div>
+
+              <div className="documents-modal__body">
+                <section className="documents-modal__main">
+                  <div className="documents-card">
+                    <div className="documents-card__header">
+                      <h2>Introduction</h2>
+                    </div>
+                    <textarea rows="4" value={form.introduction} onChange={(event) => updateField("introduction", event.target.value)} />
+                  </div>
+
+                  <div className="documents-card">
+                    <div className="documents-card__header">
+                      <h2>Problem</h2>
+                    </div>
+                    <textarea rows="4" value={form.problem} onChange={(event) => updateField("problem", event.target.value)} />
+                  </div>
+
+                  <div className="documents-card">
+                    <div className="documents-card__header">
+                      <h2>Solution</h2>
+                    </div>
+                    <textarea rows="4" value={form.solution} onChange={(event) => updateField("solution", event.target.value)} />
+                  </div>
+
+                  <div className="documents-card">
+                    <div className="documents-card__header">
+                      <h2>Scope</h2>
+                    </div>
+                    <textarea rows="4" value={form.scope} onChange={(event) => updateField("scope", event.target.value)} />
+                  </div>
+
+                  <div className="documents-card">
+                    <div className="documents-card__header">
+                      <h2>Pricing Table</h2>
+                    </div>
+                    <div className="documents-pricing-table">
+                      <div>
+                        <span>Deal Value</span>
+                        <strong>{deal.amount ? `Rs.${Number(deal.amount).toLocaleString()}` : "-"}</strong>
+                      </div>
+                      <div>
+                        <span>Stage</span>
+                        <strong>{String(deal.stage || "-").replaceAll("_", " ")}</strong>
+                      </div>
+                      <div>
+                        <span>Pricing Notes</span>
+                        <textarea rows="3" value={form.pricingNotes} onChange={(event) => updateField("pricingNotes", event.target.value)} />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="documents-card">
+                    <div className="documents-card__header">
+                      <h2>Terms</h2>
+                    </div>
+                    <textarea rows="4" value={form.terms} onChange={(event) => updateField("terms", event.target.value)} />
+                  </div>
+                </section>
+
+                <aside className="documents-modal__side">
+                  <div className="documents-card">
+                    <div className="documents-card__header">
+                      <h2>Deal Info</h2>
+                    </div>
+                    <div className="documents-info-list">
+                      <div><span>Deal</span><strong>{deal.name || searchParams.get("dealName") || "-"}</strong></div>
+                      <div><span>Company</span><strong>{deal.company || searchParams.get("company") || "-"}</strong></div>
+                      <div><span>Contact</span><strong>{deal.contact || searchParams.get("contact") || "-"}</strong></div>
+                      <div><span>Email</span><strong>{deal.email || searchParams.get("email") || "-"}</strong></div>
+                      <div><span>Product</span><strong>{deal.product?.name || "-"}</strong></div>
+                    </div>
+                  </div>
+
+                  <div className="documents-card">
+                    <div className="documents-card__header">
+                      <h2>Status</h2>
+                    </div>
+                    <div className="documents-status-panel">
+                      <div><span>Proposal Status</span><strong>{getStatusLabel(draftStatus)}</strong></div>
+                      <div><span>Approval Requested</span><strong>{formatDateTime(workspace?.deal?.proposalDraft?.approvalRequestedAt)}</strong></div>
+                      <div><span>Approval Response</span><strong>{formatDateTime(workspace?.deal?.proposalDraft?.approvalRespondedAt)}</strong></div>
+                      <div><span>Client Sent</span><strong>{formatDateTime(workspace?.deal?.proposalDraft?.clientSentAt)}</strong></div>
+                    </div>
+                    {isManagerOrAdmin && draftStatus === "pending_approval" ? (
+                      <div className="documents-approval-box">
+                        <textarea
+                          rows="3"
+                          value={form.approvalComment}
+                          onChange={(event) => updateField("approvalComment", event.target.value)}
+                          placeholder="Approval comment"
+                        />
+                        <div className="documents-actions">
+                          <button type="button" className="documents-primary-btn" onClick={() => handleApprove("approve")} disabled={busyAction !== ""}>
+                            Approve
+                          </button>
+                          <button type="button" className="documents-secondary-btn" onClick={() => handleApprove("reject")} disabled={busyAction !== ""}>
+                            Reject
+                          </button>
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+
+                  <div className="documents-card">
+                    <div className="documents-card__header">
+                      <h2>Activity Timeline</h2>
+                    </div>
+                    <div className="documents-stack-list">
+                      {timeline.length ? timeline.map((event, index) => (
+                        <div className="documents-stack-item" key={`${event.changedAt}-${index}`}>
+                          <strong>{event.userName || "User"}</strong>
+                          <p>{String(event.fromStage || "-").replaceAll("_", " ")} to {String(event.toStage || "-").replaceAll("_", " ")}</p>
+                          <span>{formatDateTime(event.changedAt)}</span>
+                        </div>
+                      )) : <div className="documents-empty">No activity timeline yet.</div>}
+                    </div>
+                  </div>
+
+                  <div className="documents-card">
+                    <div className="documents-card__header">
+                      <h2>Notifications</h2>
+                    </div>
+                    <div className="documents-stack-list">
+                      {notifications.length ? notifications.map((item) => (
+                        <div className="documents-stack-item" key={item._id}>
+                          <strong>{item.changedByName || "System"}</strong>
+                          <p>{item.message || "-"}</p>
+                          <span>{formatDateTime(item.createdAt)}</span>
+                        </div>
+                      )) : <div className="documents-empty">No notifications for this proposal yet.</div>}
+                    </div>
+                  </div>
+
+                  <div className="documents-modal__footer">
+                    <button type="button" className="documents-secondary-btn" onClick={closeEditor}>
+                      Close
+                    </button>
+                    <button type="button" className="documents-primary-btn" onClick={handleSaveDraft} disabled={busyAction !== ""}>
+                      {busyAction === "save" ? "Saving..." : "Save Proposal"}
+                    </button>
+                    <button type="button" className="documents-secondary-btn" onClick={handleSendForApproval} disabled={busyAction !== ""}>
+                      {busyAction === "approval" ? "Sending..." : "Send To Manager For Approval"}
+                    </button>
+                    <button type="button" className="documents-secondary-btn" onClick={handleSendToClient} disabled={!canSendToClient || busyAction !== ""}>
+                      {busyAction === "client" ? "Sending..." : "Send To Client"}
+                    </button>
+                  </div>
+                </aside>
+              </div>
+            </div>
+          </div>
+        ) : null}
       </div>
     </div>
   );
