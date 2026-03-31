@@ -1378,9 +1378,12 @@ const updateDealHandler = async (req, res) => {
       stageChanged = normalizeDealStage(oldStage) !== "lost";
     }
 
-    const isNeedAnalysisToProposal =
-      normalizeDealStage(oldStage) === "need_analysis" && normalizeDealStage(nextStage) === "proposal_price_quote";
-    if (isNeedAnalysisToProposal) {
+    const normalizedOldStage = normalizeDealStage(oldStage);
+    const normalizedNextStage = normalizeDealStage(nextStage);
+    const isNeedAnalysisAdvance =
+      normalizedOldStage === "need_analysis" &&
+      ["value_proposition", "proposal_price_quote"].includes(normalizedNextStage);
+    if (isNeedAnalysisAdvance) {
       const itemType = String(itemForValidation?.type || "").toLowerCase();
       const inferredAvailableQuantity = Number(itemForValidation?.stock ?? itemForValidation?.quantity ?? 0);
       const treatAsProduct = itemType === "product" || (itemType !== "service" && Number.isFinite(inferredAvailableQuantity));
@@ -1391,9 +1394,18 @@ const updateDealHandler = async (req, res) => {
           : parseOptionalNumber(req.deal.quantity);
         const availableQuantity = Number(itemForValidation?.stock ?? itemForValidation?.quantity ?? 0);
         if (nextQuantity === null || nextQuantity <= 0) {
-          return res.status(400).json({ message: "Quantity is required when moving a product deal to Proposal stage" });
+          return res.status(400).json({
+            message:
+              normalizedNextStage === "value_proposition"
+                ? "Quantity is required when moving a product deal from Need Analysis"
+                : "Quantity is required when moving a product deal to Proposal stage",
+          });
         }
         if (Number.isFinite(availableQuantity) && nextQuantity > availableQuantity) {
+          const stockMessage =
+            availableQuantity <= 0
+              ? "Out of stock. Available quantity is 0."
+              : `Low stock. Available quantity is ${availableQuantity}.`;
           await markDealWaitingForRestock(req.deal._id);
           await notifyLowStockToAdmins({
             deal: req.deal,
@@ -1410,7 +1422,7 @@ const updateDealHandler = async (req, res) => {
             requestedQuantity: nextQuantity,
           });
           return res.status(400).json({
-            message: `Low stock. Available quantity is ${availableQuantity}.`,
+            message: stockMessage,
             availableQuantity,
             requestedQuantity: nextQuantity,
           });
@@ -1423,7 +1435,10 @@ const updateDealHandler = async (req, res) => {
           : normalizeBillingCycle(req.deal.billingCycle);
         if (!nextBillingCycle) {
           return res.status(400).json({
-            message: "Plan / Billing Cycle is required when moving a service deal to Proposal stage",
+            message:
+              normalizedNextStage === "value_proposition"
+                ? "Plan / Billing Cycle is required when moving a service deal from Need Analysis"
+                : "Plan / Billing Cycle is required when moving a service deal to Proposal stage",
           });
         }
         updates.billingCycle = nextBillingCycle;

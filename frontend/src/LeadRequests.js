@@ -466,7 +466,7 @@ function LeadRequests() {
     } catch (err) {
       console.error(`Failed to move deal to ${targetLabel}:`, err);
       const errorMessage = err.response?.data?.message || `Failed to move deal to ${targetLabel}.`;
-      const isLowStockError = /low stock|insufficient stock/i.test(String(errorMessage));
+      const isLowStockError = /low stock|insufficient stock|out of stock/i.test(String(errorMessage));
 
       if (isLowStockError) {
         const customerWillWait = window.confirm(

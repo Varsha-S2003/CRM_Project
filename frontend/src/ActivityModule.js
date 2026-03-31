@@ -1395,12 +1395,49 @@ function ActivityModule() {
         }
       } catch (error) {
         const errorMessage = error.response?.data?.message || "Failed to complete Need Analysis.";
-        const isLowStockError = /low stock|insufficient stock/i.test(String(errorMessage));
+        const isLowStockError = /low stock|insufficient stock|out of stock/i.test(String(errorMessage));
 
         if (isLowStockError) {
-          window.alert(
-            `${errorMessage}\n\nThere is not enough stock for this quantity.\n\nThe customer has been informed by email that we will follow up as soon as inventory is restocked.\n\nThe email now includes YES and NO buttons:\nYES keeps the deal in the current stage.\nNO moves the deal to Closed Lost with a reason.`
+          const customerWillWait = window.confirm(
+            `${errorMessage}\n\nThere is not enough stock for this quantity.\n\nThe customer has been informed by email that we will follow up as soon as inventory is restocked.\n\nPress OK for YES to keep this deal in the current stage and wait for restock.\nPress Cancel for NO to move this deal to Lost.`
           );
+
+          if (customerWillWait) {
+            try {
+              await axios.put(
+                `http://localhost:5000/api/deals/${dealId}/waiting-restock`,
+                {
+                  availableQuantity: error.response?.data?.availableQuantity,
+                  requestedQuantity: error.response?.data?.requestedQuantity,
+                },
+                { headers: apiHeaders }
+              );
+              setToast("Customer agreed to wait for restock. Deal kept in current stage and admin notified.");
+            } catch (restockError) {
+              setToast(restockError.response?.data?.message || "Failed to mark deal as waiting for restock.");
+            }
+          } else {
+            try {
+              await axios.put(
+                `http://localhost:5000/api/deals/${dealId}/stage`,
+                {
+                  stage: "lost",
+                  reason: "Customer declined to wait for inventory restock",
+                },
+                { headers: apiHeaders }
+              );
+              setToast("Deal moved to Lost because the customer declined to wait for restock.");
+              emitDealPipelineRefresh();
+              closeCompleteModal();
+              await fetchRelatedRecords();
+              await refreshAll();
+              if (returnToRequestsAfterSubmit) {
+                navigate("/requests");
+              }
+            } catch (lostError) {
+              setToast(lostError.response?.data?.message || "Failed to move deal to Lost.");
+            }
+          }
         } else {
           setToast(errorMessage);
         }
