@@ -44,7 +44,7 @@ const CALL_REMINDER_OPTIONS = [
 const VIEW_OPTIONS = ["month", "week", "day"];
 const CHART_COLORS = ["#202124", "#efb521", "#46b84d", "#9dc63b"];
 const TASK_BOARD_COLUMNS = ["Not Started", "Deferred", "In Progress", "Completed"];
-const MEETING_BOARD_COLUMNS = ["Scheduled", "Today", "Completed", "Cancelled"];
+const MEETING_BOARD_COLUMNS = ["Scheduled", "Today", "Completed", "Missed", "Cancelled"];
 const CALL_BOARD_COLUMNS = ["Scheduled", "Today", "Completed", "Missed"];
 const COMPLETE_OUTCOME_OPTIONS = [
   { value: "interested", label: "Interested" },
@@ -62,15 +62,11 @@ const PAIN_POINT_OPTIONS = [
 const REQUIRED_FEATURE_OPTIONS = [
   "Lead Management",
   "Contact Management",
-  "Call Tracking",
-  "Meeting Scheduling",
-  "Email Integration",
-  "Proposal Management",
-  "Reporting & Dashboard",
+  "Follow-up / Task Tracking",
+  "Reporting",
 ];
 const BUDGET_OPTIONS = ["Low", "Medium", "High", "Not decided"];
 const AUTHORITY_OPTIONS = ["Decision Maker", "Influencer", "No authority"];
-const NEED_LEVEL_OPTIONS = ["High", "Medium", "Low"];
 const QUALIFICATION_TIMELINE_OPTIONS = ["Immediate", "1 Month", "3 Months", "Later"];
 const CUSTOMER_INTEREST_LEVEL_OPTIONS = ["High", "Medium", "Low"];
 const VALUE_PROPOSITION_NEXT_STEP_OPTIONS = [
@@ -158,26 +154,11 @@ const createDefaultCompletionForm = () => ({
   reason: "",
   rescheduleDateTime: "",
   businessRequirementSummary: "",
-  customerGoal: "",
-  industryType: "",
-  currentSystemUsed: "",
-  currentLeadManagement: "",
-  communicationMethod: "",
-  processChallenges: "",
   painPoints: [],
-  otherIssues: "",
   requiredFeatures: [],
-  customRequirements: "",
-  decisionMakerName: "",
-  stakeholderRole: "",
-  stakeholderDepartment: "",
-  userCount: "",
-  approvalRequired: "",
   qualificationBudget: "",
   qualificationAuthority: "",
-  qualificationNeed: "",
   qualificationTimeline: "",
-  interestedOffering: "",
   meetingNotes: "",
   problemStatement: "",
   proposedSolution: "",
@@ -207,26 +188,11 @@ const formatUsecaseNotes = (form) => {
   const requiredFeaturesValue = Array.isArray(form.requiredFeatures) ? form.requiredFeatures.join(", ") : "";
   const sections = [
     ["Business Requirement Summary", form.businessRequirementSummary],
-    ["Customer Goal / Objective", form.customerGoal],
-    ["Industry Type", form.industryType],
-    ["Current System Used", form.currentSystemUsed],
-    ["How They Manage Leads Currently", form.currentLeadManagement],
-    ["Communication Method", form.communicationMethod],
-    ["Existing Challenges in Process", form.processChallenges],
     ["Pain Points", painPointsValue],
-    ["Other Issues", form.otherIssues],
-    ["Required Features / Expectations", requiredFeaturesValue],
-    ["Custom Requirements", form.customRequirements],
-    ["Decision Maker Name", form.decisionMakerName],
-    ["Role", form.stakeholderRole],
-    ["Department", form.stakeholderDepartment],
-    ["Number of Users Required", form.userCount],
-    ["Approval Required", form.approvalRequired],
+    ["Features Needed", requiredFeaturesValue],
     ["Budget", form.qualificationBudget],
     ["Authority", form.qualificationAuthority],
-    ["Need", form.qualificationNeed],
     ["Timeline", form.qualificationTimeline],
-    ["Interested Product/Service", form.interestedOffering],
     ["Meeting Notes", form.meetingNotes],
   ];
 
@@ -487,12 +453,25 @@ const getTaskBoardStatus = (status) => {
   return "Not Started";
 };
 
+const hasCrossedMissedWindow = (dateValue) => {
+  const sourceDate = new Date(dateValue);
+  if (Number.isNaN(sourceDate.getTime())) return false;
+
+  const now = new Date();
+  return now.getTime() >= sourceDate.getTime() + (24 * 60 * 60 * 1000);
+};
+
 const getMeetingBoardStatus = (meeting) => {
   const normalized = (meeting.status || "").toLowerCase();
   if (normalized === "completed") return "Completed";
   if (normalized === "cancelled") return "Cancelled";
 
-  const sourceDate = new Date(meeting.startDateTime || meeting.createdAt);
+  const sourceDateValue = meeting.startDateTime || meeting.createdAt;
+  const sourceDate = new Date(sourceDateValue);
+  if (hasCrossedMissedWindow(sourceDateValue)) {
+    return "Missed";
+  }
+
   if (!Number.isNaN(sourceDate.getTime()) && sourceDate.toDateString() === new Date().toDateString()) {
     return "Today";
   }
@@ -505,7 +484,12 @@ const getCallBoardStatus = (call) => {
   if (normalized === "completed") return "Completed";
   if (normalized === "missed" || normalized === "cancelled") return "Missed";
 
-  const sourceDate = new Date(call.startDateTime || call.createdAt);
+  const sourceDateValue = call.startDateTime || call.createdAt;
+  const sourceDate = new Date(sourceDateValue);
+  if (hasCrossedMissedWindow(sourceDateValue)) {
+    return "Missed";
+  }
+
   if (!Number.isNaN(sourceDate.getTime()) && sourceDate.toDateString() === new Date().toDateString()) {
     return "Today";
   }
@@ -1170,7 +1154,6 @@ function ActivityModule() {
     setCompletionForm({
       ...createDefaultCompletionForm(),
       outcome: isNeedAnalysisDeal ? "interested" : "",
-      industryType: String(relatedLead?.industry || "").trim(),
       needType: isNeedAnalysisDeal ? inferredDealType : "",
       productName: autoFetchedItemName,
       quantity: resolvedDeal?.quantity ?? "",
@@ -3031,7 +3014,7 @@ function ActivityModule() {
                         <div className="full-width activity-usecase-form">
                           <div className="activity-card-header" style={{ marginBottom: 0 }}>
                             <h3>Use Case Information</h3>
-                            <p>Capture business requirement, process gaps, qualification, and meeting notes.</p>
+                            <p>Capture core requirement, challenges, qualification, and meeting notes.</p>
                           </div>
 
                           <div className="activity-usecase-section">
@@ -3065,7 +3048,7 @@ function ActivityModule() {
                           </div>
 
                           <div className="activity-usecase-section">
-                            <div className="activity-usecase-section-title">2. Business Requirement Summary</div>
+                            <div className="activity-usecase-section-title">2. Requirement</div>
                             <div className="activity-form-grid activity-usecase-grid">
                               <label className="full-width">
                                 Business Requirement Summary *
@@ -3078,83 +3061,11 @@ function ActivityModule() {
                                   placeholder="Short description of the business requirement"
                                 />
                               </label>
-                              <label>
-                                Customer Goal / Objective
-                                <textarea
-                                  rows="3"
-                                  value={completionForm.customerGoal}
-                                  onChange={(event) =>
-                                    setCompletionForm((prev) => ({ ...prev, customerGoal: event.target.value }))
-                                  }
-                                  placeholder="What outcome the customer wants to achieve"
-                                />
-                              </label>
-                              <label>
-                                Industry Type
-                                <input
-                                  type="text"
-                                  value={completionForm.industryType}
-                                  onChange={(event) =>
-                                    setCompletionForm((prev) => ({ ...prev, industryType: event.target.value }))
-                                  }
-                                  placeholder="Industry or business category"
-                                />
-                              </label>
                             </div>
                           </div>
 
                           <div className="activity-usecase-section">
-                            <div className="activity-usecase-section-title">3. Current Process (As-Is)</div>
-                            <div className="activity-form-grid activity-usecase-grid">
-                              <label>
-                                Current System Used
-                                <input
-                                  type="text"
-                                  value={completionForm.currentSystemUsed}
-                                  onChange={(event) =>
-                                    setCompletionForm((prev) => ({ ...prev, currentSystemUsed: event.target.value }))
-                                  }
-                                  placeholder="Excel / Manual / Other CRM"
-                                />
-                              </label>
-                              <label>
-                                Communication Method
-                                <input
-                                  type="text"
-                                  value={completionForm.communicationMethod}
-                                  onChange={(event) =>
-                                    setCompletionForm((prev) => ({ ...prev, communicationMethod: event.target.value }))
-                                  }
-                                  placeholder="Call / Email / WhatsApp"
-                                />
-                              </label>
-                              <label className="full-width">
-                                How They Manage Leads Currently
-                                <textarea
-                                  rows="3"
-                                  value={completionForm.currentLeadManagement}
-                                  onChange={(event) =>
-                                    setCompletionForm((prev) => ({ ...prev, currentLeadManagement: event.target.value }))
-                                  }
-                                  placeholder="Describe the current workflow used to manage leads"
-                                />
-                              </label>
-                              <label className="full-width">
-                                Existing Challenges in Process
-                                <textarea
-                                  rows="3"
-                                  value={completionForm.processChallenges}
-                                  onChange={(event) =>
-                                    setCompletionForm((prev) => ({ ...prev, processChallenges: event.target.value }))
-                                  }
-                                  placeholder="Issues they face in the current process"
-                                />
-                              </label>
-                            </div>
-                          </div>
-
-                          <div className="activity-usecase-section">
-                            <div className="activity-usecase-section-title">4. Pain Points</div>
+                            <div className="activity-usecase-section-title">3. Challenges</div>
                             <div className="activity-checkbox-grid">
                               {PAIN_POINT_OPTIONS.map((item) => (
                                 <label key={item} className="activity-check-chip">
@@ -3167,21 +3078,10 @@ function ActivityModule() {
                                 </label>
                               ))}
                             </div>
-                            <label className="full-width">
-                              Other Issues
-                              <textarea
-                                rows="2"
-                                value={completionForm.otherIssues}
-                                onChange={(event) =>
-                                  setCompletionForm((prev) => ({ ...prev, otherIssues: event.target.value }))
-                                }
-                                placeholder="Any other issue mentioned by the customer"
-                              />
-                            </label>
                           </div>
 
                           <div className="activity-usecase-section">
-                            <div className="activity-usecase-section-title">5. Required Features / Expectations</div>
+                            <div className="activity-usecase-section-title">4. Features Needed</div>
                             <div className="activity-checkbox-grid">
                               {REQUIRED_FEATURE_OPTIONS.map((item) => (
                                 <label key={item} className="activity-check-chip">
@@ -3194,85 +3094,10 @@ function ActivityModule() {
                                 </label>
                               ))}
                             </div>
-                            <label className="full-width">
-                              Custom Requirements
-                              <textarea
-                                rows="2"
-                                value={completionForm.customRequirements}
-                                onChange={(event) =>
-                                  setCompletionForm((prev) => ({ ...prev, customRequirements: event.target.value }))
-                                }
-                                placeholder="Describe any custom requirement or special expectation"
-                              />
-                            </label>
                           </div>
 
                           <div className="activity-usecase-section">
-                            <div className="activity-usecase-section-title">6. Stakeholders</div>
-                            <div className="activity-form-grid activity-usecase-grid">
-                              <label>
-                                Decision Maker Name
-                                <input
-                                  type="text"
-                                  value={completionForm.decisionMakerName}
-                                  onChange={(event) =>
-                                    setCompletionForm((prev) => ({ ...prev, decisionMakerName: event.target.value }))
-                                  }
-                                  placeholder="Decision maker name"
-                                />
-                              </label>
-                              <label>
-                                Role
-                                <input
-                                  type="text"
-                                  value={completionForm.stakeholderRole}
-                                  onChange={(event) =>
-                                    setCompletionForm((prev) => ({ ...prev, stakeholderRole: event.target.value }))
-                                  }
-                                  placeholder="Manager / CEO / etc."
-                                />
-                              </label>
-                              <label>
-                                Department
-                                <input
-                                  type="text"
-                                  value={completionForm.stakeholderDepartment}
-                                  onChange={(event) =>
-                                    setCompletionForm((prev) => ({ ...prev, stakeholderDepartment: event.target.value }))
-                                  }
-                                  placeholder="Sales / Marketing / Operations"
-                                />
-                              </label>
-                              <label>
-                                Number of Users Required
-                                <input
-                                  type="number"
-                                  min="1"
-                                  value={completionForm.userCount}
-                                  onChange={(event) =>
-                                    setCompletionForm((prev) => ({ ...prev, userCount: event.target.value }))
-                                  }
-                                  placeholder="Users required"
-                                />
-                              </label>
-                              <label>
-                                Approval Required
-                                <select
-                                  value={completionForm.approvalRequired}
-                                  onChange={(event) =>
-                                    setCompletionForm((prev) => ({ ...prev, approvalRequired: event.target.value }))
-                                  }
-                                >
-                                  <option value="">Select</option>
-                                  <option value="Yes">Yes</option>
-                                  <option value="No">No</option>
-                                </select>
-                              </label>
-                            </div>
-                          </div>
-
-                          <div className="activity-usecase-section">
-                            <div className="activity-usecase-section-title">7. Lead Qualification</div>
+                            <div className="activity-usecase-section-title">5. Qualification</div>
                             <div className="activity-form-grid activity-usecase-grid">
                               <label>
                                 Budget
@@ -3303,20 +3128,6 @@ function ActivityModule() {
                                 </select>
                               </label>
                               <label>
-                                Need
-                                <select
-                                  value={completionForm.qualificationNeed}
-                                  onChange={(event) =>
-                                    setCompletionForm((prev) => ({ ...prev, qualificationNeed: event.target.value }))
-                                  }
-                                >
-                                  <option value="">Select need level</option>
-                                  {NEED_LEVEL_OPTIONS.map((item) => (
-                                    <option key={item} value={item}>{item}</option>
-                                  ))}
-                                </select>
-                              </label>
-                              <label>
                                 Timeline
                                 <select
                                   value={completionForm.qualificationTimeline}
@@ -3330,17 +3141,12 @@ function ActivityModule() {
                                   ))}
                                 </select>
                               </label>
-                              <label className="full-width">
-                                Interested Product/Service
-                                <input
-                                  type="text"
-                                  value={completionForm.interestedOffering}
-                                  onChange={(event) =>
-                                    setCompletionForm((prev) => ({ ...prev, interestedOffering: event.target.value }))
-                                  }
-                                  placeholder="Product or service they are interested in"
-                                />
-                              </label>
+                            </div>
+                          </div>
+
+                          <div className="activity-usecase-section">
+                            <div className="activity-usecase-section-title">6. Notes</div>
+                            <div className="activity-form-grid activity-usecase-grid">
                               <label className="full-width">
                                 Meeting Notes *
                                 <textarea

@@ -146,12 +146,14 @@ function LeadRequests() {
           name: lead.name,
           company: lead.company,
           email: lead.email,
+          phone: lead.phone || lead.mobile || "",
+          source: lead.source || lead.leadSource || "",
           status: lead.status,
           assignedBy: normalizeAssignedUser(lead.assignedBy),
           assignedTo: normalizeAssignedUser(lead.assignedTo),
           canAssign: false,
           canUnassign: false,
-          nextAction: { type: "none", label: "No Immediate Action" },
+          nextAction: null,
         }));
 
         setAssignmentSnapshot({
@@ -159,7 +161,6 @@ function LeadRequests() {
             totalAssignedLeads: items.length,
             callActions: 0,
             meetingActions: 0,
-            noImmediateAction: items.length,
           },
           items,
         });
@@ -593,7 +594,7 @@ function LeadRequests() {
 
   const renderEmployeeAction = (item) => {
     const actionType = String(item.nextAction?.type || "none").toLowerCase();
-    const label = item.nextAction?.label || "No Immediate Action";
+    const label = item.nextAction?.label || "";
 
     if (["call", "meeting", "task"].includes(actionType)) {
       return (
@@ -607,7 +608,7 @@ function LeadRequests() {
       );
     }
 
-    return <div className={`assignment-next-action ${actionType}`}>{label}</div>;
+    return null;
   };
 
   const handleConvertToDeal = useCallback(
@@ -736,11 +737,11 @@ function LeadRequests() {
             {assigningLeadIds[item._id] ? "Removing..." : "Delete Assignment"}
           </button>
         </div>
-      ) : (
+      ) : item.nextAction ? (
         <div className="lead-requests-card-action">
           {renderEmployeeAction(item)}
         </div>
-      )}
+      ) : null}
 
       {["ADMIN", "MANAGER", "EMPLOYEE"].includes(role) && ["qualified", "proposal", "proposal_sent"].includes(normalizeStatus(item.status)) ? (
         <div className="lead-requests-card-action">
@@ -995,10 +996,6 @@ function LeadRequests() {
                 <div className="assignment-summary-card">
                   <span>Meeting Actions</span>
                   <strong>{assignmentSnapshot?.summary?.meetingActions || 0}</strong>
-                </div>
-                <div className="assignment-summary-card">
-                  <span>No Immediate Action</span>
-                  <strong>{assignmentSnapshot?.summary?.noImmediateAction || 0}</strong>
                 </div>
               </div>
 

@@ -33,53 +33,23 @@ const parseUsecaseSections = (value) => {
 
 const USECASE_GROUPS = [
   {
-    title: "Business Requirement",
-    labels: [
-      "Business Requirement Summary",
-      "Customer Goal / Objective",
-      "Industry Type",
-    ],
+    title: "Requirement",
+    labels: ["Business Requirement Summary"],
   },
   {
-    title: "Current Process",
-    labels: [
-      "Current System Used",
-      "How They Manage Leads Currently",
-      "Communication Method",
-      "Existing Challenges in Process",
-    ],
+    title: "Challenges",
+    labels: ["Pain Points"],
   },
   {
-    title: "Pain Points & Features",
-    labels: [
-      "Pain Points",
-      "Other Issues",
-      "Required Features / Expectations",
-      "Custom Requirements",
-    ],
+    title: "Features Needed",
+    labels: ["Features Needed", "Required Features / Expectations"],
   },
   {
-    title: "Stakeholders",
-    labels: [
-      "Decision Maker Name",
-      "Role",
-      "Department",
-      "Number of Users Required",
-      "Approval Required",
-    ],
+    title: "Qualification",
+    labels: ["Budget", "Authority", "Timeline"],
   },
   {
-    title: "Lead Qualification",
-    labels: [
-      "Budget",
-      "Authority",
-      "Need",
-      "Timeline",
-      "Interested Product/Service",
-    ],
-  },
-  {
-    title: "Meeting Notes",
+    title: "Notes",
     labels: ["Meeting Notes"],
   },
 ];
