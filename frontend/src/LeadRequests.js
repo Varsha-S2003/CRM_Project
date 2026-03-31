@@ -94,6 +94,21 @@ const getStatusClassName = (value) => {
   return "unknown";
 };
 
+const formatLabelValue = (value, fallback = "-") => {
+  const normalized = String(value ?? "").trim();
+  return normalized || fallback;
+};
+
+const getInitials = (value) => {
+  const text = String(value || "").trim();
+  if (!text) return "NA";
+  const parts = text.split(/\s+/).filter(Boolean);
+  if (parts.length === 1) {
+    return parts[0].slice(0, 2).toUpperCase();
+  }
+  return `${parts[0][0] || ""}${parts[1][0] || ""}`.toUpperCase();
+};
+
 function LeadRequests() {
   const navigate = useNavigate();
   const role = (localStorage.getItem("role") || "").toUpperCase();
@@ -633,9 +648,15 @@ function LeadRequests() {
 
   const renderLeadCard = (item) => (
     <div key={item._id} className="lead-requests-card">
-      <div>
+      <div className="lead-requests-card-top">
         <div className="lead-requests-card-header">
-          <div className="assignment-lead-name">{item.name || "Unnamed Lead"}</div>
+          <div className="lead-requests-card-identity">
+            <div className="lead-requests-avatar">{getInitials(item.name)}</div>
+            <div>
+              <div className="assignment-lead-name">{item.name || "Unnamed Lead"}</div>
+              <div className="lead-requests-subtitle">Lead</div>
+            </div>
+          </div>
           <div className="lead-requests-card-badges">
             <span className={`lead-status-badge ${getStatusClassName(item.status)}`}>
               {String(item.status || "Unknown").toUpperCase()}
@@ -645,14 +666,33 @@ function LeadRequests() {
             </span>
           </div>
         </div>
-        <div className="assignment-lead-meta">
-          {item.company || "No Company"}
+
+        <div className="lead-requests-meta-grid">
+          <div className="lead-requests-meta-row">
+            <span className="lead-requests-meta-label">Company</span>
+            <span className="lead-requests-meta-value">{formatLabelValue(item.company, "No company")}</span>
+          </div>
+          <div className="lead-requests-meta-row">
+            <span className="lead-requests-meta-label">Email</span>
+            <span className="lead-requests-meta-value">{formatLabelValue(item.email)}</span>
+          </div>
+          <div className="lead-requests-meta-row">
+            <span className="lead-requests-meta-label">Phone</span>
+            <span className="lead-requests-meta-value">{formatLabelValue(item.phone)}</span>
+          </div>
+          <div className="lead-requests-meta-row">
+            <span className="lead-requests-meta-label">Source</span>
+            <span className="lead-requests-meta-value">{formatLabelValue(item.source || item.channel || item.leadSource, "Direct")}</span>
+          </div>
         </div>
-        <div className="assignment-lead-meta">
-          Assigned by: {item.assignedBy?.name || item.assignedBy?.username || "System"}
-        </div>
-        <div className="assignment-lead-meta">
-          Assigned to: {item.assignedTo?.name || item.assignedTo?.username || "Unassigned"}
+
+        <div className="lead-requests-assignment">
+          <div className="assignment-lead-meta">
+            Assigned by: {item.assignedBy?.name || item.assignedBy?.username || "System"}
+          </div>
+          <div className="assignment-lead-meta">
+            Assigned to: {item.assignedTo?.name || item.assignedTo?.username || "Unassigned"}
+          </div>
         </div>
       </div>
 
@@ -737,7 +777,13 @@ function LeadRequests() {
   const renderDealCard = (item) => (
     <div key={item._id} className="lead-requests-card">
       <div className="lead-requests-card-header">
-        <div className="assignment-lead-name">{item.name || "Unnamed Deal"}</div>
+        <div className="lead-requests-card-identity">
+          <div className="lead-requests-avatar">{getInitials(item.name)}</div>
+          <div>
+            <div className="assignment-lead-name">{item.name || "Unnamed Deal"}</div>
+            <div className="lead-requests-subtitle">Deal</div>
+          </div>
+        </div>
         <div className="lead-requests-card-badges">
           <span className={`lead-status-badge ${getStatusClassName(normalizeDealStage(item.stage))}`}>
             {String(normalizeDealStage(item.stage) || "Unknown").replaceAll("_", " ").toUpperCase()}
@@ -747,11 +793,30 @@ function LeadRequests() {
           </span>
         </div>
       </div>
-      <div className="assignment-lead-meta">Company: {item.company || "-"}</div>
-      <div className="assignment-lead-meta">Assigned by: {item.assignedBy?.name || item.assignedBy?.username || "System"}</div>
-      <div className="assignment-lead-meta">Assigned to: {item.assignedTo?.name || item.assignedTo?.username || "Unassigned"}</div>
-      <div className="assignment-lead-meta">Amount: {item.amount ? `₹${Number(item.amount).toLocaleString()}` : "-"}</div>
-      <div className="assignment-lead-meta">Contact: {item.contact || item.email || "-"}</div>
+
+      <div className="lead-requests-meta-grid">
+        <div className="lead-requests-meta-row">
+          <span className="lead-requests-meta-label">Company</span>
+          <span className="lead-requests-meta-value">{formatLabelValue(item.company)}</span>
+        </div>
+        <div className="lead-requests-meta-row">
+          <span className="lead-requests-meta-label">Amount</span>
+          <span className="lead-requests-meta-value">{item.amount ? `INR ${Number(item.amount).toLocaleString()}` : "-"}</span>
+        </div>
+        <div className="lead-requests-meta-row">
+          <span className="lead-requests-meta-label">Contact</span>
+          <span className="lead-requests-meta-value">{formatLabelValue(item.contact || item.email)}</span>
+        </div>
+        <div className="lead-requests-meta-row">
+          <span className="lead-requests-meta-label">Phone</span>
+          <span className="lead-requests-meta-value">{formatLabelValue(item.phone)}</span>
+        </div>
+      </div>
+
+      <div className="lead-requests-assignment">
+        <div className="assignment-lead-meta">Assigned by: {item.assignedBy?.name || item.assignedBy?.username || "System"}</div>
+        <div className="assignment-lead-meta">Assigned to: {item.assignedTo?.name || item.assignedTo?.username || "Unassigned"}</div>
+      </div>
       {normalizeDealStage(item.stage) === "need_analysis" && getWaitingForRestockNote(item) ? (
         <div className="lead-request-waiting-note">{getWaitingForRestockNote(item)}</div>
       ) : null}
@@ -846,16 +911,34 @@ function LeadRequests() {
   const renderContactCard = (item) => (
     <div key={item._id} className="lead-requests-card">
       <div className="lead-requests-card-header">
-        <div className="assignment-lead-name">{item.name || "Unnamed Contact"}</div>
+        <div className="lead-requests-card-identity">
+          <div className="lead-requests-avatar">{getInitials(item.name)}</div>
+          <div>
+            <div className="assignment-lead-name">{item.name || "Unnamed Contact"}</div>
+            <div className="lead-requests-subtitle">Contact</div>
+          </div>
+        </div>
         <div className="lead-requests-card-badges">
           <span className={`lead-assignment-badge ${String(item.status || "").toLowerCase() === "active" ? "assigned" : "unassigned"}`}>
             {String(item.status || "Unknown").toUpperCase()}
           </span>
         </div>
       </div>
-      <div className="assignment-lead-meta">Company: {item.company || "-"}</div>
-      <div className="assignment-lead-meta">Email: {item.email || "-"}</div>
-      <div className="assignment-lead-meta">Phone: {item.phone || "-"}</div>
+
+      <div className="lead-requests-meta-grid">
+        <div className="lead-requests-meta-row">
+          <span className="lead-requests-meta-label">Company</span>
+          <span className="lead-requests-meta-value">{formatLabelValue(item.company)}</span>
+        </div>
+        <div className="lead-requests-meta-row">
+          <span className="lead-requests-meta-label">Email</span>
+          <span className="lead-requests-meta-value">{formatLabelValue(item.email)}</span>
+        </div>
+        <div className="lead-requests-meta-row">
+          <span className="lead-requests-meta-label">Phone</span>
+          <span className="lead-requests-meta-value">{formatLabelValue(item.phone)}</span>
+        </div>
+      </div>
     </div>
   );
 

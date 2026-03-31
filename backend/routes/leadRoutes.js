@@ -733,7 +733,7 @@ router.get("/assignment-dashboard", verifyToken, permit("MANAGER", "EMPLOYEE"), 
     }
 
     const leads = await Lead.find(filter)
-      .select("name firstName lastName company email phone mobile status assignedTo assignedBy assignedByRole assignedAt updatedAt")
+      .select("name firstName lastName company email phone mobile status score rating lastActivityAt lastActivityDate createdAt assignedTo assignedBy assignedByRole assignedAt updatedAt")
       .populate("assignedBy", "username name role employee_id")
       .populate("assignedTo", "username name role employee_id")
       .sort({ assignedAt: -1, updatedAt: -1 })
@@ -810,6 +810,10 @@ router.get("/assignment-dashboard", verifyToken, permit("MANAGER", "EMPLOYEE"), 
         phone: lead.phone,
         mobile: lead.mobile,
         status: lead.status,
+        score: lead.score,
+        rating: lead.rating,
+        lastActivityAt: lead.lastActivityAt || lead.lastActivityDate || null,
+        createdAt: lead.createdAt || null,
         assignedAt: lead.assignedAt || lead.updatedAt,
         assignedByRole: lead.assignedByRole || null,
         canAssign,

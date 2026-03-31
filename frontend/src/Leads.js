@@ -1596,6 +1596,29 @@ function Leads() {
     return date.toLocaleString();
   };
 
+  const formatActivityDate = (value) => {
+    if (!value) return "-";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "-";
+    return date.toLocaleDateString("en-IN", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+    });
+  };
+
+  const formatLeadAgeDays = (value) => {
+    if (!value) return "-";
+    const createdDate = new Date(value);
+    if (Number.isNaN(createdDate.getTime())) return "-";
+
+    const diffMs = Date.now() - createdDate.getTime();
+    if (diffMs < 0) return "0 days";
+
+    const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    return `${days} ${days === 1 ? "day" : "days"}`;
+  };
+
   const getExportLeads = () => {
     const matchingLeads = search.trim()
       ? leads.filter((lead) =>
@@ -3221,10 +3244,20 @@ ET`;
                     <span className="detail-value">{Number(selectedLead.score) || 0}</span>
                   </div>
                   <div className="detail-row">
-                    <span className="detail-label">Rating</span>
+                    <span className="detail-label">Priority</span>
                     <span className={`lead-rating-pill ${(selectedLead.rating || "cold").toLowerCase()}`}>
                       {(selectedLead.rating || "cold").toUpperCase()}
                     </span>
+                  </div>
+                  <div className="detail-row">
+                    <span className="detail-label">Last Activity</span>
+                    <span className="detail-value">
+                      {formatActivityDate(selectedLead.lastActivityAt || selectedLead.lastActivityDate)}
+                    </span>
+                  </div>
+                  <div className="detail-row">
+                    <span className="detail-label">Lead Age</span>
+                    <span className="detail-value">{formatLeadAgeDays(selectedLead.createdAt)}</span>
                   </div>
                   <div className="detail-row">
                     <span className="detail-label">Address</span>
