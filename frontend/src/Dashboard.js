@@ -503,7 +503,7 @@ function Dashboard() {
 
             <div className="stat-card">
               <h4>Total Revenue</h4>
-              <h2>${stats?.totalRevenue || "125,000"}</h2>
+              <h2>₹{stats?.totalRevenue || "125,000"}</h2>
             </div>
 
             <div className="stat-card">

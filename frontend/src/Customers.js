@@ -354,51 +354,6 @@ export default function Customers() {
                       </tbody>
                     </table>
                   </div>
-                  <div className="customers-table-wrapper customer-purchases-wrapper">
-                    <h3 className="customer-purchases-title">Service Subscriptions</h3>
-                    {(selectedCustomer.serviceSubscriptions || []).length === 0 ? (
-                      <p className="dashboard-subtitle">No service subscriptions found.</p>
-                    ) : (
-                      <table className="customers-table">
-                        <thead>
-                          <tr>
-                            <th>Service</th>
-                            <th>Plan</th>
-                            <th>Start Date</th>
-                            <th>Expiry Date</th>
-                            <th>Days Remaining</th>
-                            <th>Status</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {selectedCustomer.serviceSubscriptions.map((subscription) => (
-                            <tr key={subscription.dealId}>
-                              <td data-label="Service">{subscription.serviceName || "-"}</td>
-                              <td data-label="Plan">{subscription.plan || "-"}</td>
-                              <td data-label="Start Date">{formatDate(subscription.startDate)}</td>
-                              <td data-label="Expiry Date">{formatDate(subscription.expiryDate)}</td>
-                              <td data-label="Days Remaining">
-                                {subscription.daysRemaining === null ? "-" : `${subscription.daysRemaining} days`}
-                              </td>
-                              <td data-label="Status">
-                                <span
-                                  className={`deal-status-pill ${
-                                    subscription.alertStatus === "Expired"
-                                      ? "inactive"
-                                      : subscription.alertStatus === "Expiring Soon"
-                                        ? "warning"
-                                        : "active"
-                                  }`}
-                                >
-                                  {subscription.alertStatus || "Active"}
-                                </span>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    )}
-                  </div>
                 </div>
               </div>
             </div>

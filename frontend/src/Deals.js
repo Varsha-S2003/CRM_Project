@@ -250,10 +250,11 @@ function Deals() {
     if (Number.isNaN(date.getTime())) return "-";
     return date.toLocaleString();
   };
+  const formatCurrency = (value) => `₹${Number(value || 0).toLocaleString("en-IN")}`;
   const exportFields = [
     { key: "name", label: "Deal Name", getValue: (deal) => deal.name || "-" },
     { key: "company", label: "Company", getValue: (deal) => deal.company || "-" },
-    { key: "amount", label: "Amount", getValue: (deal) => Number(deal.amount || 0).toLocaleString() },
+    { key: "amount", label: "Amount", getValue: (deal) => formatCurrency(deal.amount) },
     { key: "contact", label: "Contact", getValue: (deal) => deal.contact || "-" },
     { key: "email", label: "Email", getValue: (deal) => deal.email || "-" },
     { key: "phone", label: "Alternative Contact", getValue: (deal) => deal.phone || "-" },
@@ -266,7 +267,7 @@ function Deals() {
       getValue: (deal) =>
         deal.expectedRevenue === null || deal.expectedRevenue === undefined
           ? "-"
-          : Number(deal.expectedRevenue).toLocaleString(),
+          : formatCurrency(deal.expectedRevenue),
     },
     { key: "nextStep", label: "Next Step", getValue: (deal) => deal.nextStep || "-" },
     { key: "dealType", label: "Deal Type", getValue: (deal) => deal.dealType || "-" },
@@ -1119,6 +1120,16 @@ function Deals() {
         alert("Quantity is required for selected products");
         return;
       }
+      const selectedEditDealItem = products.find((item) => String(item._id) === String(editDealForm.product || ""));
+      const availableStock = Number(selectedEditDealItem?.stock ?? selectedEditDealItem?.quantity ?? 0);
+      if (Number.isFinite(availableStock) && availableStock <= 0) {
+        alert("Insufficient stock. Deal cannot move to the next stage.");
+        return;
+      }
+      if (Number.isFinite(availableStock) && quantityValue > availableStock) {
+        alert(`Low stock. Only ${availableStock} item(s) available. Deal cannot move to the next stage.`);
+        return;
+      }
     }
     if (selectedEditDealItemType === "service" && selectedEditDealStageKey !== "qualification") {
       if (!String(editDealForm.billingCycle || "").trim()) {
@@ -1633,7 +1644,7 @@ ET`;
             </div>
             <div className="stat-card-zoho">
               <div className="stat-content">
-                <span className="stat-value">${totalValue.toLocaleString()}</span>
+                <span className="stat-value">{formatCurrency(totalValue)}</span>
                 <span className="stat-label">Pipeline Value</span>
               </div>
             </div>
@@ -1911,7 +1922,7 @@ ET`;
                       <div className="card-detail">{deal.email || "-"}</div>
                       <div className="card-detail">{deal.phone || "-"}</div>
                       <div className="card-source">
-                        <span className="source-text">${Number(deal.amount || 0).toLocaleString()}</span>
+                        <span className="source-text">{formatCurrency(deal.amount)}</span>
                       </div>
                     </div>
                   ))}
@@ -2582,7 +2593,7 @@ ET`;
                             <tr key={`${deal.name}-${index}`}>
                               <td>{deal.name}</td>
                               <td>{deal.company || "-"}</td>
-                              <td>${Number(deal.amount || 0).toLocaleString()}</td>
+                              <td>{formatCurrency(deal.amount)}</td>
                               <td>{deal.stage}</td>
                               <td>{deal.closingDate || "-"}</td>
                               <td>{deal.probability || "-"}</td>
@@ -2717,7 +2728,7 @@ ET`;
                       onChange={(e) => setEditDealForm((prev) => ({ ...prev, amount: e.target.value }))}
                     />
                   ) : (
-                    <span className="detail-value">${Number(selectedDeal.amount || 0).toLocaleString()}</span>
+                    <span className="detail-value">{formatCurrency(selectedDeal.amount)}</span>
                   )}
                 </div>
                 <div className="detail-row">
@@ -2861,7 +2872,7 @@ ET`;
                     <span className="detail-value">
                       {selectedDeal.expectedRevenue === null || selectedDeal.expectedRevenue === undefined
                         ? "-"
-                      : `$${Number(selectedDeal.expectedRevenue).toLocaleString()}`}
+                        : formatCurrency(selectedDeal.expectedRevenue)}
                     </span>
                   )}
                 </div>
@@ -2924,35 +2935,6 @@ ET`;
                     <span className="detail-value">{selectedDeal.reason || "-"}</span>
                   </div>
                 )}
-              </div>
-              <div className="status-section">
-                <h3>Change Stage</h3>
-                <div className="status-grid">
-                  {(() => {
-                    const currentStage = selectedDeal.stage;
-                    const allowedStages = new Set([
-                      currentStage,
-                      "lost",
-                      ...(allowedTransitions[currentStage] || [])
-                    ]);
-                    return stages.map((stage) => (
-                      <button
-                        key={stage.id}
-                        className={`status-btn-zoho ${selectedDeal.stage === stage.id ? "active" : ""} ${!allowedStages.has(stage.id) ? "disabled" : ""}`}
-                        style={{ 
-                          borderColor: stage.color, 
-                          color: selectedDeal.stage === stage.id ? stage.color : "",
-                          opacity: allowedStages.has(stage.id) ? 1 : 0.5
-                        }}
-                        disabled={!allowedStages.has(stage.id)}
-                        title={!allowedStages.has(stage.id) ? `Invalid transition from ${currentStage.replace(/_/g, " ")}` : ""}
-                        onClick={() => requestStageChange(selectedDeal._id, stage.id)}
-                      >
-                        {stage.name}
-                      </button>
-                    ));
-                  })()}
-                </div>
               </div>
               {selectedDeal.timeline && selectedDeal.timeline.length > 0 && (
                 <div className="timeline-section">
