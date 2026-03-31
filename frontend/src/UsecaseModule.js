@@ -179,37 +179,65 @@ function UsecaseModule() {
     };
   }, [usecaseActivities]);
 
+  const summaryCards = [
+    {
+      label: "Interested meetings",
+      value: stats.totalNotes,
+      hint: "Qualified discovery notes",
+    },
+    {
+      label: "Unique leads",
+      value: stats.uniqueLeads,
+      hint: "Distinct opportunities",
+    },
+    {
+      label: "Latest update",
+      value: stats.latestUpdated,
+      hint: "Most recent meeting note",
+    },
+  ];
+
   return (
     <div className="dashboard-layout">
       <Sidebar />
       <div className="main-content activity-module usecase-page">
         <div className="usecase-hero">
           <div className="usecase-hero__copy">
+            <div className="usecase-hero__breadcrumbs">
+              <span>Pipeline</span>
+              <span>/</span>
+              <span>Discovery</span>
+            </div>
             <span className="usecase-hero__eyebrow">Lead Discovery Notes</span>
             <h1>Usecase Notes</h1>
             <p>
               Structured meeting notes captured when a lead shows interest. Review requirements,
               pain points, qualification, and meeting context in one place.
             </p>
+            <div className="usecase-hero__chips">
+              <span className="usecase-chip">Interested leads</span>
+              <span className="usecase-chip usecase-chip--soft">Meeting summary</span>
+              <span className="usecase-chip usecase-chip--accent">{stats.totalNotes} records</span>
+            </div>
           </div>
 
           <div className="usecase-stats">
-            <div className="usecase-stat-card">
-              <span>Total Notes</span>
-              <strong>{stats.totalNotes}</strong>
-            </div>
-            <div className="usecase-stat-card">
-              <span>Unique Leads</span>
-              <strong>{stats.uniqueLeads}</strong>
-            </div>
-            <div className="usecase-stat-card">
-              <span>Latest Update</span>
-              <strong>{stats.latestUpdated}</strong>
-            </div>
+            {summaryCards.map((card) => (
+              <div className="usecase-stat-card" key={card.label}>
+                <span>{card.label}</span>
+                <strong>{card.value}</strong>
+                <small>{card.hint}</small>
+              </div>
+            ))}
           </div>
         </div>
 
-        {error ? <div className="activity-toast">{error}</div> : null}
+        {error ? (
+          <div className="usecase-inline-alert" role="alert">
+            <strong>Unable to load usecase notes</strong>
+            <span>{error}</span>
+          </div>
+        ) : null}
 
         <div className="usecase-board">
           <div className="activity-table-card usecase-board__header">
@@ -218,13 +246,29 @@ function UsecaseModule() {
                 <h2>Usecase Meeting Notes</h2>
                 <p>All completed lead meetings with Interested outcome and structured meeting notes.</p>
               </div>
+              <div className="usecase-board__summary">
+                <div className="usecase-board__summary-item">
+                  <span>Records</span>
+                  <strong>{stats.totalNotes}</strong>
+                </div>
+                <div className="usecase-board__summary-item">
+                  <span>Last touched</span>
+                  <strong>{stats.latestUpdated}</strong>
+                </div>
+              </div>
             </div>
           </div>
 
           {loading ? (
-            <div className="activity-table-card usecase-state-card">Loading usecase notes...</div>
+            <div className="activity-table-card usecase-state-card">
+              <strong>Loading usecase notes...</strong>
+              <span>Fetching the latest interested meetings from the CRM.</span>
+            </div>
           ) : usecaseCards.length === 0 ? (
-            <div className="activity-table-card usecase-state-card">No usecase notes found yet.</div>
+            <div className="activity-table-card usecase-state-card">
+              <strong>No usecase notes found yet.</strong>
+              <span>When a lead meeting is marked Interested, the note details will appear here.</span>
+            </div>
           ) : (
             <div className="usecase-card-grid">
               {usecaseCards.map((activity) => (
@@ -239,7 +283,7 @@ function UsecaseModule() {
 
                   <div className="usecase-note-card__meta">
                     <span>Owner: {activity.owner?.name || activity.owner?.username || "-"}</span>
-                    <span>Date: {formatDateTime(activity.startDateTime || activity.dueDate || activity.createdAt)}</span>
+                    <span>Updated: {formatDateTime(activity.startDateTime || activity.dueDate || activity.createdAt)}</span>
                   </div>
 
                   <div className="usecase-note-card__notes">
