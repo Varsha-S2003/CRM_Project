@@ -2286,8 +2286,8 @@ router.post("/filter", verifyToken, async (req, res, next) => {
       .limit(limit)
       .skip(skip)
       .lean();
-    
-    res.json(leads);
+
+    res.json(leads.map((lead) => applyLeadScoring(lead)));
   } catch (err) {
     next(err);
   }
@@ -2335,7 +2335,7 @@ router.get("/all", verifyToken, permit("ADMIN", "MANAGER"), async (req, res, nex
       .sort({ [sort]: parseInt(order) })
       .limit(parseInt(limit))
       .skip(parseInt(skip));
-    res.json(leads);
+    res.json(leads.map((lead) => applyLeadScoring(lead)));
   } catch (err) {
     next(err);
   }
@@ -2383,7 +2383,7 @@ router.get("/my", verifyToken, permit("EMPLOYEE"), async (req, res, next) => {
       .sort({ [sort]: parseInt(order) })
       .limit(parseInt(limit))
       .skip(parseInt(skip));
-    res.json(leads);
+    res.json(leads.map((lead) => applyLeadScoring(lead)));
   } catch (err) {
     next(err);
   }

@@ -6,6 +6,72 @@ import Sidebar from "./Sidebar";
 import FilterBuilder from "./components/FilterBuilder";
 import { DEFAULT_COLUMNS } from "./utils/viewsUtils";
 
+const calculateLeadScoreForDisplay = (lead = {}) => {
+  let score = 0;
+
+  const emailOpened = Number(lead.emailOpened) || 0;
+  const websiteVisits = Number(lead.websiteVisits) || 0;
+  const formSubmissions = Number(lead.formSubmissions) || 0;
+  const hasEmail = Boolean(String(lead.email || "").trim());
+  const hasPhone = Boolean(String(lead.phone || lead.mobile || "").trim());
+  const hasCompany = Boolean(String(lead.company || "").trim());
+  const hasSource = Boolean(String(lead.source || "").trim());
+  const hasAssignee = Boolean(lead.assignedTo);
+  const normalizedStatus = String(lead.status || "").trim().toLowerCase();
+
+  if (hasEmail) score += 8;
+  if (hasPhone) score += 10;
+  if (hasCompany) score += 10;
+  if (hasSource) score += 5;
+  if (hasAssignee) score += 5;
+
+  if (emailOpened > 0) score += Math.min(12, emailOpened * 4);
+  if (websiteVisits > 0) score += Math.min(20, websiteVisits * 2);
+  if (formSubmissions > 0) score += Math.min(15, formSubmissions * 10);
+
+  if (normalizedStatus === "new") score += 5;
+  if (normalizedStatus === "contacted") score += 15;
+  if (normalizedStatus === "qualified") score += 30;
+  if (normalizedStatus === "proposal" || normalizedStatus === "proposal_sent") score += 40;
+  if (normalizedStatus === "converted") score += 50;
+  if (normalizedStatus === "lost") score -= 10;
+
+  if (lead.lastActivityDate) {
+    const lastActivity = new Date(lead.lastActivityDate);
+    if (!Number.isNaN(lastActivity.getTime())) {
+      const daysInactive = (Date.now() - lastActivity.getTime()) / (1000 * 60 * 60 * 24);
+      if (daysInactive <= 7) {
+        score += 10;
+      } else if (daysInactive <= 30) {
+        score += 5;
+      } else {
+        score -= 10;
+      }
+    }
+  }
+
+  return Math.max(0, Math.min(100, score));
+};
+
+const getLeadRatingForDisplay = (score = 0) => {
+  if (score >= 70) return "hot";
+  if (score >= 40) return "warm";
+  return "cold";
+};
+
+const normalizeLeadScoringForDisplay = (lead) => {
+  if (!lead || typeof lead !== "object") return lead;
+  const score = calculateLeadScoreForDisplay(lead);
+  return {
+    ...lead,
+    score,
+    rating: getLeadRatingForDisplay(score),
+  };
+};
+
+const normalizeLeadListForDisplay = (items) =>
+  (Array.isArray(items) ? items : []).map((lead) => normalizeLeadScoringForDisplay(lead));
+
 function Leads() {
   const ALL_LEADS_VIEW_ID = "__all_leads__";
   const [leads, setLeads] = useState([]);
@@ -180,7 +246,7 @@ function Leads() {
       const res = await axios.post("http://localhost:5000/api/leads/filter", payload, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      setLeads(res.data);
+      setLeads(normalizeLeadListForDisplay(res.data));
     } catch (err) {
       console.error("Failed to fetch filtered leads:", err);
     }
@@ -362,7 +428,7 @@ function Leads() {
         headers: { Authorization: `Bearer ${token}` },
         params,
       });
-      setLeads(res.data);
+      setLeads(normalizeLeadListForDisplay(res.data));
     } catch (err) {
       console.error(err);
     }
@@ -1097,7 +1163,7 @@ function Leads() {
         { headers: { Authorization: `Bearer ${token}` } }
       );
 
-      const updatedLead = res.data;
+      const updatedLead = normalizeLeadScoringForDisplay(res.data);
       setLeads((prev) => prev.map((lead) => (lead._id === updatedLead._id ? updatedLead : lead)));
       setSelectedLead(updatedLead);
       setIsEditingLead(false);
@@ -1128,7 +1194,7 @@ function Leads() {
       if (res.status === 202) {
         alert(res.data?.message || "Transition request sent for approval.");
         if (res.data?.lead?._id) {
-          setSelectedLead(res.data.lead);
+          setSelectedLead(normalizeLeadScoringForDisplay(res.data.lead));
         }
         fetchLeads();
         fetchStats();
@@ -1226,8 +1292,9 @@ function Leads() {
 
       const convertedLead = res.data?.lead;
       if (convertedLead?._id) {
-        setLeads((prev) => prev.map((lead) => (lead._id === convertedLead._id ? convertedLead : lead)));
-        setSelectedLead(convertedLead);
+        const normalizedLead = normalizeLeadScoringForDisplay(convertedLead);
+        setLeads((prev) => prev.map((lead) => (lead._id === normalizedLead._id ? normalizedLead : lead)));
+        setSelectedLead(normalizedLead);
       } else {
         fetchLeads();
       }
@@ -1253,7 +1320,7 @@ function Leads() {
         { leadId, userId },
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      const updatedLead = res.data;
+      const updatedLead = normalizeLeadScoringForDisplay(res.data);
       const assignedUser = userId
         ? employees.find((employee) => String(employee._id) === String(userId)) || { _id: userId }
         : null;
@@ -1281,7 +1348,7 @@ function Leads() {
           if (!getEntityId(nextLead.assignedTo) || String(getEntityId(nextLead.assignedTo)) !== String(userId || "")) {
             nextLead.assignedTo = assignedUser;
           }
-          return nextLead;
+          return normalizeLeadScoringForDisplay(nextLead);
         });
       }
     } catch (err) {
@@ -1325,7 +1392,7 @@ function Leads() {
 
       alert(res.data?.message || (approve ? "Transition approved" : "Transition rejected"));
       if (res.data?.lead?._id) {
-        setSelectedLead(res.data.lead);
+        setSelectedLead(normalizeLeadScoringForDisplay(res.data.lead));
       }
       fetchLeads();
       fetchStats();
@@ -1369,7 +1436,7 @@ function Leads() {
         if (prev.some((lead) => lead._id === duplicateLead._id)) {
           return prev;
         }
-        return [duplicateLead, ...prev];
+          return [normalizeLeadScoringForDisplay(duplicateLead), ...prev];
       });
     }
 
@@ -1484,7 +1551,7 @@ function Leads() {
           { headers: { Authorization: `Bearer ${token}` } }
         );
 
-        const updatedLead = res.data;
+        const updatedLead = normalizeLeadScoringForDisplay(res.data);
         setLeads((prev) => {
           const hasLead = prev.some((lead) => lead._id === updatedLead._id);
           if (!hasLead) return [updatedLead, ...prev];
@@ -1542,7 +1609,7 @@ function Leads() {
         { headers: { Authorization: `Bearer ${token}` } }
       );
 
-      const primary = res.data?.primaryLead;
+      const primary = normalizeLeadScoringForDisplay(res.data?.primaryLead);
       if (primary?._id) {
         setLeads((prev) => {
           const withoutMerged = prev.filter((lead) => !secondaryLeadIds.includes(lead._id));
