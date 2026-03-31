@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
+import axios from "axios";
 import { useLocation, useNavigate } from "react-router-dom";
 import BrandLogo from "./BrandLogo";
 import "./Dashboard.css";
@@ -20,12 +21,109 @@ function Sidebar() {
   const navigate = useNavigate();
   const location = useLocation();
   const [activitiesOpen, setActivitiesOpen] = useState(location.pathname.startsWith("/activities"));
+  const [reminderPopups, setReminderPopups] = useState([]);
+  const seenReminderIdsRef = useRef(new Set());
+  const token = localStorage.getItem("token");
 
   useEffect(() => {
     if (location.pathname.startsWith("/activities")) {
       setActivitiesOpen(true);
     }
   }, [location.pathname]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !("Notification" in window)) return;
+    if (Notification.permission === "default") {
+      Notification.requestPermission().catch(() => {});
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!token) return undefined;
+
+    const formatDateTime = (value) => {
+      if (!value) return "-";
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return "-";
+      return date.toLocaleString();
+    };
+
+    const fetchActivityReminderPopups = async () => {
+      try {
+        const [notificationsRes, activitiesRes] = await Promise.all([
+          axios.get("http://localhost:5000/api/activities/notifications", {
+            params: { mode: "dashboard" },
+            headers: { Authorization: `Bearer ${token}` },
+          }),
+          axios.get("http://localhost:5000/api/activities", {
+            headers: { Authorization: `Bearer ${token}` },
+          }),
+        ]);
+
+        const items = Array.isArray(notificationsRes.data?.notifications) ? notificationsRes.data.notifications : [];
+        const activities = Array.isArray(activitiesRes.data) ? activitiesRes.data : [];
+        const activityMap = new Map(
+          activities.map((activity) => [
+            String(activity?._id || ""),
+            activity,
+          ])
+        );
+        const now = Date.now();
+        items
+          .filter((item) => ["call", "meeting"].includes(String(item?.type || "").toLowerCase()))
+          .filter((item) => {
+            const reminderAt = new Date(item?.reminderTime || "").getTime();
+            if (!Number.isFinite(reminderAt)) return false;
+            return reminderAt <= now && now - reminderAt <= 60 * 1000;
+          })
+          .forEach((item) => {
+            const key = String(item?.id || item?._id || "");
+            if (!key || seenReminderIdsRef.current.has(key)) return;
+
+            seenReminderIdsRef.current.add(key);
+            const activity = activityMap.get(key);
+            const activityStartTime =
+              activity?.startDateTime ||
+              activity?.dueDate ||
+              item?.displayTime ||
+              item?.startDateTime ||
+              item?.scheduledTime ||
+              item?.reminderTime ||
+              "";
+            const popup = {
+              id: key,
+              title: item?.title || "Upcoming activity",
+              type: item?.type || "activity",
+              relatedTo: item?.relatedTo?.recordName || "Lead",
+              reminderTime: item?.reminderTime || "",
+              startDateTime: activityStartTime,
+              message: `${item?.title || "Upcoming activity"} starts at ${formatDateTime(activityStartTime)}`,
+            };
+
+            setReminderPopups((prev) => [...prev, popup]);
+
+            if (typeof window !== "undefined" && "Notification" in window && Notification.permission === "granted") {
+              const notification = new Notification("CRM Reminder", {
+                body: popup.message,
+              });
+              notification.onclick = () => {
+                window.focus();
+              };
+            }
+
+            window.setTimeout(() => {
+              setReminderPopups((prev) => prev.filter((entry) => entry.id !== key));
+            }, 12000);
+          });
+      } catch (error) {
+        console.error("Sidebar reminder popup fetch error:", error);
+      }
+    };
+
+    fetchActivityReminderPopups();
+    const interval = window.setInterval(fetchActivityReminderPopups, 10000);
+    return () => window.clearInterval(interval);
+  }, [token]);
 
   const handleNav = (path, e) => {
     e.preventDefault();
@@ -55,7 +153,29 @@ function Sidebar() {
   };
 
   return (
-    <div className="sidebar-zoho">
+    <>
+      {reminderPopups.length > 0 ? (
+        <div className="global-reminder-popups">
+          {reminderPopups.map((popup) => (
+            <div key={popup.id} className="global-reminder-popup" role="alert" aria-live="assertive">
+              <button
+                type="button"
+                className="global-reminder-close"
+                onClick={() => setReminderPopups((prev) => prev.filter((item) => item.id !== popup.id))}
+                aria-label="Dismiss reminder"
+              >
+                x
+              </button>
+              <div className="global-reminder-title">Reminder: {popup.title}</div>
+              <div className="global-reminder-meta">{popup.type} for {popup.relatedTo}</div>
+              <div className="global-reminder-time">
+                Starts at {popup.startDateTime ? new Date(popup.startDateTime).toLocaleString() : "-"}
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : null}
+      <div className="sidebar-zoho">
       <div className="sidebar-brand">
         <BrandLogo className="company-logo sidebar-company-logo" title="ELOGIXA" />
       </div>
@@ -343,7 +463,8 @@ function Sidebar() {
           <span>Logout</span>
         </button>
       </div>
-    </div>
+      </div>
+    </>
   );
 }
 

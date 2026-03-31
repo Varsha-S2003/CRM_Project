@@ -662,6 +662,49 @@ const getOwnerId = (activity) => {
   return String(owner);
 };
 
+const getActivityReminderRecipient = (activity) => {
+  const relatedRecord = activity?.relatedTo?.recordId;
+  const relatedType = String(activity?.relatedTo?.recordType || "").toLowerCase();
+
+  const relatedEmail = String(
+    relatedRecord?.email ||
+    relatedRecord?.secondaryEmail ||
+    ""
+  ).trim();
+
+  const relatedName = String(
+    relatedRecord?.name ||
+    [relatedRecord?.firstName, relatedRecord?.lastName].filter(Boolean).join(" ").trim() ||
+    relatedRecord?.company ||
+    activity?.relatedTo?.recordName ||
+    ""
+  ).trim();
+
+  if (relatedEmail) {
+    return {
+      email: relatedEmail,
+      name: relatedName || activity?.relatedTo?.recordName || "Client",
+      target: relatedType || "client",
+    };
+  }
+
+  const ownerEmail = String(activity?.owner?.email || "").trim();
+  const ownerName = String(activity?.owner?.name || activity?.owner?.username || "").trim();
+  if (ownerEmail) {
+    return {
+      email: ownerEmail,
+      name: ownerName || "there",
+      target: "owner",
+    };
+  }
+
+  return {
+    email: "",
+    name: "",
+    target: relatedType || "client",
+  };
+};
+
 router.get("/", verifyToken, async (req, res) => {
   try {
     const filter = buildFilters(req.query, req.user);
@@ -838,7 +881,7 @@ router.get("/notifications", verifyToken, async (req, res) => {
       : new Date(now.getTime() - 1000 * 60);
     const windowEnd = isDashboardMode
       ? new Date(now.getTime() + 1000 * 60 * 60)
-      : new Date(now.getTime() + 1000 * 60 * 5);
+      : new Date(now.getTime() + 1000 * 15);
 
     const notificationFilter = {
         owner: req.user._id,
@@ -874,28 +917,34 @@ router.get("/notifications", verifyToken, async (req, res) => {
     const emailCandidates = activities.filter((activity) => {
       const emailEnabled = activity.reminderChannels?.email === true;
       const emailAlreadySent = Boolean(activity.notificationState?.emailNotifiedAt);
-      const ownerEmail = activity.owner?.email;
-      return emailEnabled && !emailAlreadySent && ownerEmail;
+      const recipient = getActivityReminderRecipient(activity);
+      return emailEnabled && !emailAlreadySent && Boolean(recipient.email);
     });
 
     await Promise.all(
       emailCandidates.map(async (activity) => {
         const activityId = String(activity._id);
+        const recipient = getActivityReminderRecipient(activity);
         try {
           const emailResponse = await sendActivityReminderEmail({
-            to: activity.owner.email,
+            to: recipient.email,
             ownerName: activity.owner?.name || activity.owner?.username,
+            recipientName: recipient.name,
             activity,
           });
 
           emailNotifiedActivityIds.push(activity._id);
           emailSendMap.set(activityId, {
             sent: true,
+            target: recipient.target,
+            to: recipient.email,
             preview: emailResponse?.preview || null,
           });
         } catch (emailErr) {
           emailSendMap.set(activityId, {
             sent: false,
+            target: recipient.target,
+            to: recipient.email,
             error: emailErr.message,
           });
         }
@@ -914,21 +963,22 @@ router.get("/notifications", verifyToken, async (req, res) => {
       const emailEnabled = activity.reminderChannels?.email === true;
       const emailAlreadySent = Boolean(activity.notificationState?.emailNotifiedAt);
       const emailAttempt = emailSendMap.get(activityId);
+      const recipient = getActivityReminderRecipient(activity);
 
       let emailStatus = "Popup only";
       if (emailEnabled) {
         if (emailAttempt?.sent) {
           emailStatus = emailAttempt.preview
-            ? `Email sent (preview available)`
-            : "Email sent";
+            ? `Email sent to ${emailAttempt.target} (${emailAttempt.to}) (preview available)`
+            : `Email sent to ${emailAttempt.target} (${emailAttempt.to})`;
         } else if (emailAttempt?.sent === false) {
           emailStatus = `Email failed: ${emailAttempt.error}`;
         } else if (emailAlreadySent) {
           emailStatus = "Email already sent";
-        } else if (!activity.owner?.email) {
-          emailStatus = "Email skipped: owner email missing";
+        } else if (!recipient.email) {
+          emailStatus = `Email skipped: ${recipient.target} email missing`;
         } else {
-          emailStatus = "Queued for email reminder";
+          emailStatus = `Queued for email reminder to ${recipient.target}`;
         }
       }
 
@@ -937,6 +987,9 @@ router.get("/notifications", verifyToken, async (req, res) => {
       title: activity.title,
       type: activity.activityType,
       reminderTime: activity.reminderTime,
+      startDateTime: activity.startDateTime || activity.dueDate || null,
+      scheduledTime: getActivityDate(activity) || null,
+      displayTime: activity.startDateTime || activity.dueDate || getActivityDate(activity) || null,
       owner: activity.owner,
       relatedTo: activity.relatedTo,
       popup: activity.reminderChannels?.popup ?? true,

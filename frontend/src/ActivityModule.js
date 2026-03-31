@@ -35,30 +35,17 @@ const TYPE_OPTIONS = [
 ];
 
 const PRIORITY_OPTIONS = ["Low", "Medium", "High"];
+const CALL_REMINDER_OPTIONS = [
+  { value: "", label: "None" },
+  { value: "5", label: "5 minutes before" },
+  { value: "15", label: "15 minutes before" },
+  { value: "30", label: "30 minutes before" },
+];
 const VIEW_OPTIONS = ["month", "week", "day"];
 const CHART_COLORS = ["#202124", "#efb521", "#46b84d", "#9dc63b"];
 const TASK_BOARD_COLUMNS = ["Not Started", "Deferred", "In Progress", "Completed"];
 const MEETING_BOARD_COLUMNS = ["Scheduled", "Today", "Completed", "Cancelled"];
 const CALL_BOARD_COLUMNS = ["Scheduled", "Today", "Completed", "Missed"];
-const OUTCOME_OPTIONS = [
-  { value: "", label: "Select outcome" },
-  { value: "interested", label: "Interested" },
-  { value: "not_interested", label: "Not Interested" },
-  { value: "no_response", label: "No Response" },
-  { value: "follow_up_needed", label: "Follow-up Needed" },
-];
-const STAGE_OPTIONS = [
-  { value: "", label: "Select stage" },
-  { value: "contacted", label: "Contacted" },
-  { value: "meeting", label: "Meeting" },
-  { value: "qualified", label: "Qualified" },
-];
-const FOLLOW_UP_TYPE_OPTIONS = [
-  { value: "", label: "Auto (recommended)" },
-  { value: "task", label: "Task" },
-  { value: "meeting", label: "Meeting" },
-  { value: "call", label: "Call" },
-];
 const COMPLETE_OUTCOME_OPTIONS = [
   { value: "interested", label: "Interested" },
   { value: "not_interested", label: "Not Interested" },
@@ -135,6 +122,7 @@ const createDefaultForm = (ownerId, relatedOptions) => ({
   relatedType: relatedOptions[0]?.type || "Lead",
   relatedId: relatedOptions[0]?.id || "",
   reminderTime: "",
+  reminderOffset: "",
   reminderChannels: { popup: true, email: false },
   recurrence: "none",
   location: "",
@@ -147,6 +135,7 @@ const createDefaultForm = (ownerId, relatedOptions) => ({
   callNotes: "",
   callDate: "",
   callTime: "",
+  callReminderOffset: "",
   outcome: "",
   requiresFollowUp: false,
   stage: "",
@@ -291,25 +280,51 @@ const toLocalDateTimeInputValue = (value) => {
   return `${toLocalDateInputValue(date)}T${toLocalTimeInputValue(date)}`;
 };
 
-const getDraftReferenceDate = (draft) => {
-  if (!draft) return null;
-  if (draft.activityType === "task") {
-    return parseDateValue(draft.dueDate);
+const getCallReminderOffset = (startDateTime, reminderTime) => {
+  const start = parseDateValue(startDateTime);
+  const reminder = parseDateValue(reminderTime);
+  if (!start || !reminder) return "";
+
+  const diffMinutes = Math.round((start.getTime() - reminder.getTime()) / (1000 * 60));
+  if ([5, 15, 30].includes(diffMinutes)) {
+    return String(diffMinutes);
   }
-  if (draft.activityType === "meeting") {
-    return buildDateTime(draft.meetingDate, draft.startTime);
+  return "";
+};
+
+const buildCallReminderDateTime = (callDate, callTime, offsetMinutes) => {
+  const start = buildDateTime(callDate, callTime);
+  const offset = Number(offsetMinutes);
+  if (!start || !Number.isFinite(offset) || offset <= 0) return null;
+  const reminderDate = new Date(start.getTime() - offset * 60 * 1000);
+  return Number.isNaN(reminderDate.getTime()) ? null : reminderDate;
+};
+
+const getReminderOffset = (baseDateTime, reminderTime) => {
+  const base = parseDateValue(baseDateTime);
+  const reminder = parseDateValue(reminderTime);
+  if (!base || !reminder) return "";
+
+  const diffMinutes = Math.round((base.getTime() - reminder.getTime()) / (1000 * 60));
+  if ([5, 15, 30].includes(diffMinutes)) {
+    return String(diffMinutes);
   }
-  if (draft.activityType === "call") {
-    return buildDateTime(draft.callDate, draft.callTime);
-  }
-  return null;
+  return "";
+};
+
+const buildReminderDateTime = (baseDateTime, offsetMinutes) => {
+  const base = parseDateValue(baseDateTime);
+  const offset = Number(offsetMinutes);
+  if (!base || !Number.isFinite(offset) || offset <= 0) return null;
+  const reminderDate = new Date(base.getTime() - offset * 60 * 1000);
+  return Number.isNaN(reminderDate.getTime()) ? null : reminderDate;
 };
 
 const validateActivityForm = (draft) => {
   const errors = {};
   const title = String(draft.title || "").trim();
-  const emailReminderEnabled = Boolean(draft.reminderChannels?.email);
-  const normalizedStatus = String(draft.status || "").toLowerCase();
+  const reminderEnabled = Boolean(draft.reminderChannels?.popup || draft.reminderChannels?.email);
+  const now = new Date();
 
   if (!title) {
     errors.title = "Title is required.";
@@ -327,14 +342,13 @@ const validateActivityForm = (draft) => {
     errors.relatedId = "Related record is required.";
   }
 
-  if (emailReminderEnabled && !draft.reminderTime) {
-    errors.reminderTime = "Choose a reminder time when email reminder is enabled.";
-  }
-
-  if (draft.reminderTime) {
-    const reminderDate = parseDateValue(draft.reminderTime);
-    if (!reminderDate) {
-      errors.reminderTime = "Reminder time is invalid.";
+  if (reminderEnabled) {
+    if (draft.activityType === "call") {
+      if (!String(draft.callReminderOffset || "").trim()) {
+        errors.reminderTime = "Choose a reminder (5m/15m/30m) to enable popup or email notification.";
+      }
+    } else if (!String(draft.reminderOffset || "").trim()) {
+      errors.reminderTime = "Choose a reminder (5m/15m/30m) to enable popup or email notification.";
     }
   }
 
@@ -342,11 +356,17 @@ const validateActivityForm = (draft) => {
     const dueDate = parseDateValue(draft.dueDate);
     if (!draft.dueDate || !dueDate) {
       errors.dueDate = "Due date and time are required.";
+    } else if (dueDate < now) {
+      errors.dueDate = "Due date and time cannot be in the past.";
     }
 
-    if (draft.reminderTime && dueDate) {
-      const reminderDate = parseDateValue(draft.reminderTime);
-      if (reminderDate && reminderDate > dueDate) {
+    if (String(draft.reminderOffset || "").trim() && dueDate) {
+      const reminderDate = buildReminderDateTime(draft.dueDate, draft.reminderOffset);
+      if (!reminderDate) {
+        errors.reminderTime = "Reminder is invalid for selected task due date.";
+      } else if (reminderDate < now) {
+        errors.reminderTime = "Reminder time cannot be in the past.";
+      } else if (reminderDate > dueDate) {
         errors.reminderTime = "Reminder must be before the task due date.";
       }
     }
@@ -365,13 +385,20 @@ const validateActivityForm = (draft) => {
 
     const meetingStart = buildDateTime(draft.meetingDate, draft.startTime);
     const meetingEnd = buildDateTime(draft.meetingDate, draft.endTime);
+    if (meetingStart && meetingStart < now) {
+      errors.startTime = "Meeting start time cannot be in the past.";
+    }
     if (meetingStart && meetingEnd && meetingEnd <= meetingStart) {
       errors.endTime = "End time must be after start time.";
     }
 
-    if (draft.reminderTime && meetingStart) {
-      const reminderDate = parseDateValue(draft.reminderTime);
-      if (reminderDate && reminderDate > meetingStart) {
+    if (String(draft.reminderOffset || "").trim() && meetingStart) {
+      const reminderDate = buildReminderDateTime(meetingStart, draft.reminderOffset);
+      if (!reminderDate) {
+        errors.reminderTime = "Reminder is invalid for selected meeting time.";
+      } else if (reminderDate < now) {
+        errors.reminderTime = "Reminder time cannot be in the past.";
+      } else if (reminderDate > meetingStart) {
         errors.reminderTime = "Reminder must be before the meeting start time.";
       }
     }
@@ -387,6 +414,9 @@ const validateActivityForm = (draft) => {
 
     const callStart = buildDateTime(draft.callDate, draft.callTime);
     const parsedDuration = Number(draft.callDuration);
+    if (callStart && callStart < now) {
+      errors.callTime = "Call time cannot be in the past.";
+    }
     if (!Number.isFinite(parsedDuration) || parsedDuration <= 0 || parsedDuration > 1440) {
       errors.callDuration = "Duration must be between 1 and 1440 minutes.";
     }
@@ -397,21 +427,14 @@ const validateActivityForm = (draft) => {
         errors.reminderTime = "Reminder must be before the call time.";
       }
     }
-  }
 
-  if (normalizedStatus === "completed") {
-    if (!String(draft.outcome || "").trim()) {
-      errors.outcome = "Outcome is required when activity is completed.";
-    }
-    if (!String(draft.stage || "").trim()) {
-      errors.stage = "Stage is required when activity is completed.";
-    }
-  }
-
-  if (draft.requiresFollowUp) {
-    const followUpDays = Number(draft.followUpInDays);
-    if (!Number.isFinite(followUpDays) || followUpDays < 1 || followUpDays > 30) {
-      errors.followUpInDays = "Follow-up days must be between 1 and 30.";
+    if (draft.callReminderOffset) {
+      const autoReminder = buildCallReminderDateTime(draft.callDate, draft.callTime, draft.callReminderOffset);
+      if (!autoReminder) {
+        errors.reminderTime = "Reminder is invalid for selected call date/time.";
+      } else if (autoReminder < now) {
+        errors.reminderTime = "Reminder time cannot be in the past.";
+      }
     }
   }
 
@@ -553,16 +576,16 @@ function ActivityModule() {
     email: "",
     sendEmail: true,
   });
-  const [reminderPopups, setReminderPopups] = useState([]);
   const [showCompleteModal, setShowCompleteModal] = useState(false);
   const [completeBusy, setCompleteBusy] = useState(false);
   const [completionTarget, setCompletionTarget] = useState(null);
   const [completionForm, setCompletionForm] = useState(createDefaultCompletionForm);
   const [returnToRequestsAfterSubmit, setReturnToRequestsAfterSubmit] = useState(false);
+  const [lockRelatedRecordContext, setLockRelatedRecordContext] = useState(false);
+  const [lockPrefilledActivityFields, setLockPrefilledActivityFields] = useState(false);
   const [redirectAfterProposalSubmit, setRedirectAfterProposalSubmit] = useState("");
   const autoOpenKeyRef = useRef("");
   const autoOpenProposalKeyRef = useRef("");
-  const seenReminderIdsRef = useRef(new Set());
 
   const token = localStorage.getItem("token");
   const currentUserId = localStorage.getItem("userId") || "";
@@ -598,42 +621,6 @@ function ActivityModule() {
     const res = await axios.get("http://localhost:5000/api/activities/notifications", { headers: apiHeaders });
     const items = res.data.notifications || [];
     setNotifications(items);
-
-    items.forEach((item) => {
-      const key = String(item.id || item._id || "");
-      if (!key || seenReminderIdsRef.current.has(key)) {
-        return;
-      }
-
-      seenReminderIdsRef.current.add(key);
-      const message = `${item.title} starts at ${formatDateTime(item.reminderTime)}`;
-      setToast(message);
-
-      setReminderPopups((prev) => [
-        ...prev,
-        {
-          id: key,
-          title: item.title || "Upcoming activity",
-          type: item.type || "activity",
-          relatedTo: item.relatedTo?.recordName || "Lead",
-          reminderTime: item.reminderTime,
-          message,
-        },
-      ]);
-
-      if (typeof window !== "undefined" && "Notification" in window && Notification.permission === "granted") {
-        const notification = new Notification("CRM Reminder", {
-          body: `${item.title} (${item.type}) in 5 minutes`,
-        });
-        notification.onclick = () => {
-          window.focus();
-        };
-      }
-
-      setTimeout(() => {
-        setReminderPopups((prev) => prev.filter((popup) => popup.id !== key));
-      }, 12000);
-    });
   }, [apiHeaders]);
 
   const fetchRelatedRecords = useCallback(async () => {
@@ -698,13 +685,6 @@ function ActivityModule() {
     fetchUsers();
     fetchRelatedRecords();
   }, [fetchRelatedRecords, fetchUsers]);
-
-  useEffect(() => {
-    if (typeof window === "undefined" || !("Notification" in window)) return;
-    if (Notification.permission === "default") {
-      Notification.requestPermission().catch(() => {});
-    }
-  }, []);
 
   useEffect(() => {
     fetchNotifications();
@@ -793,13 +773,16 @@ function ActivityModule() {
       ...createDefaultForm(currentUserId, relatedOptions),
       activityType,
       status: activityType === "task" ? "Pending" : "Scheduled",
-      stage: getDefaultStageByActivityType(activityType),
       relatedType: selectedRecord?.type || relatedTypeParam,
       relatedId: selectedRecord?.id || relatedIdParam,
       title: `${prefix}: ${relatedNameParam || selectedRecord?.name || "Lead"}`,
       callDate: activityType === "call" ? today : "",
       meetingDate: activityType === "meeting" ? today : "",
+      reminderOffset: "",
+      callReminderOffset: activityType === "call" ? "5" : "",
     });
+    setLockRelatedRecordContext(Boolean(selectedRecord?.id));
+    setLockPrefilledActivityFields(true);
     setShowModal(true);
 
     const nextParams = new URLSearchParams(searchParams);
@@ -821,8 +804,11 @@ function ActivityModule() {
       ...createDefaultForm(currentUserId, relatedOptions),
       activityType: nextDefaultType,
       status: nextDefaultType === "task" ? "Pending" : "Scheduled",
-      stage: getDefaultStageByActivityType(nextDefaultType),
+      reminderOffset: "",
+      callReminderOffset: nextDefaultType === "call" ? "5" : "",
     });
+    setLockRelatedRecordContext(false);
+    setLockPrefilledActivityFields(false);
     setShowModal(true);
   };
 
@@ -855,23 +841,19 @@ function ActivityModule() {
   const minDate = useMemo(() => getTodayDateInputValue(), []);
   const minDateTime = useMemo(() => getCurrentDateTimeInputValue(), []);
   const currentModule = MODULE_CONFIG[activeSidebar] || MODULE_CONFIG.all;
-  const clearFieldError = (field) => {
-    setFormErrors((prev) => {
-      if (!prev[field]) return prev;
-      const next = { ...prev };
-      delete next[field];
+  const updateField = (field, value) => {
+    setForm((prev) => {
+      const next = { ...prev, [field]: value };
+      setFormErrors((prevErrors) => (Object.keys(prevErrors).length ? validateActivityForm(next) : prevErrors));
       return next;
     });
-  };
-
-  const updateField = (field, value) => {
-    setForm((prev) => ({ ...prev, [field]: value }));
-    clearFieldError(field);
   };
 
   const closeModal = () => {
     setShowModal(false);
     setFormErrors({});
+    setLockRelatedRecordContext(false);
+    setLockPrefilledActivityFields(false);
   };
 
   const closeProposalModal = () => {
@@ -967,26 +949,6 @@ function ActivityModule() {
     }
   };
 
-  const applyReminderPreset = (minutesBefore) => {
-    const referenceDate = getDraftReferenceDate(form);
-    if (!referenceDate) {
-      setToast("Set call/meeting/task schedule first, then apply a reminder preset.");
-      return;
-    }
-
-    const reminderDate = new Date(referenceDate.getTime() - minutesBefore * 60 * 1000);
-    if (Number.isNaN(reminderDate.getTime())) {
-      setToast("Unable to calculate reminder time.");
-      return;
-    }
-
-    setForm((prev) => ({
-      ...prev,
-      reminderTime: toLocalDateTimeInputValue(reminderDate),
-    }));
-    clearFieldError("reminderTime");
-  };
-
   const taskBoardColumns = useMemo(() => {
     const columns = TASK_BOARD_COLUMNS.reduce((acc, label) => ({ ...acc, [label]: [] }), {});
     activities.forEach((activity) => {
@@ -1065,6 +1027,12 @@ function ActivityModule() {
       relatedType: activity.relatedTo?.recordType || "Lead",
       relatedId: activity.relatedTo?.recordId?._id || activity.relatedTo?.recordId || "",
       reminderTime: toLocalDateTimeInputValue(activity.reminderTime),
+      reminderOffset:
+        activity.activityType === "task"
+          ? getReminderOffset(activity.dueDate, activity.reminderTime)
+          : activity.activityType === "meeting"
+            ? getReminderOffset(activity.startDateTime, activity.reminderTime)
+            : "",
       reminderChannels: {
         popup: activity.reminderChannels?.popup ?? true,
         email: activity.reminderChannels?.email ?? false,
@@ -1080,12 +1048,15 @@ function ActivityModule() {
       callNotes: activity.call?.callNotes || "",
       callDate: toLocalDateInputValue(activity.startDateTime),
       callTime: toLocalTimeInputValue(activity.startDateTime),
+      callReminderOffset: getCallReminderOffset(activity.startDateTime, activity.reminderTime),
       outcome: activity.outcome || "",
       requiresFollowUp: Boolean(activity.requiresFollowUp),
       stage: activity.stage || getDefaultStageByActivityType(activity.activityType),
       followUpType: activity.followUpType || "",
       followUpInDays: Number(activity.followUpInDays) || 1,
     });
+    setLockRelatedRecordContext(false);
+    setLockPrefilledActivityFields(false);
     setShowModal(true);
   };
 
@@ -1099,7 +1070,14 @@ function ActivityModule() {
     }
 
     setFormErrors({});
-    const normalizedReminderTime = parseDateValue(form.reminderTime);
+    const normalizedReminderTime =
+      form.activityType === "call"
+        ? buildCallReminderDateTime(form.callDate, form.callTime, form.callReminderOffset)
+        : form.activityType === "task"
+          ? buildReminderDateTime(form.dueDate, form.reminderOffset)
+          : form.activityType === "meeting"
+            ? buildReminderDateTime(buildDateTime(form.meetingDate, form.startTime), form.reminderOffset)
+            : parseDateValue(form.reminderTime);
     const normalizedDueDate = parseDateValue(form.dueDate);
     const normalizedMeetingStart = buildDateTime(form.meetingDate, form.startTime);
     const normalizedMeetingEnd = buildDateTime(form.meetingDate, form.endTime);
@@ -1120,11 +1098,11 @@ function ActivityModule() {
           ? (normalizedMeetingEnd ? normalizedMeetingEnd.toISOString() : null)
           : undefined,
       participants: form.participants,
-      outcome: form.outcome || "",
-      requiresFollowUp: Boolean(form.requiresFollowUp),
-      stage: form.stage || "",
-      followUpType: form.requiresFollowUp ? (form.followUpType || "") : "",
-      followUpInDays: form.requiresFollowUp ? Number(form.followUpInDays || 1) : 1,
+      outcome: "",
+      requiresFollowUp: false,
+      stage: "",
+      followUpType: "",
+      followUpInDays: 1,
       taskTitle: form.activityType === "task" ? form.title : undefined,
       meetingTitle: form.activityType === "meeting" ? form.title : undefined,
       callSubject: form.activityType === "call" ? form.title : undefined,
@@ -1140,6 +1118,7 @@ function ActivityModule() {
 
       setShowModal(false);
       setToast("Activity saved successfully.");
+      setLockPrefilledActivityFields(false);
       if (returnToRequestsAfterSubmit) {
         navigate("/requests");
         return;
@@ -1915,25 +1894,6 @@ function ActivityModule() {
     <div className="dashboard-layout">
       <Sidebar />
       <div className="main-content activity-module">
-        {reminderPopups.length > 0 ? (
-          <div className="activity-reminder-popups">
-            {reminderPopups.map((popup) => (
-              <div key={popup.id} className="activity-reminder-popup" role="alert" aria-live="assertive">
-                <button
-                  type="button"
-                  className="activity-reminder-close"
-                  onClick={() => setReminderPopups((prev) => prev.filter((item) => item.id !== popup.id))}
-                  aria-label="Dismiss reminder"
-                >
-                  x
-                </button>
-                <div className="activity-reminder-title">Reminder: {popup.title}</div>
-                <div className="activity-reminder-meta">{String(popup.type || "").toUpperCase()} • {popup.relatedTo}</div>
-                <div className="activity-reminder-time">Starts at {formatDateTime(popup.reminderTime)}</div>
-              </div>
-            ))}
-          </div>
-        ) : null}
         {activeSidebar === "task" ? renderTaskBoard() : activeSidebar === "meeting" ? renderMeetingBoard() : activeSidebar === "call" ? renderCallBoard() : (
         <>
         <div className="activity-topbar">
@@ -2031,7 +1991,7 @@ function ActivityModule() {
                         <div>
                           <strong>{item.title}</strong>
                           <p className={`activity-related-label ${relatedClass}`}>
-                            {item.relatedTo?.recordName} • {formatDateTime(item.startDateTime || item.dueDate)}
+                            {item.relatedTo?.recordName} â€¢ {formatDateTime(item.startDateTime || item.dueDate)}
                           </p>
                         </div>
                       </div>
@@ -2050,7 +2010,7 @@ function ActivityModule() {
                         <div>
                           <strong>{item.title}</strong>
                           <p>
-                            {item.owner?.name || item.owner?.username} • {formatDateTime(item.startDateTime || item.dueDate)}
+                            {item.owner?.name || item.owner?.username} â€¢ {formatDateTime(item.startDateTime || item.dueDate)}
                           </p>
                         </div>
                       </div>
@@ -2069,7 +2029,7 @@ function ActivityModule() {
                         <div>
                           <strong>{item.title}</strong>
                           <p>
-                            {item.priority} priority • {formatDate(item.startDateTime || item.dueDate)}
+                            {item.priority} priority â€¢ {formatDate(item.startDateTime || item.dueDate)}
                           </p>
                         </div>
                       </div>
@@ -2234,7 +2194,7 @@ function ActivityModule() {
                             <div>
                               <strong>{activity.title}</strong>
                               <p className={`activity-related-label ${relatedClass}`}>
-                                {formatDateTime(activity.startDateTime || activity.dueDate)} • {activity.relatedTo?.recordName}
+                                {formatDateTime(activity.startDateTime || activity.dueDate)} â€¢ {activity.relatedTo?.recordName}
                               </p>
                             </div>
                           </div>
@@ -2303,7 +2263,7 @@ function ActivityModule() {
                       <div>
                         <strong>{activity.title}</strong>
                         <p className={`activity-related-label ${relatedClass}`}>
-                          {activity.relatedTo?.recordType}: {activity.relatedTo?.recordName} • {formatDateTime(activity.startDateTime || activity.dueDate)}
+                          {activity.relatedTo?.recordType}: {activity.relatedTo?.recordName} â€¢ {formatDateTime(activity.startDateTime || activity.dueDate)}
                         </p>
                       </div>
                     </div>
@@ -2339,9 +2299,10 @@ function ActivityModule() {
                           ...prev,
                           activityType: nextType,
                           status: nextType === "task" ? "Pending" : "Scheduled",
-                          stage: prev.stage || getDefaultStageByActivityType(nextType),
+                          callReminderOffset: nextType === "call" ? (prev.callReminderOffset || "5") : "",
                         }));
                       }}
+                      disabled={lockPrefilledActivityFields || (activeSidebar === "call" && !editingActivity)}
                     >
                       <option value="task">Task</option>
                       <option value="meeting">Meeting</option>
@@ -2355,6 +2316,7 @@ function ActivityModule() {
                       onChange={(event) => updateField("title", event.target.value)}
                       className={formErrors.title ? "activity-input-error" : ""}
                       required
+                      disabled={lockPrefilledActivityFields}
                     />
                     {formErrors.title ? <span className="activity-form-error">{formErrors.title}</span> : null}
                   </label>
@@ -2364,6 +2326,7 @@ function ActivityModule() {
                       value={form.owner}
                       onChange={(event) => updateField("owner", event.target.value)}
                       className={formErrors.owner ? "activity-input-error" : ""}
+                      disabled={lockPrefilledActivityFields}
                     >
                       {users.map((user) => (
                         <option key={user._id} value={user._id}>{user.name || user.username}</option>
@@ -2386,11 +2349,16 @@ function ActivityModule() {
                       onChange={(event) => {
                         const nextType = event.target.value;
                         const nextRecord = relatedOptions.find((item) => item.type === nextType);
-                        setForm((prev) => ({ ...prev, relatedType: nextType, relatedId: nextRecord?.id || "" }));
-                        clearFieldError("relatedType");
-                        clearFieldError("relatedId");
+                        setForm((prev) => {
+                          const nextForm = { ...prev, relatedType: nextType, relatedId: nextRecord?.id || "" };
+                          setFormErrors((prevErrors) => (
+                            Object.keys(prevErrors).length ? validateActivityForm(nextForm) : prevErrors
+                          ));
+                          return nextForm;
+                        });
                       }}
                       className={formErrors.relatedType ? "activity-input-error" : ""}
+                      disabled={lockRelatedRecordContext}
                     >
                       <option value="Lead">Lead</option>
                       <option value="Contact">Contact</option>
@@ -2404,38 +2372,13 @@ function ActivityModule() {
                       value={form.relatedId}
                       onChange={(event) => updateField("relatedId", event.target.value)}
                       className={formErrors.relatedId ? "activity-input-error" : ""}
+                      disabled={lockRelatedRecordContext}
                     >
                       {relatedByType.map((item) => (
                         <option key={item.id} value={item.id}>{item.name}</option>
                       ))}
                     </select>
                     {formErrors.relatedId ? <span className="activity-form-error">{formErrors.relatedId}</span> : null}
-                  </label>
-                  <label>
-                    Reminder Time
-                    <input
-                      type="datetime-local"
-                      min={minDateTime}
-                      value={form.reminderTime}
-                      onChange={(event) => updateField("reminderTime", event.target.value)}
-                      className={formErrors.reminderTime ? "activity-input-error" : ""}
-                    />
-                    <small className="activity-form-hint">Required for email reminders. Optional for popup reminders.</small>
-                    {formErrors.reminderTime ? <span className="activity-form-error">{formErrors.reminderTime}</span> : null}
-                    <div className="activity-reminder-presets" role="group" aria-label="Quick reminder presets">
-                      <button type="button" onClick={() => applyReminderPreset(5)}>5m before</button>
-                      <button type="button" onClick={() => applyReminderPreset(15)}>15m before</button>
-                      <button type="button" onClick={() => applyReminderPreset(30)}>30m before</button>
-                    </div>
-                  </label>
-                  <label>
-                    Recurrence
-                    <select value={form.recurrence} onChange={(event) => updateField("recurrence", event.target.value)}>
-                      <option value="none">None</option>
-                      <option value="daily">Daily</option>
-                      <option value="weekly">Weekly</option>
-                      <option value="monthly">Monthly</option>
-                    </select>
                   </label>
                 </div>
 
@@ -2452,6 +2395,18 @@ function ActivityModule() {
                         required
                       />
                       {formErrors.dueDate ? <span className="activity-form-error">{formErrors.dueDate}</span> : null}
+                    </label>
+                    <label>
+                      Reminder
+                      <select
+                        value={form.reminderOffset || ""}
+                        onChange={(event) => updateField("reminderOffset", event.target.value)}
+                      >
+                        {CALL_REMINDER_OPTIONS.map((item) => (
+                          <option key={item.value || "none"} value={item.value}>{item.label}</option>
+                        ))}
+                      </select>
+                      {formErrors.reminderTime ? <span className="activity-form-error">{formErrors.reminderTime}</span> : null}
                     </label>
                     <label>
                       Status
@@ -2498,6 +2453,18 @@ function ActivityModule() {
                         required
                       />
                       {formErrors.endTime ? <span className="activity-form-error">{formErrors.endTime}</span> : null}
+                    </label>
+                    <label>
+                      Reminder
+                      <select
+                        value={form.reminderOffset || ""}
+                        onChange={(event) => updateField("reminderOffset", event.target.value)}
+                      >
+                        {CALL_REMINDER_OPTIONS.map((item) => (
+                          <option key={item.value || "none"} value={item.value}>{item.label}</option>
+                        ))}
+                      </select>
+                      {formErrors.reminderTime ? <span className="activity-form-error">{formErrors.reminderTime}</span> : null}
                     </label>
                     <label>
                       Location
@@ -2568,83 +2535,20 @@ function ActivityModule() {
                         <option value="Completed">Completed</option>
                       </select>
                     </label>
+                    <label>
+                      Reminder
+                      <select
+                        value={form.callReminderOffset || ""}
+                        onChange={(event) => updateField("callReminderOffset", event.target.value)}
+                      >
+                        {CALL_REMINDER_OPTIONS.map((item) => (
+                          <option key={item.value || "none"} value={item.value}>{item.label}</option>
+                        ))}
+                      </select>
+                      {formErrors.reminderTime ? <span className="activity-form-error">{formErrors.reminderTime}</span> : null}
+                    </label>
                   </div>
                 ) : null}
-
-                <div className="activity-form-grid">
-                  <label>
-                    Outcome
-                    <select
-                      value={form.outcome}
-                      onChange={(event) => updateField("outcome", event.target.value)}
-                      className={formErrors.outcome ? "activity-input-error" : ""}
-                    >
-                      {OUTCOME_OPTIONS.map((item) => (
-                        <option key={item.value || "none"} value={item.value}>{item.label}</option>
-                      ))}
-                    </select>
-                    {formErrors.outcome ? <span className="activity-form-error">{formErrors.outcome}</span> : null}
-                    <small className="activity-form-hint">Required when marking activity as completed.</small>
-                  </label>
-                  <label>
-                    Stage
-                    <select
-                      value={form.stage}
-                      onChange={(event) => updateField("stage", event.target.value)}
-                      className={formErrors.stage ? "activity-input-error" : ""}
-                    >
-                      {STAGE_OPTIONS.map((item) => (
-                        <option key={item.value || "none"} value={item.value}>{item.label}</option>
-                      ))}
-                    </select>
-                    {formErrors.stage ? <span className="activity-form-error">{formErrors.stage}</span> : null}
-                    <small className="activity-form-hint">Used by CRM automation for lead progression.</small>
-                  </label>
-                  <label className="span-2 activity-inline-checkbox">
-                    <input
-                      type="checkbox"
-                      checked={Boolean(form.requiresFollowUp)}
-                      onChange={(event) => {
-                        const checked = event.target.checked;
-                        setForm((prev) => ({
-                          ...prev,
-                          requiresFollowUp: checked,
-                          followUpType: checked ? prev.followUpType : "",
-                          followUpInDays: checked ? (Number(prev.followUpInDays) || 1) : 1,
-                        }));
-                        clearFieldError("followUpInDays");
-                      }}
-                    />
-                    <span>Requires Follow-up</span>
-                  </label>
-                  {form.requiresFollowUp ? (
-                    <>
-                      <label>
-                        Follow-up Type
-                        <select
-                          value={form.followUpType}
-                          onChange={(event) => updateField("followUpType", event.target.value)}
-                        >
-                          {FOLLOW_UP_TYPE_OPTIONS.map((item) => (
-                            <option key={item.value || "auto"} value={item.value}>{item.label}</option>
-                          ))}
-                        </select>
-                      </label>
-                      <label>
-                        Follow-up In (days)
-                        <input
-                          type="number"
-                          min="1"
-                          max="30"
-                          value={form.followUpInDays}
-                          onChange={(event) => updateField("followUpInDays", event.target.value)}
-                          className={formErrors.followUpInDays ? "activity-input-error" : ""}
-                        />
-                        {formErrors.followUpInDays ? <span className="activity-form-error">{formErrors.followUpInDays}</span> : null}
-                      </label>
-                    </>
-                  ) : null}
-                </div>
 
                 <label className="full-width">
                   Description / Notes
@@ -2653,12 +2557,18 @@ function ActivityModule() {
                     value={form.activityType === "call" ? form.callNotes : form.description}
                     onChange={(event) => {
                       const value = event.target.value;
-                      setForm((prev) => (
-                        prev.activityType === "call"
-                          ? { ...prev, callNotes: value, description: value }
-                          : { ...prev, description: value }
-                      ));
-                      clearFieldError("description");
+                      setForm((prev) => {
+                        const nextForm = {
+                          ...prev,
+                          ...(prev.activityType === "call"
+                            ? { callNotes: value, description: value }
+                            : { description: value }),
+                        };
+                        setFormErrors((prevErrors) => (
+                          Object.keys(prevErrors).length ? validateActivityForm(nextForm) : prevErrors
+                        ));
+                        return nextForm;
+                      });
                     }}
                   />
                 </label>
@@ -3497,3 +3407,5 @@ function ActivityModule() {
 }
 
 export default ActivityModule;
+
+

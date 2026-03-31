@@ -29,6 +29,7 @@ const isProposalNotification = (item) => {
 };
 
 const getNotificationPill = (item) => {
+  if (item?.source === "activity") return "Activity Reminder";
   if (isRefillNotification(item)) return "Need Analysis";
   if (isProposalNotification(item)) return "Proposal Approval";
   return "General";
@@ -60,9 +61,40 @@ export default function NotificationsPage() {
   const fetchNotifications = useCallback(async () => {
     try {
       setLoading(true);
-      const res = await api.get("/deals/notifications");
-      const list = Array.isArray(res.data?.notifications) ? res.data.notifications : [];
-      setNotifications(list);
+      const [dealRes, activityRes] = await Promise.all([
+        api.get("/deals/notifications"),
+        api.get("/activities/notifications", { params: { mode: "dashboard" } }),
+      ]);
+
+      const dealNotifications = Array.isArray(dealRes.data?.notifications)
+        ? dealRes.data.notifications.map((item) => ({
+            ...item,
+            source: "deal",
+          }))
+        : [];
+
+      const activityNotifications = Array.isArray(activityRes.data?.notifications)
+        ? activityRes.data.notifications.map((item) => ({
+            _id: item?.id || item?._id,
+            source: "activity",
+            isRead: false,
+            message: item?.emailStatus || item?.title || "Activity reminder",
+            title: item?.title || "Upcoming activity",
+            activityType: item?.type || "activity",
+            reminderTime: item?.reminderTime || "",
+            relatedTo: item?.relatedTo || null,
+            owner: item?.owner || null,
+            createdAt: item?.reminderTime || new Date().toISOString(),
+          }))
+        : [];
+
+      const mergedNotifications = [...activityNotifications, ...dealNotifications].sort((a, b) => {
+        const left = new Date(a?.createdAt || a?.reminderTime || 0).getTime();
+        const right = new Date(b?.createdAt || b?.reminderTime || 0).getTime();
+        return right - left;
+      });
+
+      setNotifications(mergedNotifications);
     } catch (err) {
       console.error("Notifications page fetch error:", err);
       setNotifications([]);
@@ -81,6 +113,7 @@ export default function NotificationsPage() {
     const counters = new Map();
 
     notifications.forEach((item) => {
+      if (item?.source !== "deal") return;
       const dealKey = String(item?.dealId?._id || item?.dealId || "");
       const dealName = String(item?.dealId?.name || "Deal Alert").trim();
       if (!dealKey) return;
@@ -136,9 +169,13 @@ export default function NotificationsPage() {
 
       const haystack = [
         item?.dealId?.name,
+        item?.title,
         item?.message,
         item?.toStage,
         item?.changedByName,
+        item?.activityType,
+        item?.relatedTo?.recordName,
+        item?.relatedTo?.recordType,
       ]
         .filter(Boolean)
         .join(" ")
@@ -151,6 +188,14 @@ export default function NotificationsPage() {
   const markSingleAsRead = async (id) => {
     if (!id) return;
     try {
+      const target = notifications.find((item) => String(item._id) === String(id));
+      if (!target || target.source !== "deal") {
+        setNotifications((prev) =>
+          prev.map((item) => (String(item._id) === String(id) ? { ...item, isRead: true } : item))
+        );
+        return;
+      }
+
       await api.patch(`/deals/notifications/${id}/read`, {});
       setNotifications((prev) =>
         prev.map((item) => (String(item._id) === String(id) ? { ...item, isRead: true } : item))
@@ -161,12 +206,17 @@ export default function NotificationsPage() {
   };
 
   const markAllAsRead = async () => {
-    const unreadIds = notifications.filter((item) => !item?.isRead).map((item) => item._id);
-    if (!unreadIds.length) return;
+    const unreadDealIds = notifications
+      .filter((item) => item?.source === "deal" && !item?.isRead)
+      .map((item) => item._id);
+    const hasUnreadActivity = notifications.some((item) => item?.source === "activity" && !item?.isRead);
+    if (!unreadDealIds.length && !hasUnreadActivity) return;
 
     try {
       setActionLoadingId("all");
-      await api.patch(`/deals/notifications/${unreadIds.join(",")}/read`, {});
+      if (unreadDealIds.length) {
+        await api.patch(`/deals/notifications/${unreadDealIds.join(",")}/read`, {});
+      }
       setNotifications((prev) => prev.map((item) => ({ ...item, isRead: true })));
     } catch (err) {
       console.error("Notification mark all read error:", err);
@@ -330,6 +380,7 @@ export default function NotificationsPage() {
             <div className="notifications-grid">
               {visibleNotifications.map((item) => {
                 const refillType = isRefillNotification(item);
+                const activityType = item?.source === "activity";
                 const details = refillType ? parseRefillDetails(item?.message || "") : null;
                 return (
                   <article
@@ -344,8 +395,9 @@ export default function NotificationsPage() {
                     </div>
 
                     <h3>
-                      Deal:{" "}
-                      {item?.dealId?.name ? (
+                      {activityType ? (
+                        item?.title || "Activity Reminder"
+                      ) : item?.dealId?.name ? (
                         <button
                           type="button"
                           className="notification-deal-link"
@@ -358,10 +410,19 @@ export default function NotificationsPage() {
                         </button>
                       ) : (
                         "Deal Alert"
-                      )}
+                      )} 
                     </h3>
 
-                    {refillType ? (
+                    {activityType ? (
+                      <div className="notification-details two-column">
+                        <div><strong>Type:</strong> {String(item?.activityType || "activity").replaceAll("_", " ")}</div>
+                        <div><strong>Reminder:</strong> {item?.reminderTime ? new Date(item.reminderTime).toLocaleString() : "-"}</div>
+                        <div><strong>Related:</strong> {item?.relatedTo?.recordType || "-"}</div>
+                        <div><strong>Name:</strong> {item?.relatedTo?.recordName || "-"}</div>
+                        <div><strong>Owner:</strong> {item?.owner?.name || item?.owner?.username || "-"}</div>
+                        <div><strong>Status:</strong> {item?.isRead ? "Read" : "Unread"}</div>
+                      </div>
+                    ) : refillType ? (
                       <div className="notification-details two-column">
                         <div><strong>Product:</strong> {details.product}</div>
                         <div><strong>Requested Qty:</strong> {details.requested}</div>

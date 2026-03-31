@@ -91,49 +91,49 @@
 
 .activity-reminder-popups {
   position: fixed;
-  top: 24px;
-  right: 24px;
+  top: 20px;
+  right: 20px;
   z-index: 1400;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  width: min(360px, calc(100vw - 24px));
+  gap: 12px;
+  width: min(460px, calc(100vw - 24px));
 }
 
 .activity-reminder-popup {
   position: relative;
   background: #0f172a;
   color: #fff;
-  border-radius: 14px;
+  border-radius: 16px;
   border: 1px solid rgba(255, 255, 255, 0.18);
-  box-shadow: 0 14px 32px rgba(15, 23, 42, 0.32);
-  padding: 12px 36px 12px 14px;
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.34);
+  padding: 16px 44px 16px 16px;
 }
 
 .activity-reminder-title {
   font-weight: 700;
-  font-size: 14px;
+  font-size: 16px;
 }
 
 .activity-reminder-meta,
 .activity-reminder-time {
-  margin-top: 4px;
-  font-size: 12px;
+  margin-top: 6px;
+  font-size: 13px;
   color: rgba(226, 232, 240, 0.95);
 }
 
 .activity-reminder-close {
   position: absolute;
-  top: 8px;
-  right: 8px;
-  width: 22px;
-  height: 22px;
+  top: 10px;
+  right: 10px;
+  width: 26px;
+  height: 26px;
   border: none;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.18);
   color: #fff;
   cursor: pointer;
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1;
 }
 

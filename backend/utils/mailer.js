@@ -237,6 +237,7 @@ async function sendLeadProposalEmail({ to, leadName, company, proposal = {} }) {
 async function sendActivityReminderEmail({
   to,
   ownerName,
+  recipientName,
   activity = {},
 }) {
   const mailer = await getTransporter();
@@ -253,13 +254,14 @@ async function sendActivityReminderEmail({
     ? reminderTime.toLocaleString()
     : "Soon";
   const description = String(activity.description || activity.notes || "").trim();
+  const greetingName = String(recipientName || ownerName || "there").trim() || "there";
 
   const result = await mailer.sendMail({
     from: `"${appName}" <${sender}>`,
     to,
     subject: `${appName} Reminder: ${title}`,
     text: [
-      `Hello ${ownerName || "there"},`,
+      `Hello ${greetingName},`,
       "",
       "This is your upcoming CRM activity reminder.",
       `Type: ${activityType}`,
@@ -278,7 +280,7 @@ async function sendActivityReminderEmail({
           <h2 style="margin: 0; font-size: 20px;">${appName} Activity Reminder</h2>
         </div>
         <div style="padding: 20px; background: #ffffff; color: #111827;">
-          <p style="margin: 0 0 12px;">Hello ${ownerName || "there"},</p>
+          <p style="margin: 0 0 12px;">Hello ${greetingName},</p>
           <p style="margin: 0 0 16px;">This is your upcoming CRM activity reminder.</p>
           <table style="width: 100%; border-collapse: collapse; margin-bottom: 16px;">
             <tr>
