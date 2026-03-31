@@ -1120,6 +1120,16 @@ function Deals() {
         alert("Quantity is required for selected products");
         return;
       }
+      const selectedEditDealItem = products.find((item) => String(item._id) === String(editDealForm.product || ""));
+      const availableStock = Number(selectedEditDealItem?.stock ?? selectedEditDealItem?.quantity ?? 0);
+      if (Number.isFinite(availableStock) && availableStock <= 0) {
+        alert("Insufficient stock. Deal cannot move to the next stage.");
+        return;
+      }
+      if (Number.isFinite(availableStock) && quantityValue > availableStock) {
+        alert(`Low stock. Only ${availableStock} item(s) available. Deal cannot move to the next stage.`);
+        return;
+      }
     }
     if (selectedEditDealItemType === "service" && selectedEditDealStageKey !== "qualification") {
       if (!String(editDealForm.billingCycle || "").trim()) {
