@@ -20,6 +20,8 @@ import "./Dashboard.css";
 import Sidebar from "./Sidebar";
 
 function Dashboard() {
+  const API_BASE = "http://localhost:5000";
+
   const formatInr = (value) =>
     new Intl.NumberFormat("en-IN", {
       style: "currency",
@@ -66,17 +68,185 @@ function Dashboard() {
   const isAdmin = userRole === "ADMIN";
   const isManager = userRole === "MANAGER";
 
-  useEffect(() => {
-    if (isAdmin) {
-      const token = localStorage.getItem("token");
-      fetch("http://localhost:5000/api/stats", {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-        .then((res) => res.json())
-        .then((data) => setStats(data))
-        .catch((err) => console.error(err));
+  const toNumber = (value) => {
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? numeric : 0;
+  };
+
+  const normalizeStageKey = (stage) => {
+    const value = String(stage || "").trim().toLowerCase().replace(/\s+/g, "_");
+    const stageMap = {
+      closed_won: "won",
+      closed_lost: "lost",
+      proposal_price_quote: "proposal",
+      negotiate: "negotiation",
+      need_analysis: "need_analysis",
+      value_proposition: "value_proposition",
+    };
+    return stageMap[value] || value || "unknown";
+  };
+
+  const fetchDashboardStats = useCallback(async () => {
+    const token = localStorage.getItem("token");
+    if (!token) {
+      setStats(null);
+      return;
     }
-  }, [isAdmin]);
+
+    const headers = { Authorization: `Bearer ${token}` };
+
+    try {
+      if (isAdmin) {
+        const res = await axios.get(`${API_BASE}/api/stats`, { headers });
+        setStats(res.data || null);
+        return;
+      }
+
+      const leadsEndpoint = isManager ? "/api/leads/all" : "/api/leads/my";
+      const [
+        itemsResult,
+        dealsResult,
+        leadsResult,
+        vendorsResult,
+        billsResult,
+        paymentsResult,
+      ] = await Promise.allSettled([
+        axios.get(`${API_BASE}/api/items`, { headers }),
+        axios.get(`${API_BASE}/api/deals`, { headers }),
+        axios.get(`${API_BASE}${leadsEndpoint}`, { headers, params: { limit: 300 } }),
+        axios.get(`${API_BASE}/api/vendors`, { headers, params: { page: 1, limit: 1 } }),
+        axios.get(`${API_BASE}/api/bills`, { headers }),
+        axios.get(`${API_BASE}/api/payments`, { headers }),
+      ]);
+
+      const items = itemsResult.status === "fulfilled" && Array.isArray(itemsResult.value.data)
+        ? itemsResult.value.data
+        : [];
+      const deals = dealsResult.status === "fulfilled" && Array.isArray(dealsResult.value.data)
+        ? dealsResult.value.data
+        : [];
+      const leads = leadsResult.status === "fulfilled" && Array.isArray(leadsResult.value.data)
+        ? leadsResult.value.data
+        : [];
+      const vendorPayload = vendorsResult.status === "fulfilled" ? vendorsResult.value.data : {};
+      const bills = billsResult.status === "fulfilled" && Array.isArray(billsResult.value.data)
+        ? billsResult.value.data
+        : [];
+      const payments = paymentsResult.status === "fulfilled" && Array.isArray(paymentsResult.value.data)
+        ? paymentsResult.value.data
+        : [];
+
+      const productItems = items.filter((item) => String(item.type || "product").toLowerCase() !== "service");
+      const serviceItems = items.filter((item) => String(item.type || "").toLowerCase() === "service");
+
+      const totalStock = productItems.reduce((sum, item) => sum + toNumber(item.stock), 0);
+      const lowStockItems = productItems.filter(
+        (item) => toNumber(item.stock) < toNumber(item.lowStockThreshold || 5)
+      ).length;
+
+      const now = new Date();
+      const soon = new Date(now);
+      soon.setDate(soon.getDate() + 30);
+      const serviceAlerts = serviceItems.filter((item) => {
+        const serviceType = String(item.serviceType || "").toLowerCase();
+        if (serviceType === "storage") {
+          const total = toNumber(item.totalStorage);
+          const available = Math.max(0, total - toNumber(item.usedStorage));
+          if (total <= 0) return true;
+          return available / total < 0.2;
+        }
+
+        if (serviceType === "license" || serviceType === "subscription") {
+          const expiryDateRaw = item.nextBillingDate || item.endDate || item.expiryDate;
+          if (!expiryDateRaw) return false;
+          const expiryDate = new Date(expiryDateRaw);
+          if (Number.isNaN(expiryDate.getTime())) return false;
+          return expiryDate <= soon;
+        }
+
+        return false;
+      }).length;
+
+      const normalizedDealsByStage = deals.reduce((acc, deal) => {
+        const stageKey = normalizeStageKey(deal.stage);
+        acc[stageKey] = (acc[stageKey] || 0) + 1;
+        return acc;
+      }, {});
+
+      const monthlyRevenue = Array.from({ length: 6 }, () => 0);
+      const monthStart = new Date(now.getFullYear(), now.getMonth() - 5, 1);
+
+      deals.forEach((deal) => {
+        const createdAt = new Date(deal.createdAt || deal.updatedAt || now);
+        if (Number.isNaN(createdAt.getTime()) || createdAt < monthStart) return;
+
+        const monthOffset = (createdAt.getFullYear() - monthStart.getFullYear()) * 12 + (createdAt.getMonth() - monthStart.getMonth());
+        if (monthOffset < 0 || monthOffset > 5) return;
+
+        monthlyRevenue[monthOffset] += toNumber(deal.amount || deal.value || 0);
+      });
+
+      const leadCounts = leads.reduce(
+        (acc, lead) => {
+          const status = String(lead.status || "new").toLowerCase();
+          acc[status] = (acc[status] || 0) + 1;
+          return acc;
+        },
+        { new: 0, contacted: 0, qualified: 0, converted: 0, lost: 0 }
+      );
+
+      const totalLeads = leads.length;
+      const convertedLeads = toNumber(leadCounts.converted);
+      const conversionRate = totalLeads > 0 ? Math.round((convertedLeads / totalLeads) * 100) : 0;
+      const activeLeads = Math.max(0, totalLeads - convertedLeads - toNumber(leadCounts.lost));
+
+      const totalDeals = deals.length;
+      const totalRevenue = deals.reduce((sum, deal) => sum + toNumber(deal.amount || deal.value), 0);
+
+      const totalVendors = toNumber(vendorPayload?.pagination?.total || 0);
+      const totalBillAmount = bills.reduce((sum, bill) => sum + toNumber(bill.amount), 0);
+      const totalPaidAmount = payments.reduce((sum, payment) => sum + toNumber(payment.amount), 0);
+      const totalPayables = Math.max(0, totalBillAmount - totalPaidAmount);
+      const overdueBills = bills.filter((bill) => String(bill.status || "").toLowerCase() === "overdue").length;
+
+      const managerScoreMap = deals.reduce((acc, deal) => {
+        const owner = deal.assignedTo;
+        const ownerName =
+          (owner && (owner.name || owner.username || owner.email)) ||
+          "Unassigned";
+        const stageKey = normalizeStageKey(deal.stage);
+        const weight = stageKey === "won" ? 100 : stageKey === "negotiation" ? 70 : 40;
+        acc[ownerName] = (acc[ownerName] || 0) + weight;
+        return acc;
+      }, {});
+
+      setStats({
+        totalProducts: items.length,
+        totalStock,
+        lowStockItems,
+        serviceAlerts,
+        totalRevenue,
+        totalDeals,
+        totalLeads,
+        activeLeads,
+        conversionRate,
+        totalVendors,
+        totalPayables,
+        overdueBills,
+        revenueTrend: monthlyRevenue,
+        dealsByStage: normalizedDealsByStage,
+        managerPerformance: managerScoreMap,
+        leadCounts,
+      });
+    } catch (err) {
+      console.error("Dashboard stats fetch error:", err);
+      setStats(null);
+    }
+  }, [API_BASE, isAdmin, isManager]);
+
+  useEffect(() => {
+    fetchDashboardStats();
+  }, [fetchDashboardStats]);
 
   const fetchNotifications = useCallback(async () => {
     try {
@@ -503,22 +673,22 @@ function Dashboard() {
 
             <div className="stat-card">
               <h4>Total Revenue</h4>
-              <h2>₹{stats?.totalRevenue || "125,000"}</h2>
+              <h2>{formatInr(stats?.totalRevenue || 0)}</h2>
             </div>
 
             <div className="stat-card">
               <h4>Total Deals</h4>
-              <h2>{stats?.totalDeals || "48"}</h2>
+              <h2>{stats?.totalDeals || 0}</h2>
             </div>
 
             <div className="stat-card">
               <h4>Active Leads</h4>
-              <h2>{stats?.activeLeads || "156"}</h2>
+              <h2>{stats?.activeLeads || 0}</h2>
             </div>
 
             <div className="stat-card">
               <h4>Conversion Rate</h4>
-              <h2>{stats?.conversionRate || "32"}%</h2>
+              <h2>{stats?.conversionRate || 0}%</h2>
             </div>
 
             <div className="stat-card">

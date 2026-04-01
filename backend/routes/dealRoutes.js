@@ -1097,7 +1097,8 @@ router.post("/", verifyToken, async (req, res) => {
     const inactiveServiceOnCreate = itemType === "service" && String(resolvedItem?.status || "").trim() === "Inactive";
     const outOfStockOnCreate = itemType === "product" && availableQuantity <= 0;
     const lowStockOnCreate = itemType === "product" && availableQuantity > 0 && requestedQuantity > availableQuantity;
-    const forceLostOnCreate = inactiveServiceOnCreate || outOfStockOnCreate || lowStockOnCreate;
+    const requiresStockConfirmationOnCreate = outOfStockOnCreate || lowStockOnCreate;
+    const forceLostOnCreate = inactiveServiceOnCreate;
     const effectiveStage = forceLostOnCreate ? "lost" : finalStage;
     const finalReason = inactiveServiceOnCreate
       ? String(reason || "").trim() || getInactiveServiceLossReason()
@@ -1164,13 +1165,21 @@ router.post("/", verifyToken, async (req, res) => {
     deal = await Deal.create(normalizedDealPayload);
     createdDeal = deal;
 
-    if (lowStockOnCreate) {
+    if (requiresStockConfirmationOnCreate) {
       await notifyLowStockToAdmins({
         deal,
         item: resolvedItem,
         availableQuantity,
         requestedQuantity,
         actor: req.user,
+      });
+
+      await notifyLowStockToCustomer({
+        req,
+        deal,
+        item: resolvedItem,
+        availableQuantity,
+        requestedQuantity,
       });
     }
 
@@ -1216,9 +1225,9 @@ router.post("/", verifyToken, async (req, res) => {
     if (inactiveServiceOnCreate) {
       responseDeal.warningMessage = "Service is inactive. Deal moved to Lost.";
     } else if (outOfStockOnCreate) {
-      responseDeal.warningMessage = "Out of stock. Deal moved to Lost.";
+      responseDeal.warningMessage = "Out of stock. Confirmation email sent to customer. Deal will move to Lost only if customer declines to wait.";
     } else if (lowStockOnCreate) {
-      responseDeal.warningMessage = "Low stock. Deal moved to Lost.";
+      responseDeal.warningMessage = "Low stock. Confirmation email sent to customer. Deal will move to Lost only if customer declines to wait.";
     }
 
     res.status(201).json(responseDeal);

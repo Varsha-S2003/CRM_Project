@@ -718,7 +718,7 @@ function Deals() {
       const isInactiveService = selectedNewDealItemType === "service" && String(selectedNewDealItem?.status || "").trim() === "Inactive";
       const isOutOfStockProduct = selectedNewDealItemType === "product" && availableStock <= 0;
       const isLowStockProduct = selectedNewDealItemType === "product" && availableStock > 0 && requestedQuantity > availableStock;
-      const forceLost = isInactiveService || isOutOfStockProduct || isLowStockProduct;
+      const forceLost = isInactiveService;
       const effectiveStage = forceLost ? "lost" : normalizeStageForUi(newDeal.stage);
       const effectiveProbability = forceLost ? Number(DEFAULT_PROBABILITY_BY_STAGE.lost) : probabilityValue;
       const effectiveReason = isOutOfStockProduct
@@ -757,9 +757,9 @@ function Deals() {
       setShowModal(false);
       if (forceLost || res.data?.warningMessage) {
         const localWarningMessage = isOutOfStockProduct
-          ? "Out of stock. Deal moved to Lost."
+          ? "Out of stock. Confirmation email sent to customer. Deal will move to Lost only if customer declines to wait."
           : isLowStockProduct
-            ? "Low stock. Deal moved to Lost."
+            ? "Low stock. Confirmation email sent to customer. Deal will move to Lost only if customer declines to wait."
             : "Service is inactive. Deal moved to Lost.";
         alert(forceLost ? localWarningMessage : res.data?.warningMessage || localWarningMessage);
       }
