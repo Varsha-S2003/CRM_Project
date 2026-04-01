@@ -7,11 +7,13 @@
   --theme-ink-soft: #6f42c1;
   --theme-ink-deep: #22133f;
   --theme-gold: #6f42c1;
+  --theme-gold-soft: #efe6ff;
   --theme-gold-strong: #5a32a3;
   --theme-green: #007bff;
   --theme-green-strong: #005fcc;
   --theme-lime: #0dcaf0;
   --theme-bg: #f4f7fc;
+  --theme-bg-hover: #eef4ff;
   --theme-bg-soft: #ffffff;
   --theme-surface: rgba(255, 255, 255, 0.96);
   --theme-surface-solid: #ffffff;

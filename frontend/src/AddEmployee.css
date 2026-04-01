@@ -2,7 +2,10 @@
 /* Base Container */
 .add-employee-page-zoho {
   min-height: 100vh;
-  background: #f5f7fa;
+  background:
+    radial-gradient(circle at top right, rgba(111, 66, 193, 0.08), transparent 18%),
+    radial-gradient(circle at bottom left, rgba(13, 202, 240, 0.08), transparent 22%),
+    var(--theme-bg);
   padding: 40px 20px;
   position: relative;
   overflow-x: hidden;
@@ -12,17 +15,17 @@
   content: "";
   position: absolute;
   inset: 0;
-  background: radial-gradient(circle at top right, rgba(79, 70, 229, 0.08), transparent 36%);
+  background: radial-gradient(circle at top right, rgba(111, 66, 193, 0.08), transparent 36%);
   pointer-events: none;
 }
 
 .add-employee-container-zoho {
   max-width: 900px;
   margin: 0 auto;
-  background: #ffffff;
-  border: 1px solid #e5e7eb;
-  border-radius: 16px;
-  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.12);
+  background: var(--theme-surface-solid);
+  border: 1px solid var(--theme-border);
+  border-radius: 20px;
+  box-shadow: var(--theme-shadow-lg);
   overflow: hidden;
   position: relative;
   z-index: 1;
@@ -30,9 +33,9 @@
 
 /* Header */
 .form-header-zoho {
-  background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+  background: linear-gradient(135deg, var(--theme-ink-deep) 0%, var(--theme-ink) 55%, var(--theme-green-strong) 100%);
   padding: 32px 40px;
-  color: white;
+  color: #fff;
   position: relative;
 }
 
@@ -46,12 +49,12 @@
 .header-icon {
   width: 64px;
   height: 64px;
-  background: rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.14);
   border-radius: 20px;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 12px 28px rgba(49, 46, 129, 0.22);
+  box-shadow: 0 12px 28px rgba(34, 19, 63, 0.22);
 }
 
 .header-icon svg {
@@ -77,10 +80,10 @@
 .form-section-zoho {
   margin-bottom: 32px;
   padding: 24px;
-  border-radius: 14px;
+  border-radius: 18px;
   background: #ffffff;
-  border: 1px solid #e5e7eb;
-  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
+  border: 1px solid var(--theme-border);
+  box-shadow: var(--theme-shadow-sm);
 }
 
 .section-header {
@@ -93,7 +96,7 @@
 .section-number {
   width: 34px;
   height: 34px;
-  background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+  background: linear-gradient(135deg, var(--theme-gold) 0%, var(--theme-green) 100%);
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -101,13 +104,13 @@
   color: #ffffff;
   font-size: 13px;
   font-weight: 600;
-  box-shadow: 0 8px 20px rgba(79, 70, 229, 0.2);
+  box-shadow: 0 8px 20px rgba(111, 66, 193, 0.18);
 }
 
 .section-header h3 {
   font-size: 16px;
   font-weight: 600;
-  color: #1e293b;
+  color: var(--theme-ink);
   margin: 0;
 }
 
@@ -126,7 +129,7 @@
   display: block;
   font-size: 13px;
   font-weight: 600;
-  color: #475569;
+  color: var(--theme-text);
   margin-bottom: 8px;
 }
 
@@ -143,7 +146,7 @@
 .input-wrapper > svg {
   position: absolute;
   left: 14px;
-  color: #94a3b8;
+  color: var(--theme-text-soft);
   pointer-events: none;
 }
 
@@ -152,23 +155,23 @@
   width: 100%;
   padding: 14px 16px 14px 46px;
   border-radius: 10px;
-  border: 2px solid #e5e7eb;
+  border: 1px solid var(--theme-border);
   font-size: 14px;
   transition: all 0.2s;
   background: #ffffff;
-  color: #1e293b;
+  color: var(--theme-text);
 }
 
 .input-wrapper input:focus,
 .input-wrapper select:focus {
   outline: none;
-  border-color: #4f46e5;
+  border-color: var(--theme-border-strong);
   background: white;
-  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+  box-shadow: 0 0 0 3px rgba(111, 66, 193, 0.12);
 }
 
 .input-wrapper input::placeholder {
-  color: #94a3b8;
+  color: var(--theme-text-soft);
 }
 
 .input-wrapper select {
@@ -183,7 +186,7 @@
 /* Error States */
 .form-group-zoho.has-error .input-wrapper input,
 .form-group-zoho.has-error .input-wrapper select {
-  border-color: #ef4444;
+  border-color: var(--theme-danger);
   background: #fff5f5;
 }
 
@@ -204,10 +207,10 @@
   display: block;
   font-size: 12px;
   margin-top: 4px;
-  color: #475569;
+  color: var(--theme-text-muted);
 }
 .availability.valid {
-  color: #10b981;
+  color: var(--theme-green-strong);
 }
 
 /* Password Input */
@@ -227,10 +230,10 @@
   transform: translateY(-50%);
   width: 34px;
   height: 34px;
-  background: #f3f4f6;
-  border: 1px solid #d1d5db;
+  background: var(--theme-surface-muted);
+  border: 1px solid var(--theme-border);
   border-radius: 10px;
-  color: #4b5563;
+  color: var(--theme-text-muted);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -240,14 +243,14 @@
 }
 
 .toggle-password:hover {
-  color: #1f2937;
+  color: var(--theme-text);
   background: #e5e7eb;
-  border-color: #cbd5e1;
+  border-color: var(--theme-border-strong);
 }
 
 .toggle-password:focus {
   outline: none;
-  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+  box-shadow: 0 0 0 3px rgba(111, 66, 193, 0.12);
 }
 
 .toggle-password svg {
@@ -262,10 +265,10 @@
 }
 
 .password-requirements-zoho {
-  background: #f8fafc;
+  background: var(--theme-surface-muted);
   padding: 20px;
   border-radius: 12px;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--theme-border);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
 }
 
@@ -275,7 +278,7 @@
   gap: 8px;
   font-size: 13px;
   font-weight: 600;
-  color: #1f2937;
+  color: var(--theme-ink);
   margin-bottom: 16px;
 }
 
@@ -290,19 +293,19 @@
   align-items: center;
   gap: 8px;
   font-size: 12px;
-  color: #94a3b8;
+  color: var(--theme-text-soft);
 }
 
 .req-item svg {
-  color: #cbd5e1;
+  color: var(--theme-border-strong);
 }
 
 .req-item.valid svg {
-  color: #10b981;
+  color: var(--theme-green-strong);
 }
 
 .req-item.valid {
-  color: #10b981;
+  color: var(--theme-green-strong);
 }
 
 .password-strength {
