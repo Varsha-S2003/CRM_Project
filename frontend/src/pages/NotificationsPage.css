@@ -1,12 +1,12 @@
 :root {
-  --notifications-surface: #f3f7fc;
-  --notifications-panel: #ffffff;
-  --notifications-border: #d8e2ef;
-  --notifications-ink: #123154;
-  --notifications-muted: #55708f;
-  --notifications-brand: #1f5ea8;
-  --notifications-brand-soft: #e6f0fb;
-  --notifications-success-soft: #ebf8f0;
+  --notifications-surface: var(--theme-bg);
+  --notifications-panel: var(--theme-surface-solid);
+  --notifications-border: var(--theme-border);
+  --notifications-ink: var(--theme-ink);
+  --notifications-muted: var(--theme-text-muted);
+  --notifications-brand: var(--theme-gold);
+  --notifications-brand-soft: var(--theme-gold-soft);
+  --notifications-success-soft: var(--theme-success-soft);
 }
 
 .notifications-page {
@@ -16,8 +16,8 @@
   gap: 18px;
   color: var(--notifications-ink);
   background:
-    radial-gradient(circle at 10% 5%, rgba(79, 135, 204, 0.14) 0%, transparent 45%),
-    radial-gradient(circle at 85% 90%, rgba(52, 125, 212, 0.1) 0%, transparent 35%),
+    radial-gradient(circle at 10% 5%, rgba(111, 66, 193, 0.14) 0%, transparent 45%),
+    radial-gradient(circle at 85% 90%, rgba(0, 123, 255, 0.1) 0%, transparent 35%),
     var(--notifications-surface);
   min-height: calc(100vh - 32px);
 }
@@ -31,7 +31,7 @@
   border: 1px solid var(--notifications-border);
   border-radius: 18px;
   background: linear-gradient(115deg, rgba(243, 249, 255, 0.95) 0%, rgba(255, 255, 255, 0.96) 100%);
-  box-shadow: 0 16px 34px rgba(17, 59, 114, 0.08);
+  box-shadow: var(--theme-shadow-sm);
 }
 
 .notifications-page-header-text h1 {
@@ -39,7 +39,7 @@
   font-size: 30px;
   font-weight: 800;
   letter-spacing: 0.2px;
-  color: #163a63;
+  color: var(--theme-ink);
 }
 
 .notifications-page-header-text p {
@@ -56,7 +56,7 @@
 }
 
 .notifications-summary-card {
-  border: 1px solid #dce6f2;
+  border: 1px solid var(--theme-border);
   background: #fdfefe;
   border-radius: 12px;
   padding: 10px;
@@ -68,17 +68,17 @@
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.35px;
-  color: #7188a4;
+  color: var(--theme-text-muted);
 }
 
 .notifications-summary-card strong {
   font-size: 22px;
   line-height: 1.1;
-  color: #1b416d;
+  color: var(--theme-ink);
 }
 
 .notifications-summary-card.unread {
-  background: #edf6ff;
+  background: var(--theme-gold-soft);
 }
 
 .notifications-summary-card.read {
@@ -111,8 +111,8 @@
 
 .notifications-btn.secondary {
   background: #f8fbff;
-  color: #214974;
-  border-color: #cfdff1;
+  color: var(--theme-ink);
+  border-color: var(--theme-border);
 }
 
 .notifications-btn.secondary:hover {
@@ -137,6 +137,7 @@
   border-radius: 14px;
   background: var(--notifications-panel);
   padding: 12px;
+  box-shadow: var(--theme-shadow-sm);
 }
 
 .notifications-filter-group {
@@ -146,9 +147,9 @@
 }
 
 .notifications-filter-btn {
-  border: 1px solid #cfdff1;
+  border: 1px solid var(--theme-border);
   background: #f6faff;
-  color: #32597f;
+  color: var(--theme-text);
   border-radius: 999px;
   padding: 8px 14px;
   font-size: 12px;
@@ -157,9 +158,9 @@
 }
 
 .notifications-filter-btn.active {
-  border-color: #7fa8d8;
-  background: #dfeeff;
-  color: #0c4386;
+  border-color: rgba(111, 66, 193, 0.22);
+  background: var(--theme-gold-soft);
+  color: var(--theme-gold-strong);
 }
 
 .notifications-search-wrap {
@@ -168,25 +169,25 @@
 
 .notifications-search {
   width: 100%;
-  border: 1px solid #ccdbec;
+  border: 1px solid var(--theme-border);
   border-radius: 10px;
   padding: 10px 12px;
   font-size: 13px;
-  color: #173b62;
+  color: var(--theme-text);
   background: #fbfdff;
 }
 
 .notifications-search:focus {
-  outline: 2px solid rgba(38, 106, 190, 0.24);
-  border-color: #7fa8d8;
+  outline: 2px solid rgba(111, 66, 193, 0.18);
+  border-color: var(--theme-border-strong);
 }
 
 .notifications-empty-card {
-  border: 1px dashed #b8cae1;
+  border: 1px dashed var(--theme-border-strong);
   background: rgba(255, 255, 255, 0.86);
   border-radius: 14px;
   padding: 26px;
-  color: #5a7492;
+  color: var(--theme-text-muted);
   font-size: 14px;
 }
 
@@ -212,12 +213,12 @@
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.3px;
-  color: #46688f;
+  color: var(--theme-text-muted);
 }
 
 .notifications-deal-current {
   margin: 0;
-  color: #4b6686;
+  color: var(--theme-text-muted);
   font-size: 13px;
 }
 
@@ -228,9 +229,9 @@
 }
 
 .notifications-deal-result {
-  border: 1px solid #c7d7ea;
+  border: 1px solid var(--theme-border);
   background: #f6faff;
-  color: #365d83;
+  color: var(--theme-text);
   border-radius: 999px;
   padding: 7px 12px;
   font-size: 12px;
@@ -239,14 +240,14 @@
 }
 
 .notifications-deal-result.active {
-  border-color: #5b8bc2;
-  background: #dcecff;
-  color: #113f77;
+  border-color: rgba(111, 66, 193, 0.22);
+  background: var(--theme-gold-soft);
+  color: var(--theme-gold-strong);
 }
 
 .notifications-deal-empty {
   font-size: 12px;
-  color: #6481a1;
+  color: var(--theme-text-muted);
   padding: 8px 2px;
 }
 
@@ -264,11 +265,11 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
-  box-shadow: 0 12px 26px rgba(26, 62, 112, 0.07);
+  box-shadow: var(--theme-shadow-sm);
 }
 
 .notification-card.unread {
-  border-left: 5px solid #1a63b8;
+  border-left: 5px solid var(--theme-gold);
   background: linear-gradient(160deg, #f4f9ff 0%, #ffffff 100%);
 }
 
@@ -285,8 +286,8 @@
 
 .notification-pill {
   background: var(--notifications-brand-soft);
-  color: #15498a;
-  border: 1px solid #c6dbf5;
+  color: var(--theme-gold-strong);
+  border: 1px solid rgba(111, 66, 193, 0.18);
   border-radius: 999px;
   padding: 5px 10px;
   font-size: 11px;
@@ -296,13 +297,13 @@
 
 .notification-time {
   font-size: 11px;
-  color: #6c839f;
+  color: var(--theme-text-muted);
 }
 
 .notification-card h3 {
   margin: 0;
   font-size: 19px;
-  color: #183d65;
+  color: var(--theme-ink);
 }
 
 .notification-deal-link {
@@ -310,7 +311,7 @@
   padding: 0;
   margin: 0;
   background: none;
-  color: #1d4f88;
+  color: var(--theme-green-strong);
   font: inherit;
   font-weight: 800;
   cursor: pointer;
@@ -319,7 +320,7 @@
 }
 
 .notification-deal-link:hover {
-  color: #0f3f75;
+  color: var(--theme-green-strong);
 }
 
 .notification-details {
@@ -327,9 +328,9 @@
   grid-template-columns: 1fr;
   gap: 6px;
   font-size: 13px;
-  color: #33506f;
+  color: var(--theme-text);
   background: #f9fbff;
-  border: 1px solid #e4edf7;
+  border: 1px solid var(--theme-border);
   border-radius: 11px;
   padding: 10px;
 }
@@ -340,7 +341,7 @@
 
 .notification-message {
   margin: 0;
-  color: #5a6f89;
+  color: var(--theme-text-muted);
   font-size: 13px;
   line-height: 1.5;
 }
