@@ -282,6 +282,8 @@ function Inventory() {
                   <th>Category</th>
                   <th>Quantity</th>
                   <th>Price</th>
+                  <th>GST %</th>
+                  <th>HSN/SAC</th>
                   <th>Status</th>
                   {canEdit && <th>Actions</th>}
                 </tr>
@@ -289,7 +291,7 @@ function Inventory() {
               <tbody>
                 {items.length === 0 ? (
                   <tr>
-                    <td colSpan={canEdit ? 9 : 8} className="no-data">
+                    <td colSpan={canEdit ? 11 : 10} className="no-data">
                       No items found. {canEdit ? "Add your first item here." : ""}
                     </td>
                   </tr>
@@ -310,6 +312,8 @@ function Inventory() {
                             ? formatCurrency(item.cost)
                             : formatCurrency(item.price)}
                         </td>
+                        <td>{(item.type || "product") === "product" ? `${Number(item.gst_percent ?? 18)}%` : "-"}</td>
+                        <td>{(item.type || "product") === "product" ? (item.hsn_sac || "-") : "-"}</td>
                         <td>
                           <span className={`stock-badge ${status.className}`}>{status.text}</span>
                         </td>

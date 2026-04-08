@@ -22,6 +22,7 @@ const SERVICE_TYPE_CATEGORY_MAP = {
 const BILLING_CYCLE_VALUES = ["monthly", "yearly"];
 const STORAGE_UNIT_VALUES = ["GB", "TB"];
 const SERVICE_STATUS_VALUES = ["Active", "Inactive"];
+const GST_PERCENT_VALUES = [5, 12, 18, 28];
 
 const CATEGORY_SKU_PREFIX = {
   "Networking Equipment": "NET",
@@ -147,6 +148,8 @@ const findMatchingServices = async ({ name, category, serviceType }) => {
 
 const applyCommonItemFields = (target, payload) => {
   if (payload.price !== undefined) target.price = payload.price;
+  if (payload.gst_percent !== undefined) target.gst_percent = payload.gst_percent;
+  if (payload.hsn_sac !== undefined) target.hsn_sac = payload.hsn_sac;
   if (payload.cost !== undefined) target.cost = payload.cost;
   if (payload.status !== undefined) target.status = payload.status;
   if (payload.vendor !== undefined) target.vendor = payload.vendor;
@@ -192,7 +195,9 @@ const buildItemPayload = (body, existing = null) => {
     vendor: String(source.vendor || "").trim(),
     location: String(source.location || "").trim(),
     lowStockThreshold: parseNumber(source.lowStockThreshold ?? 5),
-    description: String(source.description || "").trim()
+    description: String(source.description || "").trim(),
+    gst_percent: parseNumber(source.gst_percent ?? 18),
+    hsn_sac: String(source.hsn_sac || "").trim()
   };
 
   if (!payload.name || !payload.category) {
@@ -206,6 +211,11 @@ const buildItemPayload = (body, existing = null) => {
   if (payload.type === "product") {
     if (Number.isNaN(payload.price) || payload.price === undefined || payload.price < 0) {
       errors.push("price must be a non-negative number");
+    }
+    if (Number.isNaN(payload.gst_percent) || payload.gst_percent === undefined || payload.gst_percent < 0) {
+      errors.push("gst_percent must be a valid non-negative number");
+    } else if (payload.type === "product" && !GST_PERCENT_VALUES.includes(Number(payload.gst_percent))) {
+      errors.push(`gst_percent must be one of: ${GST_PERCENT_VALUES.join(", ")}`);
     }
 
     if (!SERVICE_STATUS_VALUES.includes(payload.status)) {
@@ -226,6 +236,9 @@ const buildItemPayload = (body, existing = null) => {
 
     return { payload, errors };
   }
+
+  payload.gst_percent = null;
+  payload.hsn_sac = String(source.hsn_sac || "").trim();
 
   if (!source.serviceType) {
     errors.push("serviceType is required for service");

@@ -6,6 +6,8 @@ const customerSchema = new mongoose.Schema(
     email: { type: String, trim: true },
     phone: { type: String, trim: true },
     company: { type: String, trim: true },
+    state: { type: String, trim: true, default: "" },
+    gstin: { type: String, trim: true, default: "" },
     product: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Item",

@@ -45,21 +45,57 @@ const formatDateTime = (value) => {
   return new Date(timestamp).toLocaleString();
 };
 
-const formatDate = (value) => {
-  const timestamp = toTimestamp(value);
-  if (!timestamp) return "-";
-  return new Date(timestamp).toLocaleDateString();
-};
-
 const normalizeStatusLabel = (value) => {
   const normalized = String(value || "").trim().toLowerCase();
   return normalized === "inactive" ? "Inactive" : "Active";
 };
 
+const STATE_OPTIONS = [
+  "Andhra Pradesh",
+  "Arunachal Pradesh",
+  "Assam",
+  "Bihar",
+  "Chhattisgarh",
+  "Goa",
+  "Gujarat",
+  "Haryana",
+  "Himachal Pradesh",
+  "Jharkhand",
+  "Karnataka",
+  "Kerala",
+  "Madhya Pradesh",
+  "Maharashtra",
+  "Manipur",
+  "Meghalaya",
+  "Mizoram",
+  "Nagaland",
+  "Odisha",
+  "Punjab",
+  "Rajasthan",
+  "Sikkim",
+  "Tamil Nadu",
+  "Telangana",
+  "Tripura",
+  "Uttar Pradesh",
+  "Uttarakhand",
+  "West Bengal",
+  "Andaman and Nicobar Islands",
+  "Chandigarh",
+  "Dadra and Nagar Haveli and Daman and Diu",
+  "Delhi",
+  "Jammu and Kashmir",
+  "Ladakh",
+  "Lakshadweep",
+  "Puducherry",
+];
+
 export default function Customers() {
   const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedCustomer, setSelectedCustomer] = useState(null);
+  const [customerForm, setCustomerForm] = useState({ state: "", gstin: "" });
+  const [savingCustomer, setSavingCustomer] = useState(false);
+  const [customerMessage, setCustomerMessage] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [search, setSearch] = useState("");
 
@@ -97,6 +133,54 @@ export default function Customers() {
     return () => window.removeEventListener("customer-updated", refresh);
   }, [fetchCustomers]);
 
+  useEffect(() => {
+    if (!selectedCustomer) {
+      setCustomerForm({ state: "", gstin: "" });
+      setCustomerMessage("");
+      return;
+    }
+
+    setCustomerForm({
+      state: String(selectedCustomer.state || "").trim(),
+      gstin: String(selectedCustomer.gstin || "").trim(),
+    });
+    setCustomerMessage("");
+  }, [selectedCustomer]);
+
+  const handleSaveCustomer = async () => {
+    if (!selectedCustomer?._id) return;
+
+    try {
+      setSavingCustomer(true);
+      setCustomerMessage("");
+      const token = localStorage.getItem("token");
+      const res = await axios.put(
+        `http://localhost:5000/api/customers/${selectedCustomer._id}`,
+        {
+          state: customerForm.state,
+          gstin: customerForm.gstin,
+        },
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+
+      const updatedCustomer = res.data || {};
+      setCustomers((prev) =>
+        prev.map((customer) =>
+          customer._id === updatedCustomer._id ? { ...customer, ...updatedCustomer } : customer
+        )
+      );
+      setSelectedCustomer((prev) => (prev ? { ...prev, ...updatedCustomer } : prev));
+      setCustomerMessage("Customer GST details saved.");
+      window.dispatchEvent(new Event("customer-updated"));
+    } catch (err) {
+      setCustomerMessage(err.response?.data?.message || "Failed to save customer.");
+    } finally {
+      setSavingCustomer(false);
+    }
+  };
+
   const mergedCustomers = useMemo(() => {
     const grouped = new Map();
 
@@ -129,15 +213,14 @@ export default function Customers() {
           company: customer.company || "",
           email: customer.email || "",
           phone: customer.phone || "",
+          state: customer.state || "",
+          gstin: customer.gstin || "",
           status: customer.status || "Active",
           reason: customer.status === "Inactive" ? String(customer.reason || "").trim() : "",
           createdAt: createdAtValue,
 
           serviceSubscriptions: [...incomingSubscriptions],
           purchases: [purchase],
-
-          purchases,
-
         });
         return;
       }
@@ -147,6 +230,12 @@ export default function Customers() {
 
       if (!existing.phone && customer.phone) {
         existing.phone = customer.phone;
+      }
+      if (!existing.state && customer.state) {
+        existing.state = customer.state;
+      }
+      if (!existing.gstin && customer.gstin) {
+        existing.gstin = customer.gstin;
       }
 
       const existingCreatedAtTs = toTimestamp(existing.createdAt);
@@ -209,6 +298,8 @@ export default function Customers() {
         customer.company,
         customer.email,
         customer.phone,
+        customer.state,
+        customer.gstin,
         customer.reason,
       ]
         .filter(Boolean)
@@ -269,6 +360,8 @@ export default function Customers() {
                     <th>Company</th>
                     <th>Email</th>
                     <th>Phone</th>
+                    <th>State</th>
+                    <th>GSTIN</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -282,6 +375,8 @@ export default function Customers() {
                       <td data-label="Company">{customer.company || "-"}</td>
                       <td data-label="Email">{customer.email || "-"}</td>
                       <td data-label="Phone">{customer.phone || "-"}</td>
+                      <td data-label="State">{customer.state || "-"}</td>
+                      <td data-label="GSTIN">{customer.gstin || "-"}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -311,7 +406,35 @@ export default function Customers() {
                       <span className="detail-label">Phone</span>
                       <span className="detail-value">{selectedCustomer.phone || "-"}</span>
                     </div>
+                    <div className="detail-row">
+                      <span className="detail-label">State</span>
+                      <select
+                        className="customer-inline-input"
+                        value={customerForm.state}
+                        onChange={(event) => setCustomerForm((prev) => ({ ...prev, state: event.target.value }))}
+                      >
+                        <option value="">Select state</option>
+                        {STATE_OPTIONS.map((state) => (
+                          <option key={state} value={state}>
+                            {state}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="detail-row">
+                      <span className="detail-label">GSTIN</span>
+                      <input
+                        className="customer-inline-input"
+                        type="text"
+                        value={customerForm.gstin}
+                        onChange={(event) =>
+                          setCustomerForm((prev) => ({ ...prev, gstin: event.target.value.toUpperCase() }))
+                        }
+                        placeholder="Enter GSTIN"
+                      />
+                    </div>
                   </div>
+                  {customerMessage ? <div className="customer-message">{customerMessage}</div> : null}
                   <div className="customers-table-wrapper customer-purchases-wrapper">
                     <h3 className="customer-purchases-title">Purchases</h3>
                     <table className="customers-table">
@@ -354,6 +477,11 @@ export default function Customers() {
                       </tbody>
                     </table>
                   </div>
+                </div>
+                <div className="customer-modal-actions">
+                  <button type="button" className="btn-submit" onClick={handleSaveCustomer} disabled={savingCustomer}>
+                    {savingCustomer ? "Saving..." : "Save GST Details"}
+                  </button>
                 </div>
               </div>
             </div>

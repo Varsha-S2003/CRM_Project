@@ -25,6 +25,8 @@ const defaultValues = {
   type: "product",
   category: "",
   price: "",
+  gst_percent: "18",
+  hsn_sac: "",
   quantity: "",
   lowStockThreshold: "5",
   vendor: "",
@@ -49,6 +51,9 @@ const normalizeForForm = (item = {}) => {
     serviceType,
     category: type === "service" ? normalizeServiceCategory(item.category, serviceType) : item.category || "",
     price: item.price !== undefined && item.price !== null ? String(item.price) : "",
+    gst_percent:
+      item.gst_percent !== undefined && item.gst_percent !== null ? String(item.gst_percent) : "18",
+    hsn_sac: item.hsn_sac || "",
     cost: item.cost !== undefined && item.cost !== null ? String(item.cost) : "",
     quantity:
       item.quantity !== undefined && item.quantity !== null
@@ -78,6 +83,8 @@ const toPayload = (form) => {
 
   if (form.type === "product") {
     payload.price = Number(form.price);
+    payload.gst_percent = Number(form.gst_percent);
+    payload.hsn_sac = form.hsn_sac.trim();
     payload.quantity = Number(form.quantity);
     payload.lowStockThreshold = Number(form.lowStockThreshold || 5);
     payload.vendor = form.vendor.trim();
@@ -270,6 +277,29 @@ function ItemForm({
                   value={form.price}
                   onChange={(e) => update("price", e.target.value)}
                   required
+                />
+              </div>
+            </div>
+            <div className="form-row-zoho">
+              <div className="form-group">
+                <label>GST % *</label>
+                <select
+                  value={form.gst_percent}
+                  onChange={(e) => update("gst_percent", e.target.value)}
+                  required
+                >
+                  <option value="5">5%</option>
+                  <option value="12">12%</option>
+                  <option value="18">18%</option>
+                  <option value="28">28%</option>
+                </select>
+              </div>
+              <div className="form-group">
+                <label>HSN/SAC Code</label>
+                <input
+                  type="text"
+                  value={form.hsn_sac}
+                  onChange={(e) => update("hsn_sac", e.target.value)}
                 />
               </div>
             </div>

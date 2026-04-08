@@ -3,6 +3,8 @@ const mongoose = require("mongoose");
 const appSettingsSchema = new mongoose.Schema(
   {
     companyName: { type: String, default: "Elogixa CRM" },
+    companyState: { type: String, default: "" },
+    companyGstin: { type: String, default: "" },
     supportEmail: { type: String, default: "support@elogixa.com" },
     branding: {
       primaryColor: { type: String, default: "#4f46e5" },

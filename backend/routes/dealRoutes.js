@@ -263,9 +263,83 @@ const resolveDealItem = async (itemId) => {
   }
 
   const item = await Item.findById(itemId).select(
-    "_id name type status stock quantity serviceType billingCycle"
+    "_id name type status stock quantity serviceType billingCycle price cost gst_percent hsn_sac"
   );
   return item;
+};
+
+const getSellerTaxProfile = async () => {
+  const settings = await AppSettings.findOne().select("companyState companyGstin").lean();
+  return {
+    sellerState: String(settings?.companyState || "").trim(),
+    sellerGstin: String(settings?.companyGstin || "").trim(),
+  };
+};
+
+const normalizeState = (value) => String(value || "").trim();
+
+const computeTaxSummary = ({ item, quantity, customerState = "", sellerState = "", sellerGstin = "", customerGstin = "" }) => {
+  if (!item) return null;
+
+  const unitPrice = Number(item.price ?? item.cost ?? 0);
+  let qty = Number(quantity ?? 1);
+  if (!Number.isFinite(qty) || qty <= 0) {
+    qty = 1;
+  }
+  const taxableAmount = Number((unitPrice * qty).toFixed(2));
+  const gstPercent = Number(item.gst_percent || 0);
+  const gstAmount = Number(((taxableAmount * gstPercent) / 100).toFixed(2));
+  const sameState =
+    normalizeState(customerState).toLowerCase() &&
+    normalizeState(customerState).toLowerCase() === normalizeState(sellerState).toLowerCase();
+
+  let cgst = 0;
+  let sgst = 0;
+  let igst = 0;
+
+  if (sameState) {
+    cgst = Number((gstAmount / 2).toFixed(2));
+    sgst = Number((gstAmount / 2).toFixed(2));
+  } else {
+    igst = gstAmount;
+  }
+
+  const grandTotal = Number((taxableAmount + gstAmount).toFixed(2));
+
+  return {
+    taxableAmount,
+    gstPercent,
+    gstAmount,
+    cgst,
+    sgst,
+    igst,
+    grandTotal,
+    hsnSac: String(item.hsn_sac || "").trim(),
+    sellerState: normalizeState(sellerState),
+    sellerGstin: String(sellerGstin || "").trim(),
+    customerState: normalizeState(customerState),
+    customerGstin: String(customerGstin || "").trim(),
+    placeOfSupply: normalizeState(customerState || sellerState),
+  };
+};
+
+const applyTaxSummaryToPayload = (payload, taxSummary) => {
+  if (!taxSummary) return payload;
+
+  payload.taxableAmount = taxSummary.taxableAmount;
+  payload.gstPercent = taxSummary.gstPercent;
+  payload.gstAmount = taxSummary.gstAmount;
+  payload.cgst = taxSummary.cgst;
+  payload.sgst = taxSummary.sgst;
+  payload.igst = taxSummary.igst;
+  payload.grandTotal = taxSummary.grandTotal;
+  payload.hsnSac = taxSummary.hsnSac;
+  payload.placeOfSupply = taxSummary.placeOfSupply;
+  payload.sellerState = taxSummary.sellerState;
+  payload.sellerGstin = taxSummary.sellerGstin;
+  payload.customerState = taxSummary.customerState;
+  payload.customerGstin = taxSummary.customerGstin;
+  return payload;
 };
 
 const normalizeDealBusinessFields = (payload) => {
@@ -301,6 +375,14 @@ const normalizeDealBusinessFields = (payload) => {
 
   if (Object.prototype.hasOwnProperty.call(normalized, "closingDate")) {
     normalized.closingDate = normalizeOptionalDate(normalized.closingDate);
+  }
+
+  if (Object.prototype.hasOwnProperty.call(normalized, "customerState")) {
+    normalized.customerState = String(normalized.customerState || "").trim();
+  }
+
+  if (Object.prototype.hasOwnProperty.call(normalized, "customerGstin")) {
+    normalized.customerGstin = String(normalized.customerGstin || "").trim();
   }
 
   if (Object.prototype.hasOwnProperty.call(normalized, "product")) {
@@ -723,6 +805,8 @@ const syncCustomerFromDeal = async (deal) => {
   const companyName = String(deal.company || "").trim();
   const primaryPhone = String(deal.contact || "").trim();
   const fallbackPhone = String(deal.phone || "").trim();
+  const normalizedState = String(deal.customerState || deal.address?.state || deal.state || "").trim();
+  const normalizedGstin = String(deal.customerGstin || deal.gstin || "").trim();
 
   let customer = deal.customerId ? await Customer.findById(deal.customerId) : null;
 
@@ -732,6 +816,8 @@ const syncCustomerFromDeal = async (deal) => {
       email: normalizedEmail || undefined,
       phone: primaryPhone || fallbackPhone,
       company: companyName,
+      state: normalizedState,
+      gstin: normalizedGstin,
       product: deal.product || null,
       status: deal.status || "Active",
       reason: deal.status === "Inactive" ? String(deal.reason || "").trim() : "",
@@ -742,6 +828,8 @@ const syncCustomerFromDeal = async (deal) => {
     customer.email = normalizedEmail || customer.email;
     customer.phone = primaryPhone || fallbackPhone || customer.phone || "";
     customer.company = companyName || customer.company;
+    customer.state = normalizedState || customer.state || "";
+    customer.gstin = normalizedGstin || customer.gstin || "";
     customer.product = deal.product || customer.product || null;
     customer.status = deal.status || customer.status || "Active";
     customer.reason = customer.status === "Inactive" ? String(deal.reason || customer.reason || "").trim() : "";
@@ -1145,7 +1233,25 @@ router.post("/", verifyToken, async (req, res) => {
       status: derived.status,
       reason: derived.reason,
       assignedTo: effectiveAssignedTo,
+      customerState: String(address?.state || "").trim(),
+      customerGstin: "",
     }));
+
+    const sellerTaxProfile = await getSellerTaxProfile();
+    const dealCustomerState = String(
+      normalizedDealPayload.customerState || normalizedDealPayload.address?.state || normalizedDealPayload.state || ""
+    ).trim();
+    const dealCustomerGstin = String(normalizedDealPayload.customerGstin || "").trim();
+    const taxSummary = computeTaxSummary({
+      item: resolvedItem,
+      quantity: normalizedDealPayload.quantity,
+      customerState: dealCustomerState,
+      sellerState: sellerTaxProfile.sellerState,
+      sellerGstin: sellerTaxProfile.sellerGstin,
+      customerGstin: dealCustomerGstin,
+    });
+
+    applyTaxSummaryToPayload(normalizedDealPayload, taxSummary);
 
     if (!forceLostOnCreate && derived.status === "Active" && normalizeDealStage(finalStage) === "won" && itemType === "service") {
       const wonValidationError = validateWonDealAgainstItem({
@@ -1379,6 +1485,37 @@ const updateDealHandler = async (req, res) => {
     }
 
     const itemForValidation = await resolveDealItem(updates.product || req.deal.product);
+    const sellerTaxProfile = await getSellerTaxProfile();
+    const customerStateForTax = String(
+      updates.customerState ||
+        req.body.customerState ||
+        updates.address?.state ||
+        req.body.address?.state ||
+        req.deal.customerState ||
+        req.deal.customerId?.state ||
+        req.deal.address?.state ||
+        req.deal.state ||
+        ""
+    ).trim();
+    const customerGstinForTax = String(
+      updates.customerGstin ||
+        req.body.customerGstin ||
+        req.deal.customerGstin ||
+        req.deal.customerId?.gstin ||
+        req.deal.gstin ||
+        ""
+    ).trim();
+    applyTaxSummaryToPayload(
+      updates,
+      computeTaxSummary({
+        item: itemForValidation,
+        quantity: Object.prototype.hasOwnProperty.call(updates, "quantity") ? updates.quantity : req.deal.quantity,
+        customerState: customerStateForTax,
+        sellerState: sellerTaxProfile.sellerState,
+        sellerGstin: sellerTaxProfile.sellerGstin,
+        customerGstin: customerGstinForTax,
+      })
+    );
     if (shouldDowngradeWonServiceToLost(itemForValidation, nextStage)) {
       nextStage = "lost";
       updates.stage = "lost";
@@ -1867,8 +2004,8 @@ router.get("/:id/proposal-workspace", verifyToken, permitDealAccess(), async (re
   try {
     const deal = await Deal.findById(req.params.id)
       .populate("assignedTo", "name username role reportsTo")
-      .populate("customerId", "name company email phone")
-      .populate("product", "name sku category price type status stock serviceType billingCycle")
+      .populate("customerId", "name company email phone state gstin")
+      .populate("product", "name sku category price type status stock serviceType billingCycle gst_percent hsn_sac")
       .populate("proposalDraft.approvedBy", "name username")
       .lean();
 
@@ -1893,6 +2030,33 @@ router.get("/:id/proposal-workspace", verifyToken, permitDealAccess(), async (re
           .lean()
       : [];
 
+    const sellerTaxProfile = await getSellerTaxProfile();
+    const taxSummary = computeTaxSummary({
+      item: deal.product,
+      quantity: deal.quantity,
+      customerState: deal.customerState || deal.customerId?.state || deal.address?.state || "",
+      sellerState: deal.sellerState || sellerTaxProfile.sellerState,
+      sellerGstin: deal.sellerGstin || sellerTaxProfile.sellerGstin,
+      customerGstin: deal.customerGstin || deal.customerId?.gstin || "",
+    });
+
+    const lineItems = taxSummary
+      ? [
+          {
+            productName: deal.product?.name || deal.name || "-",
+            price: Number(deal.product?.price ?? deal.product?.cost ?? 0),
+            quantity: Number(deal.quantity || 1),
+            gstPercent: taxSummary.gstPercent,
+            taxableAmount: taxSummary.taxableAmount,
+            cgst: taxSummary.cgst,
+            sgst: taxSummary.sgst,
+            igst: taxSummary.igst,
+            totalAmount: taxSummary.grandTotal,
+            hsnSac: taxSummary.hsnSac,
+          },
+        ]
+      : [];
+
     const notifications = await Notification.find({
       dealId: deal._id,
       recipients: req.user._id,
@@ -1902,7 +2066,20 @@ router.get("/:id/proposal-workspace", verifyToken, permitDealAccess(), async (re
       .limit(10)
       .lean();
 
-    res.json({ deal, history, notifications });
+    res.json({
+      deal,
+      history,
+      notifications,
+      taxSummary,
+      lineItems,
+      invoice: {
+        sellerState: taxSummary?.sellerState || sellerTaxProfile.sellerState,
+        sellerGstin: taxSummary?.sellerGstin || sellerTaxProfile.sellerGstin,
+        customerState: taxSummary?.customerState || deal.customerId?.state || "",
+        customerGstin: taxSummary?.customerGstin || deal.customerId?.gstin || "",
+        placeOfSupply: taxSummary?.placeOfSupply || "",
+      },
+    });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

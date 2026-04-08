@@ -6,6 +6,49 @@ const Deal = require("../models/deal");
 const Lead = require("../models/lead");
 const { getTeamMembers } = require("../middleware/dealAuth");
 
+const GSTIN_REGEX = /^[0-9]{2}[A-Z0-9]{13}$/;
+const STATE_NAMES = [
+  "Andhra Pradesh",
+  "Arunachal Pradesh",
+  "Assam",
+  "Bihar",
+  "Chhattisgarh",
+  "Goa",
+  "Gujarat",
+  "Haryana",
+  "Himachal Pradesh",
+  "Jharkhand",
+  "Karnataka",
+  "Kerala",
+  "Madhya Pradesh",
+  "Maharashtra",
+  "Manipur",
+  "Meghalaya",
+  "Mizoram",
+  "Nagaland",
+  "Odisha",
+  "Punjab",
+  "Rajasthan",
+  "Sikkim",
+  "Tamil Nadu",
+  "Telangana",
+  "Tripura",
+  "Uttar Pradesh",
+  "Uttarakhand",
+  "West Bengal",
+  "Andaman and Nicobar Islands",
+  "Chandigarh",
+  "Dadra and Nagar Haveli and Daman and Diu",
+  "Delhi",
+  "Jammu and Kashmir",
+  "Ladakh",
+  "Lakshadweep",
+  "Puducherry",
+];
+
+const normalizeState = (value) => String(value || "").trim();
+const normalizeGstin = (value) => String(value || "").trim().toUpperCase();
+
 const normalizeDealStage = (stage) => {
   const value = String(stage || "").trim().toLowerCase().replace(/\s+/g, "_");
   const map = {
@@ -259,6 +302,42 @@ router.get("/", verifyToken, async (req, res) => {
       : response;
 
     res.json(filtered);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+router.put("/:id", verifyToken, async (req, res) => {
+  try {
+    const state = normalizeState(req.body?.state);
+    const gstin = normalizeGstin(req.body?.gstin);
+
+    if (gstin && !GSTIN_REGEX.test(gstin)) {
+      return res.status(400).json({ message: "GSTIN must be a valid 15-character GSTIN" });
+    }
+
+    if (state && !STATE_NAMES.includes(state)) {
+      return res.status(400).json({ message: "State must be selected from the approved list" });
+    }
+
+    const updates = {
+      state,
+      gstin,
+    };
+
+    const customer = await Customer.findByIdAndUpdate(
+      req.params.id,
+      { $set: updates },
+      { new: true, runValidators: true }
+    )
+      .populate("leadId", "name email phone status source")
+      .populate("product", "name sku category price type status serviceType billingCycle");
+
+    if (!customer) {
+      return res.status(404).json({ message: "Customer not found" });
+    }
+
+    res.json(customer);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

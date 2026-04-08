@@ -23,6 +23,16 @@ const getStatusLabel = (status) => {
   return labels[value] || "Draft";
 };
 
+const formatCurrency = (value) => {
+  const numeric = Number(value || 0);
+  return `Rs.${numeric.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
+};
+
+const formatPercent = (value) => {
+  const numeric = Number(value || 0);
+  return `${numeric.toFixed(2)}%`;
+};
+
 function DocumentsModule() {
   const [searchParams] = useSearchParams();
   const token = localStorage.getItem("token");
@@ -211,16 +221,46 @@ function DocumentsModule() {
   };
 
   const deal = workspace?.deal || {};
+  const taxSummary = workspace?.taxSummary || null;
+  const invoice = workspace?.invoice || {};
+  const lineItems = Array.isArray(workspace?.lineItems) ? workspace.lineItems : [];
+  const displayLineItems =
+    lineItems.length > 0
+      ? lineItems
+      : taxSummary
+        ? [
+            {
+              productName: deal.product?.name || deal.name || "-",
+              price: Number(deal.product?.price ?? deal.product?.cost ?? 0),
+              quantity: Number(deal.quantity || 1),
+              gstPercent: taxSummary.gstPercent,
+              hsnSac: taxSummary.hsnSac,
+              taxableAmount: taxSummary.taxableAmount,
+              cgst: taxSummary.cgst,
+              sgst: taxSummary.sgst,
+              igst: taxSummary.igst,
+              totalAmount: taxSummary.grandTotal,
+            },
+          ]
+        : [];
+  const subtotal = displayLineItems.reduce((sum, item) => sum + Number(item.taxableAmount || 0), 0);
+  const totalGst = displayLineItems.reduce((sum, item) => {
+    const cgst = Number(item.cgst || 0);
+    const sgst = Number(item.sgst || 0);
+    const igst = Number(item.igst || 0);
+    return sum + cgst + sgst + igst;
+  }, 0);
+  const grandTotal = displayLineItems.reduce((sum, item) => sum + Number(item.totalAmount || 0), 0);
   const draftStatus = String(workspace?.deal?.proposalDraft?.status || form.status || "draft");
   const canSendToClient = draftStatus === "approved";
   const history = workspace?.history || [];
   const notifications = workspace?.notifications || [];
   const timeline = Array.isArray(deal.timeline) ? [...deal.timeline].reverse() : [];
   const heroMeta = [
-    { label: "Deal", value: deal.name || searchParams.get("dealName") || "-" },
-    { label: "Company", value: deal.company || searchParams.get("company") || "-" },
-    { label: "Product", value: deal.product?.name || "-" },
-  ];
+      { label: "Deal", value: deal.name || searchParams.get("dealName") || "-" },
+      { label: "Company", value: deal.company || searchParams.get("company") || "-" },
+      { label: "Product", value: deal.product?.name || "-" },
+    ];
 
   const openEditor = () => setShowEditor(true);
   const closeEditor = () => setShowEditor(false);
@@ -341,6 +381,39 @@ function DocumentsModule() {
                         <textarea rows="3" value={form.pricingNotes} onChange={(event) => updateField("pricingNotes", event.target.value)} />
                       </div>
                     </div>
+                    <div className="documents-line-items">
+                      <div className="documents-line-items__header">
+                        <span>Product Name</span>
+                        <span>Price</span>
+                        <span>Quantity</span>
+                        <span>GST %</span>
+                        <span>HSN/SAC</span>
+                        <span>Taxable Amount</span>
+                        <span>CGST</span>
+                        <span>SGST</span>
+                        <span>IGST</span>
+                        <span>Total</span>
+                      </div>
+                      {displayLineItems.map((item, index) => (
+                        <div className="documents-line-items__row" key={`${item.productName || "item"}-${index}`}>
+                          <span>{item.productName || "-"}</span>
+                          <span>{formatCurrency(item.price)}</span>
+                          <span>{Number(item.quantity || 0)}</span>
+                          <span>{formatPercent(item.gstPercent)}</span>
+                          <span>{item.hsnSac || "-"}</span>
+                          <span>{formatCurrency(item.taxableAmount)}</span>
+                          <span>{formatCurrency(item.cgst)}</span>
+                          <span>{formatCurrency(item.sgst)}</span>
+                          <span>{formatCurrency(item.igst)}</span>
+                          <span>{formatCurrency(item.totalAmount)}</span>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="documents-tax-summary">
+                      <div><span>Subtotal</span><strong>{formatCurrency(subtotal || taxSummary?.taxableAmount || deal.amount || 0)}</strong></div>
+                      <div><span>Total GST</span><strong>{formatCurrency(totalGst || taxSummary?.gstAmount || 0)}</strong></div>
+                      <div><span>Grand Total</span><strong>{formatCurrency(grandTotal || taxSummary?.grandTotal || deal.amount || 0)}</strong></div>
+                    </div>
                   </div>
 
                   <div className="documents-card">
@@ -362,6 +435,19 @@ function DocumentsModule() {
                       <div><span>Contact</span><strong>{deal.contact || searchParams.get("contact") || "-"}</strong></div>
                       <div><span>Email</span><strong>{deal.email || searchParams.get("email") || "-"}</strong></div>
                       <div><span>Product</span><strong>{deal.product?.name || "-"}</strong></div>
+                    </div>
+                  </div>
+
+                  <div className="documents-card">
+                    <div className="documents-card__header">
+                      <h2>GST Invoice Details</h2>
+                    </div>
+                    <div className="documents-info-list">
+                      <div><span>Seller State</span><strong>{invoice.sellerState || "-"}</strong></div>
+                      <div><span>Seller GSTIN</span><strong>{invoice.sellerGstin || "-"}</strong></div>
+                      <div><span>Customer State</span><strong>{invoice.customerState || deal.customerId?.state || "-"}</strong></div>
+                      <div><span>Customer GSTIN</span><strong>{invoice.customerGstin || deal.customerId?.gstin || "-"}</strong></div>
+                      <div><span>Place of Supply</span><strong>{invoice.placeOfSupply || "-"}</strong></div>
                     </div>
                   </div>
 

@@ -71,6 +71,17 @@ const itemSchema = new mongoose.Schema(
       min: 0,
       default: null
     },
+    gst_percent: {
+      type: Number,
+      min: 0,
+      max: 100,
+      default: 18
+    },
+    hsn_sac: {
+      type: String,
+      trim: true,
+      default: ""
+    },
     cost: {
       type: Number,
       min: 0,
@@ -234,23 +245,29 @@ itemSchema.virtual("availableStorage").get(function getAvailableStorage() {
 
 itemSchema.pre("validate", function validateByType() {
   this.name = String(this.name || "").trim().replace(/\s+/g, " ");
-  this.category = normalizeServiceCategory(this.category, this.serviceType);
-  this.normalizedName = this.name ? this.name.toLowerCase() : null;
-  this.vendor = String(this.vendor || "").trim();
-  this.provider = String(this.provider || "").trim();
-  this.licenseKey = String(this.licenseKey || "").trim();
-  this.status = this.status || "Active";
+    this.category = normalizeServiceCategory(this.category, this.serviceType);
+    this.normalizedName = this.name ? this.name.toLowerCase() : null;
+    this.vendor = String(this.vendor || "").trim();
+    this.provider = String(this.provider || "").trim();
+    this.licenseKey = String(this.licenseKey || "").trim();
+    this.hsn_sac = String(this.hsn_sac || "").trim();
+    this.status = this.status || "Active";
 
-  if (this.type === "product") {
-    if (this.stock === undefined || this.stock === null) {
-      this.invalidate("quantity", "quantity is required when type is product");
-    }
-    if (this.price === undefined || this.price === null) {
-      this.invalidate("price", "price is required when type is product");
-    }
+    if (this.type === "product") {
+      if (this.stock === undefined || this.stock === null) {
+        this.invalidate("quantity", "quantity is required when type is product");
+      }
+      if (this.price === undefined || this.price === null) {
+        this.invalidate("price", "price is required when type is product");
+      }
+      if (this.gst_percent === undefined || this.gst_percent === null || Number.isNaN(Number(this.gst_percent))) {
+        this.invalidate("gst_percent", "gst_percent is required when type is product");
+      } else {
+        this.gst_percent = Number(this.gst_percent);
+      }
 
-    this.cost = null;
-    this.serviceType = undefined;
+      this.cost = null;
+      this.serviceType = undefined;
     this.licenseKey = "";
     this.purchaseDate = null;
     this.expiryDate = null;
@@ -266,9 +283,11 @@ itemSchema.pre("validate", function validateByType() {
     return;
   }
 
-  this.stock = 0;
-  this.lowStockThreshold = 0;
-  this.price = null;
+    this.stock = 0;
+    this.lowStockThreshold = 0;
+    this.price = null;
+    this.gst_percent = null;
+    this.hsn_sac = String(this.hsn_sac || "").trim();
 
   if (!SERVICE_STATUS_VALUES.includes(this.status)) {
     this.invalidate("status", "status must be Active or Inactive");

@@ -88,6 +88,36 @@
   padding-bottom: 8px;
 }
 
+.customer-inline-input {
+  width: min(340px, 58%);
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 1px solid var(--theme-border);
+  border-radius: 10px;
+  background: #ffffff;
+  color: var(--theme-ink);
+  font-size: 14px;
+}
+
+.customer-inline-input:focus {
+  outline: none;
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.14);
+}
+
+.customer-message {
+  padding: 0 24px 12px;
+  font-size: 14px;
+  color: #0f766e;
+}
+
+.customer-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 0 24px 18px;
+}
+
 .customer-purchases-wrapper {
   margin-top: 10px;
   padding: 0 24px 6px;

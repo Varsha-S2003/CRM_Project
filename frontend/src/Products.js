@@ -178,6 +178,8 @@ function Products() {
                   <th>Type</th>
                   <th>Category</th>
                   <th>Price</th>
+                  <th>GST %</th>
+                  <th>HSN/SAC</th>
                   <th>Status</th>
                   <th>Created</th>
                 </tr>
@@ -185,7 +187,7 @@ function Products() {
               <tbody>
                 {items.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="no-data">
+                    <td colSpan={8} className="no-data">
                       No records found
                     </td>
                   </tr>
@@ -199,6 +201,8 @@ function Products() {
                         <td>{(item.type || "product") === "service" ? "Service" : "Product"}</td>
                         <td>{item.category}</td>
                         <td>{formatCurrency(getDisplayPrice(item))}</td>
+                        <td>{(item.type || "product") === "product" ? `${Number(item.gst_percent ?? 18)}%` : "-"}</td>
+                        <td>{(item.type || "product") === "product" ? (item.hsn_sac || "-") : "-"}</td>
                         <td>
                           <span className={`stock-badge ${alertInfo.className}`}>{alertInfo.text}</span>
                         </td>
