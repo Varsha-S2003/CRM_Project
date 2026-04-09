@@ -41,6 +41,130 @@ const billingCycleOptions = [
 const salutations = ["", "Mr.", "Mrs.", "Ms.", "Dr.", "Prof."];
 const industries = ["", "Technology", "Manufacturing", "Finance", "Healthcare", "Retail", "Education", "Real Estate", "Other"];
 const dealSources = ["", "Website", "Referral", "Social Media", "Email Campaign", "Cold Call", "Trade Show", "Other"];
+const countryOptions = ["India", "United States", "United Kingdom", "Canada", "Australia", "Singapore", "United Arab Emirates", "Other"];
+const stateOptionsByCountry = {
+  India: [
+    "Andhra Pradesh",
+    "Arunachal Pradesh",
+    "Assam",
+    "Bihar",
+    "Chhattisgarh",
+    "Goa",
+    "Gujarat",
+    "Haryana",
+    "Himachal Pradesh",
+    "Jharkhand",
+    "Karnataka",
+    "Kerala",
+    "Madhya Pradesh",
+    "Maharashtra",
+    "Manipur",
+    "Meghalaya",
+    "Mizoram",
+    "Nagaland",
+    "Odisha",
+    "Punjab",
+    "Rajasthan",
+    "Sikkim",
+    "Tamil Nadu",
+    "Telangana",
+    "Tripura",
+    "Uttar Pradesh",
+    "Uttarakhand",
+    "West Bengal",
+    "Andaman and Nicobar Islands",
+    "Chandigarh",
+    "Dadra and Nagar Haveli and Daman and Diu",
+    "Delhi",
+    "Jammu and Kashmir",
+    "Ladakh",
+    "Lakshadweep",
+    "Puducherry",
+  ],
+  Canada: [
+    "Alberta",
+    "British Columbia",
+    "Manitoba",
+    "New Brunswick",
+    "Newfoundland and Labrador",
+    "Nova Scotia",
+    "Ontario",
+    "Prince Edward Island",
+    "Quebec",
+    "Saskatchewan",
+    "Northwest Territories",
+    "Nunavut",
+    "Yukon",
+  ],
+  "United States": [
+    "Alabama",
+    "Alaska",
+    "Arizona",
+    "Arkansas",
+    "California",
+    "Colorado",
+    "Connecticut",
+    "Delaware",
+    "Florida",
+    "Georgia",
+    "Hawaii",
+    "Idaho",
+    "Illinois",
+    "Indiana",
+    "Iowa",
+    "Kansas",
+    "Kentucky",
+    "Louisiana",
+    "Maine",
+    "Maryland",
+    "Massachusetts",
+    "Michigan",
+    "Minnesota",
+    "Mississippi",
+    "Missouri",
+    "Montana",
+    "Nebraska",
+    "Nevada",
+    "New Hampshire",
+    "New Jersey",
+    "New Mexico",
+    "New York",
+    "North Carolina",
+    "North Dakota",
+    "Ohio",
+    "Oklahoma",
+    "Oregon",
+    "Pennsylvania",
+    "Rhode Island",
+    "South Carolina",
+    "South Dakota",
+    "Tennessee",
+    "Texas",
+    "Utah",
+    "Vermont",
+    "Virginia",
+    "Washington",
+    "West Virginia",
+    "Wisconsin",
+    "Wyoming",
+    "District of Columbia",
+  ],
+  "United Kingdom": ["England", "Scotland", "Wales", "Northern Ireland"],
+  Australia: [
+    "New South Wales",
+    "Victoria",
+    "Queensland",
+    "Western Australia",
+    "South Australia",
+    "Tasmania",
+    "Australian Capital Territory",
+    "Northern Territory",
+  ],
+  Singapore: ["Central Region", "East Region", "North Region", "North-East Region", "West Region"],
+  "United Arab Emirates": ["Abu Dhabi", "Dubai", "Sharjah", "Ajman", "Umm Al Quwain", "Ras Al Khaimah", "Fujairah"],
+  Other: ["State/Province 1", "State/Province 2", "State/Province 3"],
+};
+const getStateOptionsForCountry = (country) => stateOptionsByCountry[String(country || "").trim()] || [];
 
 const allowedTransitions = {
   "qualification": ["need_analysis", "lost"],
@@ -133,6 +257,7 @@ const normalizeDeal = (deal) => {
     leadSource: String(deal.leadSource || "").trim(),
     campaignSource: String(deal.campaignSource || "").trim(),
     description: String(deal.description || "").trim(),
+    customerGstin: String(deal.customerGstin || "").trim(),
   };
 };
 
@@ -224,6 +349,7 @@ function Deals() {
     mobile: "",
     website: "",
     industry: "",
+    customerGstin: "",
     employeeCount: "",
     street: "",
     city: "",
@@ -462,6 +588,7 @@ function Deals() {
       leadSource: selectedDeal.leadSource || "",
       campaignSource: selectedDeal.campaignSource || "",
       description: selectedDeal.description || "",
+      customerGstin: selectedDeal.customerGstin || "",
       product: selectedDeal.product?._id || selectedDeal.product || "",
       quantity: selectedDeal.quantity ?? "",
       billingCycle: selectedDeal.billingCycle || "",
@@ -529,6 +656,14 @@ function Deals() {
   const newDealStageKey = normalizeStageForUi(newDeal.stage || "qualification");
   const selectedEditDealStageKey = normalizeStageForUi(editDealForm?.stage || selectedDeal?.stage || "");
 
+  const handleNewDealCountryChange = (country) => {
+    setNewDeal((prev) => {
+      const allowedStates = getStateOptionsForCountry(country);
+      const nextState = allowedStates.includes(prev.state) ? prev.state : "";
+      return { ...prev, country, state: nextState };
+    });
+  };
+
   // Get stages that have deals matching the search
   const getStagesWithDeals = () => {
     if (!search.trim()) return stages;
@@ -551,6 +686,7 @@ function Deals() {
       mobile: "",
       website: "",
       industry: "",
+      customerGstin: "",
       employeeCount: "",
       street: "",
       city: "",
@@ -647,6 +783,7 @@ function Deals() {
       leadSource: row.leadsource || row.source || "",
       campaignSource: row.campaignsource || row.campaign || "",
       description: row.description || "",
+      customerGstin: row.customergstin || row.gstin || "",
       product: "",
       quantity: "",
       billingCycle: "",
@@ -795,6 +932,7 @@ function Deals() {
           quantity: selectedNewDealItemType === "product" ? parseOptionalNumberInput(newDeal.quantity) : undefined,
           billingCycle: selectedNewDealItemType === "service" ? newDeal.billingCycle || "" : undefined,
           stage: effectiveStage,
+          customerGstin: String(newDeal.customerGstin || "").trim().toUpperCase(),
           reason: effectiveReason,
         },
         { headers: { Authorization: `Bearer ${token}` } }
@@ -1214,6 +1352,7 @@ function Deals() {
       leadSource: String(editDealForm.leadSource || "").trim(),
       campaignSource: String(editDealForm.campaignSource || "").trim(),
       description: String(editDealForm.description || "").trim(),
+      customerGstin: String(editDealForm.customerGstin || "").trim().toUpperCase(),
       product: editDealForm.product || null,
       quantity: selectedEditDealItemType === "product" ? parseOptionalNumberInput(editDealForm.quantity) : undefined,
       billingCycle: selectedEditDealItemType === "service" ? editDealForm.billingCycle || "" : undefined,
@@ -2276,6 +2415,19 @@ ET`;
                       required
                     />
                   </div>
+                  <div className="form-group">
+                    <label>GSTIN</label>
+                    <input
+                      type="text"
+                      name="customerGstin"
+                      value={newDeal.customerGstin}
+                      onChange={(e) =>
+                        setNewDeal((prev) => ({ ...prev, customerGstin: e.target.value.toUpperCase() }))
+                      }
+                      autoComplete="off"
+                      maxLength={15}
+                    />
+                  </div>
                 </div>
                 <div className="form-row-zoho">
                   <div className="form-group">
@@ -2509,13 +2661,42 @@ ET`;
                 </div>
                 <div className="form-row-zoho">
                   <div className="form-group">
+                    <label>Country</label>
+                    <select
+                      value={newDeal.country}
+                      onChange={(e) => handleNewDealCountryChange(e.target.value)}
+                    >
+                      <option value="">Select country</option>
+                      {countryOptions.map((country) => (
+                        <option key={country} value={country}>
+                          {country}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="form-group">
                     <label>State</label>
+<<<<<<< HEAD
                     <input
                       type="text"
                       value={newDeal.state || matchedCustomerState}
                       onChange={(e) => setNewDeal((prev) => ({ ...prev, state: e.target.value }))}
                       placeholder={matchedCustomerState ? "Auto-filled from customer" : ""}
                     />
+=======
+                    <select
+                      value={newDeal.state}
+                      onChange={(e) => setNewDeal((prev) => ({ ...prev, state: e.target.value }))}
+                      disabled={!newDeal.country}
+                    >
+                      <option value="">{newDeal.country ? "Select state" : "Select country first"}</option>
+                      {getStateOptionsForCountry(newDeal.country).map((state) => (
+                        <option key={state} value={state}>
+                          {state}
+                        </option>
+                      ))}
+                    </select>
+>>>>>>> 4b7f40589b6897ae52896cf6ce5434225686afda
                   </div>
                   <div className="form-group">
                     <label>Postal Code</label>
@@ -2523,14 +2704,6 @@ ET`;
                       type="text"
                       value={newDeal.postalCode}
                       onChange={(e) => setNewDeal((prev) => ({ ...prev, postalCode: e.target.value }))}
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label>Country</label>
-                    <input
-                      type="text"
-                      value={newDeal.country}
-                      onChange={(e) => setNewDeal((prev) => ({ ...prev, country: e.target.value }))}
                     />
                   </div>
                 </div>
@@ -2606,7 +2779,7 @@ ET`;
                 <div className="form-section">
                   <h3>Upload CSV File</h3>
                   <p className="import-helper-text">
-                    Supported headers: name, dealName, company, amount, contact, email, phone, stage, closingDate, probability, expectedRevenue, nextStep, dealType, leadSource, campaignSource, description.
+                    Supported headers: name, dealName, company, amount, contact, email, phone, gstin, customerGstin, stage, closingDate, probability, expectedRevenue, nextStep, dealType, leadSource, campaignSource, description.
                   </p>
                   <input
                     type="file"
@@ -2706,6 +2879,7 @@ ET`;
                             leadSource: selectedDeal.leadSource || "",
                             campaignSource: selectedDeal.campaignSource || "",
                             description: selectedDeal.description || "",
+                            customerGstin: selectedDeal.customerGstin || "",
                             product: selectedDeal.product?._id || selectedDeal.product || "",
                             quantity: selectedDeal.quantity ?? "",
                             billingCycle: selectedDeal.billingCycle || "",
@@ -2764,6 +2938,21 @@ ET`;
                     />
                   ) : (
                     <span className="detail-value">{selectedDeal.phone || "-"}</span>
+                  )}
+                </div>
+                <div className="detail-row">
+                  <span className="detail-label">GSTIN</span>
+                  {isEditingSelectedDeal ? (
+                    <input
+                      className="deal-detail-input"
+                      value={editDealForm?.customerGstin || ""}
+                      onChange={(e) =>
+                        setEditDealForm((prev) => ({ ...prev, customerGstin: e.target.value.toUpperCase() }))
+                      }
+                      maxLength={15}
+                    />
+                  ) : (
+                    <span className="detail-value">{selectedDeal.customerGstin || "-"}</span>
                   )}
                 </div>
                 <div className="detail-row">
