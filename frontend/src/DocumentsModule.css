@@ -520,6 +520,17 @@
   padding-top: 4px;
 }
 
+.documents-footer-hint {
+  flex: 1 1 100%;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--theme-text-muted);
+  background: rgba(247, 250, 254, 0.88);
+  border: 1px solid var(--theme-border);
+  border-radius: 10px;
+  padding: 8px 10px;
+}
+
 @media (max-width: 1200px) {
   .documents-layout {
     grid-template-columns: 1fr;

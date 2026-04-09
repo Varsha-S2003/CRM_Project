@@ -162,7 +162,15 @@ async function sendPasswordResetEmail({ to, resetUrl, name }) {
   return { result, preview };
 }
 
-async function sendLeadProposalEmail({ to, leadName, company, proposal = {} }) {
+async function sendLeadProposalEmail({
+  to,
+  leadName,
+  company,
+  proposal = {},
+  customMessage = "",
+  pdfBuffer = null,
+  pdfFileName = "proposal.pdf",
+}) {
   const mailer = await getTransporter();
   const appName = "Elogixa CRM";
   const emailConfig = await getEmailConfig();
@@ -174,10 +182,14 @@ async function sendLeadProposalEmail({ to, leadName, company, proposal = {} }) {
   const subject = String(proposal.subject || "").trim() || `Proposal for ${company || leadName || "your requirement"}`;
   const message = String(proposal.message || "").trim();
   const terms = String(proposal.terms || "").trim();
+  const clientMessage = String(customMessage || "").trim();
   const validUntil = proposal.validUntil ? new Date(proposal.validUntil) : null;
   const validUntilLabel = validUntil && !Number.isNaN(validUntil.getTime())
     ? validUntil.toLocaleDateString()
     : "Not specified";
+  const hasPdfAttachment = Buffer.isBuffer(pdfBuffer) && pdfBuffer.length > 0;
+  const attachmentName = String(pdfFileName || "proposal.pdf").trim() || "proposal.pdf";
+  const emailBodyMessage = clientMessage || message || "No additional message provided.";
 
   const result = await mailer.sendMail({
     from: `"${appName}" <${sender}>`,
@@ -190,9 +202,10 @@ async function sendLeadProposalEmail({ to, leadName, company, proposal = {} }) {
       hasAmount ? `Amount: ${currency} ${amountValue.toFixed(2)}` : "Amount: Not specified",
       `Valid Until: ${validUntilLabel}`,
       "",
-      message || "No additional message provided.",
+      emailBodyMessage,
       "",
       terms ? `Terms: ${terms}` : "",
+      hasPdfAttachment ? "Attachment: Proposal PDF" : "",
       "",
       `Regards,`,
       appName,
@@ -219,11 +232,21 @@ async function sendLeadProposalEmail({ to, leadName, company, proposal = {} }) {
               <td style="padding: 8px; border: 1px solid #e5e7eb;">${validUntilLabel}</td>
             </tr>
           </table>
-          <p style="margin: 0 0 12px; white-space: pre-line;">${message || "No additional message provided."}</p>
+          <p style="margin: 0 0 12px; white-space: pre-line;">${emailBodyMessage}</p>
           ${terms ? `<p style="margin: 0; white-space: pre-line;"><strong>Terms:</strong><br/>${terms}</p>` : ""}
+          ${hasPdfAttachment ? `<p style="margin: 12px 0 0; color: #065f46; font-weight: 600;">The proposal PDF is attached with this email.</p>` : ""}
         </div>
       </div>
     `,
+    attachments: hasPdfAttachment
+      ? [
+          {
+            filename: attachmentName,
+            content: pdfBuffer,
+            contentType: "application/pdf",
+          },
+        ]
+      : [],
   });
 
   const preview = isEtherealConfig(emailConfig) ? nodemailer.getTestMessageUrl(result) : null;
@@ -390,9 +413,79 @@ async function sendLowStockCustomerEmail({
   return { result, preview };
 }
 
+async function sendInvoiceEmailToClient({
+  to,
+  customerName,
+  company,
+  invoice,
+  pdfBuffer,
+}) {
+  const mailer = await getTransporter();
+  const appName = "Elogixa CRM";
+  const emailConfig = await getEmailConfig();
+  const sender = emailConfig.auth?.user || "";
+
+  const safeCustomerName = String(customerName || "Customer").trim() || "Customer";
+  const safeCompany = String(company || "").trim();
+  const invoiceNumber = String(invoice?.invoiceNumber || "").trim() || "Invoice";
+  const amount = Number(invoice?.totalAmount || 0);
+  const dueDate = invoice?.dueDate ? new Date(invoice.dueDate) : null;
+  const dueDateLabel = dueDate && !Number.isNaN(dueDate.getTime()) ? dueDate.toLocaleDateString("en-IN") : "-";
+
+  const subject = `${appName} Invoice ${invoiceNumber}`;
+  const greetingLine = safeCompany
+    ? `Hello ${safeCustomerName} (${safeCompany}),`
+    : `Hello ${safeCustomerName},`;
+
+  const result = await mailer.sendMail({
+    from: `"${appName}" <${sender}>`,
+    to,
+    subject,
+    text: [
+      greetingLine,
+      "",
+      `Please find attached invoice ${invoiceNumber}.`,
+      `Invoice Amount: INR ${amount.toFixed(2)}`,
+      `Due Date: ${dueDateLabel}`,
+      "",
+      "Regards,",
+      appName,
+    ].join("\n"),
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 620px; margin: 0 auto; border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden;">
+        <div style="background: #14532d; padding: 16px 20px; color: #ffffff;">
+          <h2 style="margin: 0; font-size: 20px;">${appName} Invoice</h2>
+        </div>
+        <div style="padding: 20px; background: #ffffff; color: #111827;">
+          <p style="margin: 0 0 12px;">${greetingLine}</p>
+          <p style="margin: 0 0 12px;">Please find attached invoice <strong>${invoiceNumber}</strong>.</p>
+          <p style="margin: 0 0 8px;"><strong>Amount:</strong> INR ${amount.toFixed(2)}</p>
+          <p style="margin: 0 0 16px;"><strong>Due Date:</strong> ${dueDateLabel}</p>
+          <p style="margin: 0; color: #6b7280;">This is a system generated invoice email.</p>
+        </div>
+      </div>
+    `,
+    attachments: [
+      {
+        filename: `${invoiceNumber}.pdf`,
+        content: pdfBuffer,
+        contentType: "application/pdf",
+      },
+    ],
+  });
+
+  const preview = isEtherealConfig(emailConfig) ? nodemailer.getTestMessageUrl(result) : null;
+  if (preview) {
+    console.log("Ethereal invoice email preview URL:", preview);
+  }
+
+  return { result, preview };
+}
+
 module.exports = {
   sendPasswordResetEmail,
   sendLeadProposalEmail,
   sendActivityReminderEmail,
   sendLowStockCustomerEmail,
+  sendInvoiceEmailToClient,
 };

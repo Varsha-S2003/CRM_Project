@@ -405,6 +405,38 @@ function Sidebar() {
               <span>Documents</span>
             </a>
           )}
+          {canSee(["ADMIN","MANAGER","EMPLOYEE"]) && (
+            <a
+              href="/"
+              onClick={(e) => handleNav("/quotations", e)}
+              className={`nav-item ${isActive("/quotations") ? "active" : ""}`}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M6 2h9l5 5v15a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z"></path>
+                <path d="M14 2v6h6"></path>
+                <path d="M8 12h8"></path>
+                <path d="M8 16h8"></path>
+                <path d="M8 8h3"></path>
+              </svg>
+              <span>Quotations</span>
+            </a>
+          )}
+          {canSee(["ADMIN","MANAGER","EMPLOYEE"]) && (
+            <a
+              href="/"
+              onClick={(e) => handleNav("/invoices", e)}
+              className={`nav-item ${isActive("/invoices") ? "active" : ""}`}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M7 3h10l4 4v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"></path>
+                <path d="M17 3v5h5"></path>
+                <path d="M8 12h8"></path>
+                <path d="M8 16h8"></path>
+                <path d="M8 8h3"></path>
+              </svg>
+              <span>Invoices</span>
+            </a>
+          )}
         </div>
 
         <div className="nav-section">

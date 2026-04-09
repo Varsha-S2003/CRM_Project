@@ -13,7 +13,8 @@ const Notification = require("../models/notification");
 const User = require("../models/user");
 const DealView = require("../models/dealView");
 const AppSettings = require("../models/appSettings");
-const { sendLowStockCustomerEmail } = require("../utils/mailer");
+const { sendLowStockCustomerEmail, sendLeadProposalEmail } = require("../utils/mailer");
+const { generateProposalPdfBuffer } = require("../utils/proposalPdf");
 
 // DEBUG: Test notification endpoint
 router.post("/test-notification", async (req, res) => {
@@ -2087,6 +2088,11 @@ router.get("/:id/proposal-workspace", verifyToken, permitDealAccess(), async (re
 
 router.post("/:id/proposal-draft", verifyToken, permitDealAccess(), async (req, res) => {
   try {
+    const parsedDiscount = Number(req.body?.discountPercent);
+    const safeDiscount = Number.isFinite(parsedDiscount)
+      ? Math.min(100, Math.max(0, parsedDiscount))
+      : 0;
+
     const update = {
       "proposalDraft.title": String(req.body?.title || "").trim(),
       "proposalDraft.introduction": String(req.body?.introduction || "").trim(),
@@ -2095,6 +2101,7 @@ router.post("/:id/proposal-draft", verifyToken, permitDealAccess(), async (req, 
       "proposalDraft.scope": String(req.body?.scope || "").trim(),
       "proposalDraft.pricingNotes": String(req.body?.pricingNotes || "").trim(),
       "proposalDraft.terms": String(req.body?.terms || "").trim(),
+      "proposalDraft.discountPercent": safeDiscount,
     };
 
     const deal = await Deal.findByIdAndUpdate(
@@ -2117,30 +2124,80 @@ router.post("/:id/proposal-draft", verifyToken, permitDealAccess(), async (req, 
 
 router.post("/:id/proposal-approval-request", verifyToken, permitDealAccess(), async (req, res) => {
   try {
+    const requesterRole = String(req.user?.role || "").toUpperCase();
+    if (requesterRole !== "EMPLOYEE") {
+      return res.status(403).json({ message: "Only employees can send proposal approval requests." });
+    }
+
     const deal = await Deal.findById(req.params.id).populate("assignedTo", "name username role reportsTo");
     if (!deal) {
       return res.status(404).json({ message: "Deal not found" });
     }
+
+    const previousStage = String(deal.stage || "");
+    const normalizedStage = normalizeDealStage(previousStage);
+    if (["won", "lost"].includes(normalizedStage)) {
+      return res.status(400).json({
+        message: "Proposal cannot be sent to manager from a closed deal.",
+      });
+    }
+
+    const autoMovedToNegotiate = normalizedStage !== "negotiate";
 
     const recipients = await getProposalApprovalRecipients({ requester: req.user, deal });
     if (!recipients.length) {
       return res.status(400).json({ message: "No assigned manager found for approval notification." });
     }
 
-    deal.proposalDraft = deal.proposalDraft || {};
-    deal.proposalDraft.status = "pending_approval";
-    deal.proposalDraft.approvalRequestedAt = new Date();
-    deal.proposalDraft.approvalRespondedAt = null;
-    deal.proposalDraft.approvedBy = null;
-    deal.proposalDraft.approvalComment = "";
-    await deal.save();
-
     const requesterName = getUserDisplayName(req.user);
+    const now = new Date();
+    const updatePayload = {
+      $set: {
+        "proposalDraft.status": "pending_approval",
+        "proposalDraft.approvalRequestedAt": now,
+        "proposalDraft.approvalRespondedAt": null,
+        "proposalDraft.approvedBy": null,
+        "proposalDraft.approvalComment": "",
+      },
+    };
+
+    if (autoMovedToNegotiate) {
+      updatePayload.$set.stage = "negotiate";
+      updatePayload.$set.status = "Active";
+      updatePayload.$set.reason = "";
+      updatePayload.$push = {
+        timeline: {
+          $each: [
+            {
+              fromStage: previousStage,
+              toStage: "negotiate",
+              changedBy: req.user._id,
+              changedAt: now,
+              userName: requesterName,
+            },
+          ],
+          $position: 0,
+        },
+      };
+    }
+
+    const updatedDeal = await Deal.findByIdAndUpdate(deal._id, updatePayload, {
+      new: true,
+      runValidators: true,
+    });
+    if (!updatedDeal) {
+      return res.status(404).json({ message: "Deal not found" });
+    }
+
+    deal.stage = updatedDeal.stage;
+
     await Notification.insertMany(
       recipients.map((recipient) => ({
         dealId: deal._id,
-        message: `Proposal approval requested for deal "${deal.name}" by ${requesterName}`,
-        fromStage: String(deal.stage || ""),
+        message: autoMovedToNegotiate
+          ? `Proposal approval requested for deal "${deal.name}" by ${requesterName}. Deal moved to Negotiate. Please schedule and own the negotiation meeting.`
+          : `Proposal approval requested for deal "${deal.name}" by ${requesterName}. Please schedule and own the negotiation meeting.`,
+        fromStage: previousStage,
         toStage: "proposal_approval_requested",
         changedBy: req.user._id,
         changedByName: requesterName,
@@ -2149,7 +2206,62 @@ router.post("/:id/proposal-approval-request", verifyToken, permitDealAccess(), a
       }))
     );
 
-    res.json({ message: "Proposal sent to manager for approval.", status: deal.proposalDraft.status });
+    if (autoMovedToNegotiate) {
+      const notifyIds = new Set(recipients.map((id) => String(id)));
+      if (deal.assignedTo?._id) {
+        notifyIds.add(String(deal.assignedTo._id));
+      }
+      const admins = await User.find({ role: { $regex: /^admin$/i } }).select("_id").lean();
+      admins.forEach((admin) => notifyIds.add(String(admin._id)));
+
+      const stageMoveMessage =
+        `Deal "${deal.name}" auto-moved to Negotiate after proposal was sent to manager by ${requesterName}.`;
+
+      await Notification.insertMany(
+        Array.from(notifyIds)
+          .filter(Boolean)
+          .map((recipient) => ({
+            dealId: deal._id,
+            message: stageMoveMessage,
+            fromStage: previousStage,
+            toStage: "negotiate",
+            changedBy: req.user._id,
+            changedByName: requesterName,
+            recipients: [recipient],
+            isRead: false,
+          }))
+      );
+    }
+
+    const managerOwnerId = recipients[0];
+    if (managerOwnerId) {
+      await Activity.create({
+        type: "task",
+        activityType: "task",
+        title: `Schedule negotiation meeting for ${deal.name}`,
+        description: `Proposal sent by ${requesterName}. Manager is responsible to schedule the negotiation meeting and next action plan.`,
+        owner: managerOwnerId,
+        createdBy: req.user._id,
+        status: "Pending",
+        priority: "High",
+        dueDate: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        relatedTo: {
+          recordType: "Deal",
+          recordId: deal._id,
+          recordName: deal.name || "Deal",
+        },
+      });
+    }
+
+    res.json({
+      message: autoMovedToNegotiate
+        ? "Proposal sent to manager for approval. Deal moved to Negotiate and manager task created."
+        : "Proposal sent to manager for approval. Manager task created.",
+      status: deal.proposalDraft.status,
+      previousStage,
+      stage: deal.stage,
+      managerResponsible: true,
+    });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -2158,13 +2270,13 @@ router.post("/:id/proposal-approval-request", verifyToken, permitDealAccess(), a
 router.post("/:id/proposal-approval", verifyToken, permitDealAccess(), async (req, res) => {
   try {
     const role = String(req.user?.role || "").toUpperCase();
-    if (!["ADMIN", "MANAGER"].includes(role)) {
-      return res.status(403).json({ message: "Only managers or admins can approve proposals." });
+    if (role !== "MANAGER") {
+      return res.status(403).json({ message: "Only managers can review proposals." });
     }
 
     const action = String(req.body?.action || "").trim().toLowerCase();
-    if (!["approve", "reject"].includes(action)) {
-      return res.status(400).json({ message: "action must be approve or reject" });
+    if (!["approve", "edit", "reject"].includes(action)) {
+      return res.status(400).json({ message: "action must be approve, edit, or reject" });
     }
 
     const comment = String(req.body?.comment || "").trim();
@@ -2173,30 +2285,218 @@ router.post("/:id/proposal-approval", verifyToken, permitDealAccess(), async (re
       return res.status(404).json({ message: "Deal not found" });
     }
 
+    if (normalizeDealStage(deal.stage) !== "negotiate") {
+      return res.status(400).json({
+        message: "Proposal review is enabled only when the deal is in Negotiate stage.",
+      });
+    }
+
     deal.proposalDraft = deal.proposalDraft || {};
-    deal.proposalDraft.status = action === "approve" ? "approved" : "rejected";
+    deal.proposalDraft.status =
+      action === "approve" ? "approved" : action === "edit" ? "changes_requested" : "rejected";
     deal.proposalDraft.approvalRespondedAt = new Date();
     deal.proposalDraft.approvedBy = req.user._id;
     deal.proposalDraft.approvalComment = comment;
     await deal.save();
 
     if (deal.assignedTo?._id) {
+      const reviewerName = getUserDisplayName(req.user);
+      const toStage =
+        action === "approve"
+          ? "proposal_approved"
+          : action === "edit"
+            ? "proposal_changes_requested"
+            : "proposal_rejected";
+      const message =
+        action === "approve"
+          ? `Proposal approved for deal "${deal.name}" by ${reviewerName}`
+          : action === "edit"
+            ? `Proposal requires edits for deal "${deal.name}" by ${reviewerName}`
+            : `Proposal rejected for deal "${deal.name}" by ${reviewerName}`;
+
       await Notification.create({
         dealId: deal._id,
-        message:
-          action === "approve"
-            ? `Proposal approved for deal "${deal.name}" by ${getUserDisplayName(req.user)}`
-            : `Proposal rejected for deal "${deal.name}" by ${getUserDisplayName(req.user)}`,
+        message,
         fromStage: String(deal.stage || ""),
-        toStage: action === "approve" ? "proposal_approved" : "proposal_rejected",
+        toStage,
         changedBy: req.user._id,
-        changedByName: getUserDisplayName(req.user),
+        changedByName: reviewerName,
         recipients: [deal.assignedTo._id],
         isRead: false,
       });
     }
 
-    res.json({ message: `Proposal ${action}d successfully.`, status: deal.proposalDraft.status });
+    const actionLabel = action === "approve" ? "approved" : action === "edit" ? "sent for edits" : "rejected";
+    res.json({ message: `Proposal ${actionLabel} successfully.`, status: deal.proposalDraft.status });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+router.post("/:id/won-approval-request", verifyToken, permitDealAccess(), async (req, res) => {
+  try {
+    const requesterRole = String(req.user?.role || "").toUpperCase();
+    if (!["EMPLOYEE", "MANAGER"].includes(requesterRole)) {
+      return res.status(403).json({ message: "Only employees or managers can request won transition review." });
+    }
+
+    const deal = await Deal.findById(req.params.id).populate("assignedTo", "_id name username role reportsTo");
+    if (!deal) {
+      return res.status(404).json({ message: "Deal not found" });
+    }
+
+    if (normalizeDealStage(deal.stage) !== "negotiate") {
+      return res.status(400).json({ message: "Won approval request is allowed only from Negotiate stage." });
+    }
+
+    const recipients =
+      requesterRole === "MANAGER"
+        ? [req.user._id]
+        : await getProposalApprovalRecipients({ requester: req.user, deal });
+    if (!recipients.length) {
+      return res.status(400).json({ message: "No assigned manager found for won approval request." });
+    }
+
+    const requesterName = getUserDisplayName(req.user);
+    const contextNote = String(req.body?.contextNote || "").trim();
+    await Notification.insertMany(
+      recipients.map((recipient) => ({
+        dealId: deal._id,
+        message: contextNote
+          ? `Won approval requested for deal "${deal.name}" by ${requesterName}. Context: ${contextNote}`
+          : `Won approval requested for deal "${deal.name}" by ${requesterName}`,
+        fromStage: String(deal.stage || ""),
+        toStage: "won_approval_requested",
+        changedBy: req.user._id,
+        changedByName: requesterName,
+        recipients: [recipient],
+        isRead: false,
+      }))
+    );
+
+    res.json({
+      message:
+        requesterRole === "MANAGER"
+          ? "Won review form is ready. Open details and approve or edit."
+          : "Won approval request sent to manager.",
+      stage: deal.stage,
+      pendingWonApproval: true,
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+router.post("/:id/won-approval", verifyToken, permitDealAccess(), async (req, res) => {
+  try {
+    const role = String(req.user?.role || "").toUpperCase();
+    if (role !== "MANAGER") {
+      return res.status(403).json({ message: "Only managers can approve won transition." });
+    }
+
+    const action = String(req.body?.action || "").trim().toLowerCase();
+    if (!["approve", "edit"].includes(action)) {
+      return res.status(400).json({ message: "action must be approve or edit" });
+    }
+
+    const comment = String(req.body?.comment || "").trim();
+    const deal = await Deal.findById(req.params.id).populate("assignedTo", "_id name username");
+    if (!deal) {
+      return res.status(404).json({ message: "Deal not found" });
+    }
+
+    const previousStage = String(deal.stage || "");
+    const normalized = normalizeDealStage(previousStage);
+    if (normalized !== "negotiate" && normalized !== "won") {
+      return res.status(400).json({ message: "Won review is enabled only for Negotiate stage deals." });
+    }
+
+    if (action === "approve") {
+      deal.proposalDraft = deal.proposalDraft || {};
+      deal.proposalDraft.status = "approved";
+      deal.proposalDraft.savedToQuotationAt = new Date();
+      deal.proposalDraft.savedToQuotationBy = req.user._id;
+    }
+
+    if (action === "approve" && normalized !== "won") {
+      deal.stage = "won";
+      deal.status = "Active";
+      deal.reason = "";
+      deal.timeline = Array.isArray(deal.timeline) ? deal.timeline : [];
+      deal.timeline.unshift({
+        fromStage: previousStage,
+        toStage: "won",
+        changedBy: req.user._id,
+        changedAt: new Date(),
+        userName: getUserDisplayName(req.user),
+      });
+    }
+
+    if (action === "approve") {
+      await deal.save();
+    }
+
+    if (deal.assignedTo?._id) {
+      const reviewerName = getUserDisplayName(req.user);
+      const toStage = action === "approve" ? "won_approved" : "won_changes_requested";
+      const message =
+        action === "approve"
+          ? `Deal "${deal.name}" is Won and quotation is received by ${reviewerName}${comment ? `. Note: ${comment}` : ""}`
+          : `Won transition requires edits for deal "${deal.name}" by ${reviewerName}${comment ? `. Note: ${comment}` : ""}`;
+
+      await Notification.create({
+        dealId: deal._id,
+        message,
+        fromStage: previousStage,
+        toStage,
+        changedBy: req.user._id,
+        changedByName: reviewerName,
+        recipients: [deal.assignedTo._id],
+        isRead: false,
+      });
+    }
+
+    res.json({
+      message:
+        action === "approve"
+          ? "Deal approved, quotation saved, and employee notified."
+          : "Changes requested sent to employee.",
+      stage: deal.stage,
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+router.post("/:id/proposal-save-quotation", verifyToken, permitDealAccess(), async (req, res) => {
+  try {
+    const role = String(req.user?.role || "").toUpperCase();
+    if (role !== "EMPLOYEE") {
+      return res.status(403).json({ message: "Only employees can save proposals to quotation." });
+    }
+
+    const deal = await Deal.findById(req.params.id).populate("assignedTo", "_id name username");
+    if (!deal) {
+      return res.status(404).json({ message: "Deal not found" });
+    }
+
+    const proposalStatus = String(deal?.proposalDraft?.status || "").trim();
+    if (!["approved", "changes_requested"].includes(proposalStatus)) {
+      return res.status(400).json({
+        message: "Proposal must be approved or marked for edits before saving to quotation.",
+      });
+    }
+
+    deal.proposalDraft = deal.proposalDraft || {};
+    deal.proposalDraft.savedToQuotationAt = new Date();
+    deal.proposalDraft.savedToQuotationBy = req.user._id;
+    await deal.save();
+
+    res.json({
+      message: "Proposal saved to quotation successfully.",
+      status: deal.proposalDraft.status,
+      savedToQuotationAt: deal.proposalDraft.savedToQuotationAt,
+    });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -2204,13 +2504,104 @@ router.post("/:id/proposal-approval", verifyToken, permitDealAccess(), async (re
 
 router.post("/:id/proposal-send-client", verifyToken, permitDealAccess(), async (req, res) => {
   try {
-    const deal = await Deal.findById(req.params.id);
+    const role = String(req.user?.role || "").toUpperCase();
+    if (role !== "EMPLOYEE") {
+      return res.status(403).json({ message: "Only employees can send proposals to client." });
+    }
+
+    const deal = await Deal.findById(req.params.id)
+      .populate("customerId", "name company email phone state gstin")
+      .populate("product", "name price cost gst_percent hsn_sac");
     if (!deal) {
       return res.status(404).json({ message: "Deal not found" });
     }
 
-    if (String(deal?.proposalDraft?.status || "") !== "approved") {
-      return res.status(400).json({ message: "Proposal must be approved before sending to client." });
+    const recipientEmail = String(deal?.email || deal?.customerId?.email || "").trim();
+    if (!recipientEmail) {
+      return res.status(400).json({ message: "Customer email is required before sending proposal." });
+    }
+
+    const sellerTaxProfile = await getSellerTaxProfile();
+    const taxSummary = computeTaxSummary({
+      item: deal.product,
+      quantity: deal.quantity,
+      customerState: deal.customerState || deal.customerId?.state || deal.address?.state || "",
+      sellerState: deal.sellerState || sellerTaxProfile.sellerState,
+      sellerGstin: deal.sellerGstin || sellerTaxProfile.sellerGstin,
+      customerGstin: deal.customerGstin || deal.customerId?.gstin || "",
+    });
+
+    const lineItems = taxSummary
+      ? [
+          {
+            productName: deal.product?.name || deal.name || "-",
+            price: Number(deal.product?.price ?? deal.product?.cost ?? 0),
+            quantity: Number(deal.quantity || 1),
+            gstPercent: taxSummary.gstPercent,
+            taxableAmount: taxSummary.taxableAmount,
+            cgst: taxSummary.cgst,
+            sgst: taxSummary.sgst,
+            igst: taxSummary.igst,
+            totalAmount: taxSummary.grandTotal,
+            hsnSac: taxSummary.hsnSac,
+          },
+        ]
+      : [];
+
+    const proposalNumber = `PROP-${String(deal._id).slice(-6).toUpperCase()}`;
+    const proposalAmount = Number(taxSummary?.grandTotal ?? deal?.amount ?? 0);
+    const safeSubject = String(deal?.proposalDraft?.title || deal?.name || "Proposal").trim() || "Proposal";
+
+    const proposalPdfBuffer = await generateProposalPdfBuffer({
+      proposalNumber,
+      issueDate: new Date(),
+      dealName: deal.name,
+      subject: safeSubject,
+      contactName: deal.contact || deal.customerId?.name || "Customer",
+      company: deal.company || deal.customerId?.company || "",
+      email: recipientEmail,
+      phone: deal.phone || deal.customerId?.phone || "",
+      status: "Sent To Client",
+      introduction: deal?.proposalDraft?.introduction || "Please find our proposal attached.",
+      problem: deal?.proposalDraft?.problem || "Business requirements as discussed.",
+      solution: deal?.proposalDraft?.solution || deal?.proposalDraft?.pricingNotes || "Recommended approach and estimated pricing.",
+      terms: deal?.proposalDraft?.terms || "Standard terms and conditions apply.",
+      totalAmount: proposalAmount,
+      lineItems,
+    });
+
+    const proposalEmailResult = await sendLeadProposalEmail({
+      to: recipientEmail,
+      leadName: deal.contact || deal.customerId?.name || "Customer",
+      company: deal.company || deal.customerId?.company || "",
+      proposal: {
+        subject: safeSubject,
+        amount: proposalAmount,
+        currency: "INR",
+        validUntil: null,
+        message: deal?.proposalDraft?.solution || deal?.proposalDraft?.pricingNotes || "Please review the attached proposal.",
+        terms: deal?.proposalDraft?.terms || "",
+      },
+      customMessage: "This is the estimated price and further discussion on this will be done in nxt meeting.",
+      pdfBuffer: proposalPdfBuffer,
+      pdfFileName: `${proposalNumber}.pdf`,
+    });
+
+    const previousStage = String(deal.stage || "");
+    const normalizedStage = normalizeDealStage(previousStage);
+    const autoMovedToNegotiate = normalizedStage === "proposal_price_quote";
+    if (autoMovedToNegotiate) {
+      deal.stage = "negotiate";
+      deal.status = "Active";
+      deal.reason = "";
+      deal.timeline = Array.isArray(deal.timeline) ? deal.timeline : [];
+      deal.timeline.unshift({
+        fromStage: previousStage,
+        toStage: "negotiate",
+        changedBy: req.user._id,
+        changedAt: new Date(),
+        userName: getUserDisplayName(req.user),
+      });
     }
 
     deal.proposalDraft.status = "sent_to_client";
@@ -2218,7 +2609,14 @@ router.post("/:id/proposal-send-client", verifyToken, permitDealAccess(), async 
     deal.proposalDraft.clientSentBy = req.user._id;
     await deal.save();
 
-    res.json({ message: "Proposal sent to client.", status: deal.proposalDraft.status });
+    res.json({
+      message: autoMovedToNegotiate
+        ? "Proposal sent to client. Deal moved to Negotiate automatically."
+        : "Proposal sent to client.",
+      status: deal.proposalDraft.status,
+      stage: deal.stage,
+      emailPreviewUrl: proposalEmailResult?.preview || null,
+    });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

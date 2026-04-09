@@ -17,6 +17,7 @@ const getStatusLabel = (status) => {
     draft: "Draft",
     pending_approval: "Pending Approval",
     approved: "Approved",
+    changes_requested: "Changes Requested",
     rejected: "Rejected",
     sent_to_client: "Sent To Client",
   };
@@ -33,11 +34,16 @@ const formatPercent = (value) => {
   return `${numeric.toFixed(2)}%`;
 };
 
+const emitDealRefresh = () => {
+  window.dispatchEvent(new Event("deal-updated"));
+};
+
 function DocumentsModule() {
   const [searchParams] = useSearchParams();
   const token = localStorage.getItem("token");
   const role = String(localStorage.getItem("role") || "").toUpperCase();
-  const isManagerOrAdmin = role === "MANAGER" || role === "ADMIN";
+  const isManager = role === "MANAGER";
+  const isEmployee = role === "EMPLOYEE";
   const dealId = String(searchParams.get("dealId") || "").trim();
 
   const fallbackDraft = useMemo(
@@ -169,15 +175,45 @@ function DocumentsModule() {
   };
 
   const handleSendForApproval = async () => {
+    if (!isEmployee) {
+      setMessage("Only employees can send proposals for manager approval.");
+      return;
+    }
+
     try {
       setBusyAction("approval");
       await handleSaveDraft();
-      await axios.post(
+
+      // Best-effort stage sync so UI reflects negotiate transition immediately.
+      try {
+        await axios.put(
+          `http://localhost:5000/api/deals/${dealId}/stage`,
+          { stage: "negotiate" },
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+      } catch (_syncErr) {
+        // Ignore here; backend proposal endpoint also enforces transition.
+      }
+
+      const res = await axios.post(
         `http://localhost:5000/api/deals/${dealId}/proposal-approval-request`,
         {},
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      setMessage("Proposal sent to manager for approval.");
+      setMessage(res?.data?.message || "Proposal sent to manager for approval.");
+      if (res?.data?.stage) {
+        setWorkspace((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            deal: {
+              ...(prev.deal || {}),
+              stage: res.data.stage,
+            },
+          };
+        });
+      }
+      emitDealRefresh();
       await fetchWorkspace();
     } catch (err) {
       setMessage(err.response?.data?.message || "Failed to send for approval.");
@@ -194,7 +230,13 @@ function DocumentsModule() {
         { action, comment: form.approvalComment || "" },
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      setMessage(action === "approve" ? "Proposal approved." : "Proposal rejected.");
+      setMessage(
+        action === "approve"
+          ? "Proposal approved."
+          : action === "edit"
+            ? "Proposal sent back to employee for edits."
+            : "Proposal rejected."
+      );
       await fetchWorkspace();
     } catch (err) {
       setMessage(err.response?.data?.message || "Failed to update approval.");
@@ -206,12 +248,13 @@ function DocumentsModule() {
   const handleSendToClient = async () => {
     try {
       setBusyAction("client");
-      await axios.post(
+      const res = await axios.post(
         `http://localhost:5000/api/deals/${dealId}/proposal-send-client`,
         {},
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      setMessage("Proposal sent to client.");
+      setMessage(res?.data?.message || "Proposal sent to client.");
+      emitDealRefresh();
       await fetchWorkspace();
     } catch (err) {
       setMessage(err.response?.data?.message || "Failed to send proposal to client.");
@@ -252,7 +295,17 @@ function DocumentsModule() {
   }, 0);
   const grandTotal = displayLineItems.reduce((sum, item) => sum + Number(item.totalAmount || 0), 0);
   const draftStatus = String(workspace?.deal?.proposalDraft?.status || form.status || "draft");
-  const canSendToClient = draftStatus === "approved";
+  const dealStage = String(deal?.stage || "").trim().toLowerCase();
+  const isNegotiateStage = dealStage === "negotiate";
+  const canManagerReview = isManager && draftStatus === "pending_approval" && isNegotiateStage;
+  const canSendForApproval = isEmployee;
+  const canSendToClient = isEmployee;
+  const sendForApprovalBlockedReason = !isEmployee
+    ? "Send To Manager For Approval is available only for Employee login."
+    : "";
+  const sendToClientBlockedReason = !canSendToClient
+    ? "Send To Client is available only for Employee login."
+    : "";
   const history = workspace?.history || [];
   const notifications = workspace?.notifications || [];
   const timeline = Array.isArray(deal.timeline) ? [...deal.timeline].reverse() : [];
@@ -461,7 +514,7 @@ function DocumentsModule() {
                       <div><span>Approval Response</span><strong>{formatDateTime(workspace?.deal?.proposalDraft?.approvalRespondedAt)}</strong></div>
                       <div><span>Client Sent</span><strong>{formatDateTime(workspace?.deal?.proposalDraft?.clientSentAt)}</strong></div>
                     </div>
-                    {isManagerOrAdmin && draftStatus === "pending_approval" ? (
+                    {canManagerReview ? (
                       <div className="documents-approval-box">
                         <textarea
                           rows="3"
@@ -473,11 +526,11 @@ function DocumentsModule() {
                           <button type="button" className="documents-primary-btn" onClick={() => handleApprove("approve")} disabled={busyAction !== ""}>
                             Approve
                           </button>
-                          <button type="button" className="documents-secondary-btn" onClick={() => handleApprove("reject")} disabled={busyAction !== ""}>
-                            Reject
-                          </button>
                         </div>
                       </div>
+                    ) : null}
+                    {isManager && draftStatus === "pending_approval" && !isNegotiateStage ? (
+                      <div className="documents-message error">Proposal review is enabled only in Negotiate stage.</div>
                     ) : null}
                   </div>
 
@@ -518,12 +571,18 @@ function DocumentsModule() {
                     <button type="button" className="documents-primary-btn" onClick={handleSaveDraft} disabled={busyAction !== ""}>
                       {busyAction === "save" ? "Saving..." : "Save Proposal"}
                     </button>
-                    <button type="button" className="documents-secondary-btn" onClick={handleSendForApproval} disabled={busyAction !== ""}>
+                    <button type="button" className="documents-secondary-btn" onClick={handleSendForApproval} disabled={!canSendForApproval || busyAction !== ""}>
                       {busyAction === "approval" ? "Sending..." : "Send To Manager For Approval"}
                     </button>
                     <button type="button" className="documents-secondary-btn" onClick={handleSendToClient} disabled={!canSendToClient || busyAction !== ""}>
                       {busyAction === "client" ? "Sending..." : "Send To Client"}
                     </button>
+                    {sendForApprovalBlockedReason ? (
+                      <div className="documents-footer-hint">{sendForApprovalBlockedReason}</div>
+                    ) : null}
+                    {sendToClientBlockedReason ? (
+                      <div className="documents-footer-hint">{sendToClientBlockedReason}</div>
+                    ) : null}
                   </div>
                 </aside>
               </div>

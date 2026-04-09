@@ -201,9 +201,10 @@ const dealSchema = new mongoose.Schema(
       scope: { type: String, trim: true, default: "" },
       pricingNotes: { type: String, trim: true, default: "" },
       terms: { type: String, trim: true, default: "" },
+      discountPercent: { type: Number, default: 0, min: 0, max: 100 },
       status: {
         type: String,
-        enum: ["draft", "pending_approval", "approved", "rejected", "sent_to_client"],
+        enum: ["draft", "pending_approval", "approved", "changes_requested", "rejected", "sent_to_client"],
         default: "draft",
       },
       approvalRequestedAt: { type: Date, default: null },
@@ -212,6 +213,8 @@ const dealSchema = new mongoose.Schema(
       approvalComment: { type: String, trim: true, default: "" },
       clientSentAt: { type: Date, default: null },
       clientSentBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+      savedToQuotationAt: { type: Date, default: null },
+      savedToQuotationBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
     },
   },
   {

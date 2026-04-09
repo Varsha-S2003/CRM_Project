@@ -576,6 +576,7 @@ function ActivityModule() {
   const currentUsername = localStorage.getItem("username") || "Current User";
   const role = (localStorage.getItem("role") || "").toUpperCase();
   const isEmployee = role === "EMPLOYEE";
+  const isManager = role === "MANAGER";
 
   const apiHeaders = useMemo(() => ({ Authorization: `Bearer ${token}` }), [token]);
 
@@ -1238,6 +1239,19 @@ function ActivityModule() {
     return relatedType === "deal" && normalizedDealStage === "value_proposition" && activityType === "meeting";
   }, [completionTarget]);
 
+  const isNegotiateDealCompletion = useMemo(() => {
+    const relatedType = String(completionTarget?.relatedTo?.recordType || "").toLowerCase();
+    const relatedRecord = completionTarget?.relatedTo?.recordId;
+    const relatedDeal = relatedRecord && typeof relatedRecord === "object" ? relatedRecord : null;
+    const relatedDealId = String(relatedDeal?._id || relatedRecord || "").trim();
+    const stageFromRecord = normalizeDealStage(relatedDeal?.stage);
+    const stageFromLookup = normalizeDealStage(relatedDealsById[relatedDealId]?.stage);
+    const normalizedDealStage = stageFromRecord || stageFromLookup;
+    const activityType = String(completionTarget?.activityType || "").toLowerCase();
+
+    return relatedType === "deal" && normalizedDealStage === "negotiate" && activityType === "meeting";
+  }, [completionTarget, relatedDealsById]);
+
   const isValuePropositionMinimumValid = useMemo(() => {
     if (!isValuePropositionDealCompletion) return false;
 
@@ -1524,6 +1538,120 @@ function ActivityModule() {
         }
       } catch (error) {
         setToast(error.response?.data?.message || "Failed to complete Value Proposition.");
+      } finally {
+        setCompleteBusy(false);
+      }
+      return;
+    }
+
+    if (isNegotiateDealCompletion) {
+      const dealIdRaw =
+        completionTarget?.relatedTo?.recordId?._id ||
+        completionTarget?.relatedTo?.recordId;
+      const dealId = String(dealIdRaw || "").trim();
+      if (!dealId) {
+        setToast("Linked deal not found for Negotiate completion.");
+        return;
+      }
+
+      const outcome = String(completionForm.outcome || "").trim();
+      const reason = String(completionForm.reason || "").trim();
+      const needsReason = ["not_interested", "no_response", "follow_up_needed"].includes(outcome);
+      const needsReschedule = ["no_response", "follow_up_needed"].includes(outcome);
+
+      if (!outcome) {
+        setToast("Please choose completion outcome.");
+        return;
+      }
+      if (needsReason && !reason) {
+        setToast(outcome === "not_interested" ? "Please enter reason for Not Interested." : "Please enter follow-up reason.");
+        return;
+      }
+
+      const parsedReschedule = needsReschedule ? parseDateValue(completionForm.rescheduleDateTime) : null;
+      if (needsReschedule && !parsedReschedule) {
+        setToast("Please select valid reschedule date and time.");
+        return;
+      }
+
+      try {
+        setCompleteBusy(true);
+
+        // Complete the meeting activity first with the selected outcome.
+        await axios.post(
+          `http://localhost:5000/api/activities/${completionTarget._id}/complete`,
+          {
+            outcome,
+            stage: "meeting",
+            outcomeReason: reason,
+            rescheduleDateTime: parsedReschedule ? parsedReschedule.toISOString() : null,
+          },
+          { headers: apiHeaders }
+        );
+
+        // Apply deal transition according to the same 4-outcome behavior.
+        if (outcome === "interested") {
+          const wonRequestRes = await axios.post(
+            `http://localhost:5000/api/deals/${dealId}/won-approval-request`,
+            {
+              contextNote: reason || "Customer marked interested in negotiate meeting completion.",
+            },
+            { headers: apiHeaders }
+          );
+
+          // Manager should immediately continue with the review form (approve/edit) flow.
+          if (isManager) {
+            const query = new URLSearchParams({
+              dealId,
+              autopen: "won_approval_requested",
+            });
+            if (wonRequestRes?.data?.message) {
+              setToast(wonRequestRes.data.message);
+            }
+            closeCompleteModal();
+            emitDealPipelineRefresh();
+            await fetchRelatedRecords();
+            await refreshAll();
+            navigate(`/notifications?${query.toString()}`);
+            return;
+          }
+        } else if (outcome === "not_interested") {
+          await axios.put(
+            `http://localhost:5000/api/deals/${dealId}/stage`,
+            {
+              stage: "lost",
+              reason,
+            },
+            { headers: apiHeaders }
+          );
+        } else {
+          // Keep it in negotiate while follow-up gets auto-created by activity completion.
+          await axios.put(
+            `http://localhost:5000/api/deals/${dealId}/stage`,
+            {
+              stage: "negotiate",
+              nextStep: reason || "Follow up in negotiation",
+            },
+            { headers: apiHeaders }
+          );
+        }
+
+        setToast(
+          outcome === "interested"
+            ? "Meeting completed. Won review request created."
+            : outcome === "not_interested"
+              ? "Meeting completed. Deal moved to Closed Lost."
+              : "Meeting completed. Deal remains in Negotiate and follow-up has been scheduled."
+        );
+        emitDealPipelineRefresh();
+        closeCompleteModal();
+        await fetchRelatedRecords();
+        await refreshAll();
+        if (returnToRequestsAfterSubmit) {
+          navigate("/requests");
+        }
+      } catch (error) {
+        setToast(error.response?.data?.message || "Failed to complete negotiate meeting.");
       } finally {
         setCompleteBusy(false);
       }

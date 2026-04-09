@@ -352,6 +352,109 @@
   flex-wrap: wrap;
 }
 
+.proposal-dialog {
+  position: fixed;
+  inset: 0;
+  z-index: 2200;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+}
+
+.proposal-dialog-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(17, 24, 39, 0.45);
+  backdrop-filter: blur(2px);
+}
+
+.proposal-dialog-panel {
+  position: relative;
+  z-index: 1;
+  width: min(860px, 100%);
+  max-height: 90vh;
+  overflow: auto;
+  border: 1px solid var(--theme-border);
+  border-radius: 16px;
+  background: #ffffff;
+  padding: 16px;
+  box-shadow: 0 18px 36px rgba(17, 24, 39, 0.2);
+  display: grid;
+  gap: 12px;
+}
+
+.proposal-dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.proposal-dialog-header h2 {
+  margin: 0;
+  font-size: 20px;
+  color: var(--theme-ink);
+}
+
+.proposal-dialog-close {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  border: 1px solid var(--theme-border);
+  background: #f8fbff;
+  color: var(--theme-ink);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.proposal-dialog-form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.proposal-dialog-form-grid label {
+  display: grid;
+  gap: 5px;
+}
+
+.proposal-dialog-form-grid label span {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  color: var(--theme-text-muted);
+  font-weight: 700;
+}
+
+.proposal-dialog-form-grid label.full-width {
+  grid-column: 1 / -1;
+}
+
+.proposal-dialog-form-grid input,
+.proposal-dialog-form-grid textarea {
+  width: 100%;
+  border: 1px solid var(--theme-border);
+  border-radius: 8px;
+  padding: 8px;
+  font-size: 12px;
+  color: var(--theme-text);
+  background: #ffffff;
+  box-sizing: border-box;
+  font-family: inherit;
+}
+
+.proposal-dialog-form-grid textarea {
+  resize: vertical;
+}
+
+.proposal-dialog-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 @media (max-width: 1180px) {
   .notifications-page-header {
     grid-template-columns: 1fr;
@@ -386,13 +489,26 @@
     grid-template-columns: 1fr;
   }
 
+  .proposal-dialog-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .proposal-dialog {
+    padding: 10px;
+  }
+
+  .proposal-dialog-actions {
+    justify-content: stretch;
+  }
+
   .notifications-page-actions,
   .notification-actions {
     width: 100%;
   }
 
   .notifications-page-actions .notifications-btn,
-  .notification-actions .notifications-btn {
+  .notification-actions .notifications-btn,
+  .proposal-dialog-actions .notifications-btn {
     flex: 1 1 100%;
   }
 }

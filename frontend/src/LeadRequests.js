@@ -250,6 +250,18 @@ function LeadRequests() {
   }, [activeRequestType, fetchAuxiliaryRequests]);
 
   useEffect(() => {
+    if (activeRequestType !== "deal" || !isManager) return undefined;
+
+    const interval = setInterval(() => {
+      if (document.visibilityState === "visible") {
+        fetchAuxiliaryRequests();
+      }
+    }, 60000);
+
+    return () => clearInterval(interval);
+  }, [activeRequestType, fetchAuxiliaryRequests, isManager]);
+
+  useEffect(() => {
     const handleDealRefresh = () => {
       fetchAuxiliaryRequests();
     };
@@ -903,6 +915,29 @@ function LeadRequests() {
             }}
           >
             Create Proposal
+          </button>
+        </div>
+      ) : null}
+
+      {normalizeDealStage(item.stage) === "negotiate" ? (
+        <div className="deal-request-actions">
+          <button
+            type="button"
+            className="assignment-submit-btn deal-request-action-btn move"
+            onClick={() => {
+              if (!item?._id) return;
+              const params = new URLSearchParams({
+                type: "meeting",
+                create: "1",
+                relatedType: "Deal",
+                relatedId: String(item._id || ""),
+                relatedName: String(item.name || "Deal"),
+                source: "requests",
+              });
+              navigate(`/activities?${params.toString()}`);
+            }}
+          >
+            Schedule Meeting
           </button>
         </div>
       ) : null}
