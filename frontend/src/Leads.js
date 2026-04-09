@@ -132,6 +132,7 @@ function Leads() {
     itemType: "",
     itemId: "",
     industry: "",
+    gstin: "",
     annualRevenue: "",
     employeeCount: "",
     source: "",
@@ -363,6 +364,184 @@ function Leads() {
   const salutations = ["Mr.", "Mrs.", "Ms.", "Dr.", "Prof."];
   const sources = ["Website", "Referral", "Social Media", "Email Campaign", "Cold Call", "Trade Show", "Other"];
   const industries = ["Technology", "Manufacturing", "Finance", "Healthcare", "Retail", "Education", "Real Estate", "Other"];
+  const stateOptionsByCountry = {
+    India: [
+    "Andhra Pradesh",
+    "Arunachal Pradesh",
+    "Assam",
+    "Bihar",
+    "Chhattisgarh",
+    "Goa",
+    "Gujarat",
+    "Haryana",
+    "Himachal Pradesh",
+    "Jharkhand",
+    "Karnataka",
+    "Kerala",
+    "Madhya Pradesh",
+    "Maharashtra",
+    "Manipur",
+    "Meghalaya",
+    "Mizoram",
+    "Nagaland",
+    "Odisha",
+    "Punjab",
+    "Rajasthan",
+    "Sikkim",
+    "Tamil Nadu",
+    "Telangana",
+    "Tripura",
+    "Uttar Pradesh",
+    "Uttarakhand",
+    "West Bengal",
+    "Andaman and Nicobar Islands",
+    "Chandigarh",
+    "Dadra and Nagar Haveli and Daman and Diu",
+    "Delhi",
+    "Jammu and Kashmir",
+    "Ladakh",
+    "Lakshadweep",
+    "Puducherry",
+    ],
+    Canada: [
+      "Alberta",
+      "British Columbia",
+      "Manitoba",
+      "New Brunswick",
+      "Newfoundland and Labrador",
+      "Nova Scotia",
+      "Ontario",
+      "Prince Edward Island",
+      "Quebec",
+      "Saskatchewan",
+      "Northwest Territories",
+      "Nunavut",
+      "Yukon",
+    ],
+    "United States": [
+      "Alabama",
+      "Alaska",
+      "Arizona",
+      "Arkansas",
+      "California",
+      "Colorado",
+      "Connecticut",
+      "Delaware",
+      "Florida",
+      "Georgia",
+      "Hawaii",
+      "Idaho",
+      "Illinois",
+      "Indiana",
+      "Iowa",
+      "Kansas",
+      "Kentucky",
+      "Louisiana",
+      "Maine",
+      "Maryland",
+      "Massachusetts",
+      "Michigan",
+      "Minnesota",
+      "Mississippi",
+      "Missouri",
+      "Montana",
+      "Nebraska",
+      "Nevada",
+      "New Hampshire",
+      "New Jersey",
+      "New Mexico",
+      "New York",
+      "North Carolina",
+      "North Dakota",
+      "Ohio",
+      "Oklahoma",
+      "Oregon",
+      "Pennsylvania",
+      "Rhode Island",
+      "South Carolina",
+      "South Dakota",
+      "Tennessee",
+      "Texas",
+      "Utah",
+      "Vermont",
+      "Virginia",
+      "Washington",
+      "West Virginia",
+      "Wisconsin",
+      "Wyoming",
+      "District of Columbia",
+    ],
+    "United Kingdom": [
+      "England",
+      "Scotland",
+      "Wales",
+      "Northern Ireland",
+    ],
+    Australia: [
+      "New South Wales",
+      "Victoria",
+      "Queensland",
+      "Western Australia",
+      "South Australia",
+      "Tasmania",
+      "Australian Capital Territory",
+      "Northern Territory",
+    ],
+    Singapore: [
+      "Central Region",
+      "East Region",
+      "North Region",
+      "North-East Region",
+      "West Region",
+    ],
+    "United Arab Emirates": [
+      "Abu Dhabi",
+      "Dubai",
+      "Sharjah",
+      "Ajman",
+      "Umm Al Quwain",
+      "Ras Al Khaimah",
+      "Fujairah",
+    ],
+    Other: [
+      "State/Province 1",
+      "State/Province 2",
+      "State/Province 3",
+    ],
+  };
+  const countryOptions = ["India", "United States", "United Kingdom", "Canada", "Australia", "Singapore", "United Arab Emirates", "Other"];
+  const getStateOptionsForCountry = (country) => stateOptionsByCountry[String(country || "").trim()] || [];
+
+  const handleNewLeadCountryChange = (country) => {
+    setNewLead((prev) => {
+      const nextStateOptions = getStateOptionsForCountry(country);
+      const nextState = nextStateOptions.includes(prev.state) ? prev.state : "";
+      return { ...prev, country, state: nextState };
+    });
+    setNewLeadErrors((prev) => {
+      if (!prev.country && !prev.state) return prev;
+      const next = { ...prev };
+      delete next.country;
+      delete next.state;
+      return next;
+    });
+  };
+
+  const handleEditLeadCountryChange = (country) => {
+    setEditLeadForm((prev) => {
+      if (!prev) return prev;
+      const nextStateOptions = getStateOptionsForCountry(country);
+      const nextState = nextStateOptions.includes(prev.state) ? prev.state : "";
+      return { ...prev, country, state: nextState };
+    });
+    setEditLeadErrors((prev) => {
+      if (!prev.country && !prev.state) return prev;
+      const next = { ...prev };
+      delete next.country;
+      delete next.state;
+      return next;
+    });
+  };
   const exportViews = [{ id: "all", name: "All Leads" }, ...stages.map((stage) => ({ id: stage.id, name: `${stage.name} Leads` }))];
   const exportFieldPresets = {
     custom: ["name", "email", "phone", "company", "source", "status"],
@@ -487,6 +666,7 @@ function Leads() {
       itemType: "",
       itemId: "",
       industry: "",
+      gstin: "",
       annualRevenue: "",
       employeeCount: "",
       source: "",
@@ -532,6 +712,7 @@ function Leads() {
   const validateNewLeadForm = (lead) => {
     const errors = {};
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const gstinRegex = /^[0-9]{2}[A-Z0-9]{13}$/;
     const phoneCharsRegex = /^[+]?[-()\s0-9]{7,20}$/;
     const isValidPhoneNumber = (value) => {
       const trimmed = String(value || "").trim();
@@ -607,6 +788,11 @@ function Leads() {
 
     if (String(lead.annualRevenue || "").trim() && Number(lead.annualRevenue) < 0) {
       errors.annualRevenue = "Annual revenue cannot be negative";
+    }
+
+    const gstin = String(lead.gstin || "").trim().toUpperCase();
+    if (gstin && !gstinRegex.test(gstin)) {
+      errors.gstin = "GSTIN must be a valid 15-character GSTIN";
     }
 
     if (String(lead.employeeCount || "").trim()) {
@@ -807,6 +993,7 @@ function Leads() {
       company: row.company || row.organization || "",
       website: row.website || "",
       industry: row.industry || "",
+      gstin: row.gstin || "",
       annualRevenue: row.annualrevenue || "",
       employeeCount: row.employeecount || row.noofemployees || "",
       source: row.source || "",
@@ -899,6 +1086,7 @@ function Leads() {
         itemType: newLead.itemType,
         itemId: newLead.itemId,
         industry: newLead.industry,
+        gstin: String(newLead.gstin || "").trim().toUpperCase(),
         annualRevenue: newLead.annualRevenue,
         employeeCount: newLead.employeeCount,
         source: newLead.source,
@@ -974,6 +1162,7 @@ function Leads() {
     itemType: lead?.itemType || "",
     itemId: getEntityId(lead?.itemId),
     industry: lead?.industry || "",
+    gstin: lead?.gstin || "",
     annualRevenue: lead?.annualRevenue ?? "",
     employeeCount: lead?.employeeCount ?? "",
     source: lead?.source || "",
@@ -1028,6 +1217,7 @@ function Leads() {
   const validateEditLeadForm = (lead) => {
     const errors = {};
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const gstinRegex = /^[0-9]{2}[A-Z0-9]{13}$/;
     const phoneCharsRegex = /^[+]?[-()\s0-9]{7,20}$/;
     const isValidPhoneNumber = (value) => {
       const trimmed = String(value || "").trim();
@@ -1105,6 +1295,11 @@ function Leads() {
       errors.annualRevenue = "Annual revenue cannot be negative";
     }
 
+    const gstin = String(lead.gstin || "").trim().toUpperCase();
+    if (gstin && !gstinRegex.test(gstin)) {
+      errors.gstin = "GSTIN must be a valid 15-character GSTIN";
+    }
+
     if (String(lead.employeeCount || "").trim()) {
       const count = Number(lead.employeeCount);
       if (!Number.isInteger(count) || count < 0) {
@@ -1144,6 +1339,7 @@ function Leads() {
         itemType: editLeadForm.itemType,
         itemId: editLeadForm.itemId,
         industry: editLeadForm.industry,
+        gstin: String(editLeadForm.gstin || "").trim().toUpperCase(),
         annualRevenue: editLeadForm.annualRevenue,
         employeeCount: editLeadForm.employeeCount,
         source: editLeadForm.source,
@@ -1502,6 +1698,7 @@ function Leads() {
       "company",
       "website",
       "industry",
+      "gstin",
       "annualRevenue",
       "employeeCount",
       "source",
@@ -2895,6 +3092,18 @@ ET`;
                       </select>
                     </div>
                     <div className="form-group">
+                      <label>GSTIN</label>
+                      <input
+                        type="text"
+                        placeholder="Enter GSTIN"
+                        value={newLead.gstin}
+                        onChange={(e) => setNewLeadField("gstin", e.target.value.toUpperCase())}
+                        className={newLeadErrors.gstin ? "form-input-error" : ""}
+                        maxLength={15}
+                      />
+                      {newLeadErrors.gstin && <span className="form-error-text">{newLeadErrors.gstin}</span>}
+                    </div>
+                    <div className="form-group">
                       <label>Annual Revenue</label>
                       <input
                         type="number"
@@ -2969,13 +3178,29 @@ ET`;
                   </div>
                   <div className="form-row-zoho">
                     <div className="form-group">
+                      <label>Country</label>
+                      <select
+                        value={newLead.country}
+                        onChange={(e) => handleNewLeadCountryChange(e.target.value)}
+                      >
+                        <option value="">Select country</option>
+                        {countryOptions.map((country) => (
+                          <option key={country} value={country}>{country}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="form-group">
                       <label>State</label>
-                      <input
-                        type="text"
-                        placeholder="Enter state"
+                      <select
                         value={newLead.state}
-                        onChange={(e) => setNewLead({ ...newLead, state: e.target.value })}
-                      />
+                        onChange={(e) => setNewLeadField("state", e.target.value)}
+                        disabled={!newLead.country}
+                      >
+                        <option value="">{newLead.country ? "Select state" : "Select country first"}</option>
+                        {getStateOptionsForCountry(newLead.country).map((state) => (
+                          <option key={state} value={state}>{state}</option>
+                        ))}
+                      </select>
                     </div>
                     <div className="form-group">
                       <label>Postal Code</label>
@@ -2984,15 +3209,6 @@ ET`;
                         placeholder="Enter postal code"
                         value={newLead.postalCode}
                         onChange={(e) => setNewLead({ ...newLead, postalCode: e.target.value })}
-                      />
-                    </div>
-                    <div className="form-group">
-                      <label>Country</label>
-                      <input
-                        type="text"
-                        placeholder="Enter country"
-                        value={newLead.country}
-                        onChange={(e) => setNewLead({ ...newLead, country: e.target.value })}
                       />
                     </div>
                   </div>
@@ -3022,7 +3238,7 @@ ET`;
                 <div className="form-section">
                   <h3>Upload CSV File</h3>
                   <p className="import-helper-text">
-                    Supported headers: `name`, `salutation`, `firstName`, `lastName`, `title`, `email`, `secondaryEmail`, `phone`, `mobile`, `company`, `website`, `industry`, `annualRevenue`, `employeeCount`, `source`, `status`, `notes`, `street`, `city`, `state`, `postalCode`, `country`, `emailOpened`, `websiteVisits`, `formSubmissions`, `lastActivityDate`.
+                    Supported headers: `name`, `salutation`, `firstName`, `lastName`, `title`, `email`, `secondaryEmail`, `phone`, `mobile`, `company`, `website`, `industry`, `gstin`, `annualRevenue`, `employeeCount`, `source`, `status`, `notes`, `street`, `city`, `state`, `postalCode`, `country`, `emailOpened`, `websiteVisits`, `formSubmissions`, `lastActivityDate`.
                   </p>
                   <input
                     ref={fileInputRef}
@@ -3554,6 +3770,17 @@ ET`;
                         </select>
                       </div>
                       <div className="form-group">
+                        <label>GSTIN</label>
+                        <input
+                          type="text"
+                          value={editLeadForm.gstin}
+                          onChange={(e) => handleEditLeadFieldChange("gstin", e.target.value.toUpperCase())}
+                          className={editLeadErrors.gstin ? "form-input-error" : ""}
+                          maxLength={15}
+                        />
+                        {editLeadErrors.gstin && <span className="form-error-text">{editLeadErrors.gstin}</span>}
+                      </div>
+                      <div className="form-group">
                         <label>Annual Revenue</label>
                         <input
                           type="number"
@@ -3607,16 +3834,26 @@ ET`;
                     </div>
                     <div className="form-row-zoho">
                       <div className="form-group">
+                        <label>Country</label>
+                        <select value={editLeadForm.country} onChange={(e) => handleEditLeadCountryChange(e.target.value)}>
+                          <option value="">Select country</option>
+                          {countryOptions.map((country) => (
+                            <option key={country} value={country}>{country}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="form-group">
                         <label>State</label>
-                        <input type="text" value={editLeadForm.state} onChange={(e) => handleEditLeadFieldChange("state", e.target.value)} />
+                        <select value={editLeadForm.state} onChange={(e) => handleEditLeadFieldChange("state", e.target.value)} disabled={!editLeadForm.country}>
+                          <option value="">{editLeadForm.country ? "Select state" : "Select country first"}</option>
+                          {getStateOptionsForCountry(editLeadForm.country).map((state) => (
+                            <option key={state} value={state}>{state}</option>
+                          ))}
+                        </select>
                       </div>
                       <div className="form-group">
                         <label>Postal Code</label>
                         <input type="text" value={editLeadForm.postalCode} onChange={(e) => handleEditLeadFieldChange("postalCode", e.target.value)} />
-                      </div>
-                      <div className="form-group">
-                        <label>Country</label>
-                        <input type="text" value={editLeadForm.country} onChange={(e) => handleEditLeadFieldChange("country", e.target.value)} />
                       </div>
                     </div>
                   </div>

@@ -32,6 +32,7 @@ const leadSchema = new mongoose.Schema(
       default: null,
     },
     industry: { type: String, trim: true },
+    gstin: { type: String, trim: true, default: "" },
     annualRevenue: { type: Number, min: 0, default: null },
     employeeCount: { type: Number, min: 0, default: null },
     source: { type: String, trim: true },

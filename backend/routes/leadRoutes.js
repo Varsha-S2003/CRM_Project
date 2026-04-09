@@ -15,6 +15,8 @@ const { applyLeadScoring } = require("../utils/leadScoring");
 const { sendLeadProposalEmail } = require("../utils/mailer");
 
 const normalizeText = (value) => String(value || "").trim();
+const GSTIN_REGEX = /^[0-9]{2}[A-Z0-9]{13}$/;
+const normalizeGstin = (value) => String(value || "").trim().toUpperCase();
 const normalizeLeadItemType = (value) => {
   const normalized = String(value || "").trim().toLowerCase();
   return ["product", "service"].includes(normalized) ? normalized : "";
@@ -56,6 +58,7 @@ const normalizeLeadPayload = (payload = {}) => {
     itemType: normalizeLeadItemType(payload.itemType),
     itemId: normalizeOptionalObjectId(payload.itemId),
     industry: normalizeText(payload.industry),
+    gstin: normalizeGstin(payload.gstin),
     annualRevenue: normalizeOptionalNumber(payload.annualRevenue),
     employeeCount: normalizeOptionalNumber(payload.employeeCount),
     source: normalizeText(payload.source),
@@ -220,6 +223,7 @@ const buildMergedLeadPayload = (primaryLead, secondaryLeads, overrides = {}) => 
     mobile: normalizeText(firstMeaningful(...allLeads.map((lead) => lead.mobile)) || ""),
     website: normalizeText(firstMeaningful(...allLeads.map((lead) => lead.website)) || ""),
     industry: normalizeText(firstMeaningful(...allLeads.map((lead) => lead.industry)) || ""),
+    gstin: normalizeGstin(firstMeaningful(...allLeads.map((lead) => lead.gstin)) || ""),
     annualRevenue: normalizeOptionalNumber(firstMeaningful(...allLeads.map((lead) => lead.annualRevenue))),
     employeeCount: normalizeOptionalNumber(firstMeaningful(...allLeads.map((lead) => lead.employeeCount))),
     source: normalizeText(firstMeaningful(...allLeads.map((lead) => lead.source)) || ""),
@@ -258,6 +262,7 @@ const buildMergedLeadPayload = (primaryLead, secondaryLeads, overrides = {}) => 
     "mobile",
     "website",
     "industry",
+    "gstin",
     "annualRevenue",
     "employeeCount",
     "source",
@@ -1022,6 +1027,9 @@ router.post("/", verifyToken, async (req, res, next) => {
     const actorRole = normalizeRole(req.user?.role);
     const requestedAssignedTo = normalizeOptionalObjectId(req.body?.assignedTo);
     if (!payload.name) return res.status(400).json({ message: "Lead name required" });
+    if (payload.gstin && !GSTIN_REGEX.test(payload.gstin)) {
+      return res.status(400).json({ message: "GSTIN must be a valid 15-character GSTIN" });
+    }
 
     // New incoming leads always start in New stage.
     payload.status = "new";
@@ -1128,6 +1136,16 @@ router.post("/bulk", verifyToken, async (req, res, next) => {
 
     for (let index = 0; index < normalizedLeads.length; index += 1) {
       const lead = normalizedLeads[index];
+
+      if (lead.gstin && !GSTIN_REGEX.test(lead.gstin)) {
+        skipped.push({
+          row: index + 1,
+          reason: "invalid_gstin",
+          lead,
+        });
+        continue;
+      }
+
       const keys = getDuplicateKeys(lead);
 
       if (keys.email && seenEmails.has(keys.email)) {
@@ -1232,6 +1250,15 @@ router.put("/:id", verifyToken, permit("ADMIN", "MANAGER", "EMPLOYEE"), async (r
         shouldSave = true;
       }
     });
+
+    if (Object.prototype.hasOwnProperty.call(req.body, "gstin")) {
+      lead.gstin = normalizeGstin(req.body.gstin);
+      shouldSave = true;
+    }
+
+    if (lead.gstin && !GSTIN_REGEX.test(lead.gstin)) {
+      return res.status(400).json({ message: "GSTIN must be a valid 15-character GSTIN" });
+    }
 
     if (Object.prototype.hasOwnProperty.call(req.body, "itemType")) {
       lead.itemType = normalizeLeadItemType(req.body.itemType);

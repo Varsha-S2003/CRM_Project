@@ -93,7 +93,7 @@ export default function Customers() {
   const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedCustomer, setSelectedCustomer] = useState(null);
-  const [customerForm, setCustomerForm] = useState({ state: "", gstin: "" });
+  const [customerForm, setCustomerForm] = useState({ state: "" });
   const [savingCustomer, setSavingCustomer] = useState(false);
   const [customerMessage, setCustomerMessage] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -135,14 +135,13 @@ export default function Customers() {
 
   useEffect(() => {
     if (!selectedCustomer) {
-      setCustomerForm({ state: "", gstin: "" });
+      setCustomerForm({ state: "" });
       setCustomerMessage("");
       return;
     }
 
     setCustomerForm({
       state: String(selectedCustomer.state || "").trim(),
-      gstin: String(selectedCustomer.gstin || "").trim(),
     });
     setCustomerMessage("");
   }, [selectedCustomer]);
@@ -158,7 +157,6 @@ export default function Customers() {
         `http://localhost:5000/api/customers/${selectedCustomer._id}`,
         {
           state: customerForm.state,
-          gstin: customerForm.gstin,
         },
         {
           headers: { Authorization: `Bearer ${token}` },
@@ -172,7 +170,7 @@ export default function Customers() {
         )
       );
       setSelectedCustomer((prev) => (prev ? { ...prev, ...updatedCustomer } : prev));
-      setCustomerMessage("Customer GST details saved.");
+      setCustomerMessage("Customer state saved.");
       window.dispatchEvent(new Event("customer-updated"));
     } catch (err) {
       setCustomerMessage(err.response?.data?.message || "Failed to save customer.");
@@ -299,7 +297,6 @@ export default function Customers() {
         customer.email,
         customer.phone,
         customer.state,
-        customer.gstin,
         customer.reason,
       ]
         .filter(Boolean)
@@ -361,7 +358,6 @@ export default function Customers() {
                     <th>Email</th>
                     <th>Phone</th>
                     <th>State</th>
-                    <th>GSTIN</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -376,7 +372,6 @@ export default function Customers() {
                       <td data-label="Email">{customer.email || "-"}</td>
                       <td data-label="Phone">{customer.phone || "-"}</td>
                       <td data-label="State">{customer.state || "-"}</td>
-                      <td data-label="GSTIN">{customer.gstin || "-"}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -420,18 +415,6 @@ export default function Customers() {
                           </option>
                         ))}
                       </select>
-                    </div>
-                    <div className="detail-row">
-                      <span className="detail-label">GSTIN</span>
-                      <input
-                        className="customer-inline-input"
-                        type="text"
-                        value={customerForm.gstin}
-                        onChange={(event) =>
-                          setCustomerForm((prev) => ({ ...prev, gstin: event.target.value.toUpperCase() }))
-                        }
-                        placeholder="Enter GSTIN"
-                      />
                     </div>
                   </div>
                   {customerMessage ? <div className="customer-message">{customerMessage}</div> : null}
@@ -480,7 +463,7 @@ export default function Customers() {
                 </div>
                 <div className="customer-modal-actions">
                   <button type="button" className="btn-submit" onClick={handleSaveCustomer} disabled={savingCustomer}>
-                    {savingCustomer ? "Saving..." : "Save GST Details"}
+                    {savingCustomer ? "Saving..." : "Save State"}
                   </button>
                 </div>
               </div>
