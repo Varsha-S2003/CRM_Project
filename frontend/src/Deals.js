@@ -74,6 +74,28 @@ const getItemType = (item) => {
   return item.type === "service" ? "service" : "product";
 };
 
+const normalizeLookupValue = (value) => String(value || "").trim().toLowerCase();
+
+const findMatchingCustomerState = (customers, dealForm) => {
+  const email = normalizeLookupValue(dealForm.email);
+  const company = normalizeLookupValue(dealForm.company);
+  const contact = normalizeLookupValue(dealForm.contact);
+
+  const match = customers.find((customer) => {
+    const customerEmail = normalizeLookupValue(customer.email);
+    const customerCompany = normalizeLookupValue(customer.company);
+    const customerName = normalizeLookupValue(customer.name);
+
+    return (
+      (email && customerEmail && email === customerEmail) ||
+      (company && customerCompany && company === customerCompany) ||
+      (contact && customerName && contact === customerName)
+    );
+  });
+
+  return String(match?.state || "").trim();
+};
+
 const emitDealDataRefresh = () => {
   window.dispatchEvent(new Event("deal-updated"));
   window.dispatchEvent(new Event("inventory-updated"));
@@ -132,6 +154,7 @@ function Deals() {
   const minDate = useMemo(() => getTodayDateInputValue(), []);
   const [deals, setDeals] = useState([]);
   const [products, setProducts] = useState([]);
+  const [customers, setCustomers] = useState([]);
   const [views, setViews] = useState([]);
   const [currentViewId, setCurrentViewId] = useState(null);
   const [dealStatusFilter, setDealStatusFilter] = useState("all");
@@ -290,6 +313,18 @@ function Deals() {
     }
   }, []);
 
+  const fetchCustomers = useCallback(async () => {
+    try {
+      const token = localStorage.getItem("token");
+      const res = await axios.get("http://localhost:5000/api/customers", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setCustomers(res.data || []);
+    } catch (err) {
+      console.error("Failed to fetch customers:", err);
+    }
+  }, []);
+
   const fetchViews = useCallback(async () => {
     try {
       const token = localStorage.getItem("token");
@@ -330,6 +365,10 @@ function Deals() {
   useEffect(() => {
     fetchProducts();
   }, [fetchProducts]);
+
+  useEffect(() => {
+    fetchCustomers();
+  }, [fetchCustomers]);
 
   const fetchDeals = useCallback(async (nextFilters = filters, nextStatus = dealStatusFilter) => {
     try {
@@ -478,6 +517,12 @@ function Deals() {
     }
     return Number(((amount * probability) / 100).toFixed(2)).toString();
   }, [newDeal.amount, newDeal.probability]);
+
+  const matchedCustomerState = findMatchingCustomerState(customers, {
+    company: newDeal.company,
+    email: newDeal.email,
+    contact: newDeal.contact,
+  });
 
   const selectedNewDealItemType = getItemType(products.find((item) => String(item._id) === String(newDeal.product)));
   const selectedEditDealItemType = getItemType(products.find((item) => String(item._id) === String(editDealForm?.product || "")));
@@ -734,10 +779,12 @@ function Deals() {
         effectiveProbability === null
           ? parseOptionalNumberInput(newDeal.expectedRevenue)
           : Number(((amountValue * effectiveProbability) / 100).toFixed(2));
+      const resolvedState = String(newDeal.state || matchedCustomerState || "").trim();
       const res = await axios.post(
         "http://localhost:5000/api/deals",
         {
           ...newDeal,
+          state: resolvedState,
           salutation: trimmedSalutation,
           name: trimmedName,
           amount: amountValue,
@@ -2465,8 +2512,9 @@ ET`;
                     <label>State</label>
                     <input
                       type="text"
-                      value={newDeal.state}
+                      value={newDeal.state || matchedCustomerState}
                       onChange={(e) => setNewDeal((prev) => ({ ...prev, state: e.target.value }))}
+                      placeholder={matchedCustomerState ? "Auto-filled from customer" : ""}
                     />
                   </div>
                   <div className="form-group">
