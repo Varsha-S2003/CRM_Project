@@ -2676,16 +2676,8 @@ ET`;
                   </div>
                   <div className="form-group">
                     <label>State</label>
-<<<<<<< HEAD
-                    <input
-                      type="text"
-                      value={newDeal.state || matchedCustomerState}
-                      onChange={(e) => setNewDeal((prev) => ({ ...prev, state: e.target.value }))}
-                      placeholder={matchedCustomerState ? "Auto-filled from customer" : ""}
-                    />
-=======
                     <select
-                      value={newDeal.state}
+                      value={newDeal.state || matchedCustomerState || ""}
                       onChange={(e) => setNewDeal((prev) => ({ ...prev, state: e.target.value }))}
                       disabled={!newDeal.country}
                     >
@@ -2696,7 +2688,6 @@ ET`;
                         </option>
                       ))}
                     </select>
->>>>>>> 4b7f40589b6897ae52896cf6ce5434225686afda
                   </div>
                   <div className="form-group">
                     <label>Postal Code</label>
