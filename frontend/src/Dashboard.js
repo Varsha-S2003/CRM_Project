@@ -214,9 +214,49 @@ function Dashboard() {
         const ownerName =
           (owner && (owner.name || owner.username || owner.email)) ||
           "Unassigned";
+        if (!acc[ownerName]) {
+          acc[ownerName] = {
+            total: 0,
+            won: 0,
+            advanced: 0,
+            revenue: 0,
+          };
+        }
+
         const stageKey = normalizeStageKey(deal.stage);
-        const weight = stageKey === "won" ? 100 : stageKey === "negotiation" ? 70 : 40;
-        acc[ownerName] = (acc[ownerName] || 0) + weight;
+        acc[ownerName].total += 1;
+        acc[ownerName].revenue += toNumber(deal.amount || deal.value);
+
+        if (stageKey === "won") {
+          acc[ownerName].won += 1;
+          acc[ownerName].advanced += 1;
+        } else if (["negotiation", "proposal", "value_proposition"].includes(stageKey)) {
+          acc[ownerName].advanced += 1;
+        }
+
+        return acc;
+      }, {});
+
+      const maxOwnerRevenue = Math.max(
+        1,
+        ...Object.values(managerScoreMap).map((entry) => toNumber(entry.revenue))
+      );
+
+      const managerPerformance = Object.entries(managerScoreMap).reduce((acc, [ownerName, entry]) => {
+        const total = Math.max(1, toNumber(entry.total));
+        const winRate = (toNumber(entry.won) / total) * 100;
+        const progressRate = (toNumber(entry.advanced) / total) * 100;
+        const revenueScore = (toNumber(entry.revenue) / maxOwnerRevenue) * 100;
+
+        const score = Math.round((winRate * 0.5) + (progressRate * 0.3) + (revenueScore * 0.2));
+
+        acc[ownerName] = {
+          score: Math.max(0, Math.min(100, score)),
+          deals: toNumber(entry.total),
+          won: toNumber(entry.won),
+          revenue: toNumber(entry.revenue),
+        };
+
         return acc;
       }, {});
 
@@ -235,7 +275,7 @@ function Dashboard() {
         overdueBills,
         revenueTrend: monthlyRevenue,
         dealsByStage: normalizedDealsByStage,
-        managerPerformance: managerScoreMap,
+        managerPerformance,
         leadCounts,
       });
     } catch (err) {
@@ -431,14 +471,30 @@ function Dashboard() {
     ? Object.entries(stats.dealsByStage).map(([stage, count]) => ({ name: stage, value: count }))
     : defaultDealsData;
   const managerData = stats
-    ? Object.entries(stats.managerPerformance).map(([name, score]) => ({ name, score }))
+    ? Object.entries(stats.managerPerformance || {})
+      .map(([name, entry]) => {
+        if (entry && typeof entry === "object") {
+          return {
+            name,
+            score: Math.max(0, Math.min(100, toNumber(entry.score))),
+            deals: toNumber(entry.deals),
+            won: toNumber(entry.won),
+            revenue: toNumber(entry.revenue),
+          };
+        }
+
+        const fallbackScore = Math.max(0, Math.min(100, toNumber(entry)));
+        return { name, score: fallbackScore, deals: 0, won: 0, revenue: 0 };
+      })
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 8)
     : defaultManagerData;
-  const COLORS = ["#6f42c1", "#007bff", "#0dcaf0", "#17a2b8"];
+  const COLORS = ["#4caf36", "#f4b400", "#8ed85b", "#4ecdc4", "#2563eb"];
   const chartTooltipStyle = {
     backgroundColor: "#ffffff",
-    border: "1px solid #d9e3f2",
+    border: "1px solid #d7e5c9",
     borderRadius: "14px",
-    boxShadow: "0 16px 40px rgba(42, 27, 77, 0.12)",
+    boxShadow: "0 16px 36px rgba(31, 61, 29, 0.12)",
   };
 
   const assignmentItems = assignmentSnapshot?.items || [];
@@ -726,12 +782,12 @@ function Dashboard() {
                   <AreaChart data={revenueData}>
                     <defs>
                       <linearGradient id="revenueFill" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#007bff" stopOpacity={0.3} />
-                        <stop offset="100%" stopColor="#007bff" stopOpacity={0.02} />
+                        <stop offset="0%" stopColor="#4caf36" stopOpacity={0.34} />
+                        <stop offset="100%" stopColor="#4caf36" stopOpacity={0.03} />
                       </linearGradient>
                       <linearGradient id="targetFill" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#6f42c1" stopOpacity={0.18} />
-                        <stop offset="100%" stopColor="#6f42c1" stopOpacity={0.01} />
+                        <stop offset="0%" stopColor="#f4b400" stopOpacity={0.24} />
+                        <stop offset="100%" stopColor="#f4b400" stopOpacity={0.02} />
                       </linearGradient>
                     </defs>
                     <CartesianGrid stroke="#e8eef8" strokeDasharray="4 4" vertical={false} />
@@ -739,8 +795,8 @@ function Dashboard() {
                     <YAxis axisLine={false} tickLine={false} tick={{ fill: "#6d7a96", fontSize: 12 }} />
                     <Tooltip contentStyle={chartTooltipStyle} />
                     <Legend verticalAlign="top" align="right" iconType="circle" wrapperStyle={{ fontSize: "12px", paddingBottom: "12px" }} />
-                    <Area type="monotone" dataKey="target" stroke="#6f42c1" fill="url(#targetFill)" strokeWidth={2} name="Target" />
-                    <Area type="monotone" dataKey="revenue" stroke="#007bff" fill="url(#revenueFill)" strokeWidth={3} name="Revenue" />
+                    <Area type="monotone" dataKey="target" stroke="#d19500" fill="url(#targetFill)" strokeWidth={2} name="Target" />
+                    <Area type="monotone" dataKey="revenue" stroke="#2f8f2f" fill="url(#revenueFill)" strokeWidth={3} name="Revenue" />
                   </AreaChart>
                 </ResponsiveContainer>
               </div>
@@ -784,7 +840,7 @@ function Dashboard() {
             <div className="chart-card-header">
               <div>
                 <h4>Manager Performance</h4>
-                <p>Score comparison across top performers</p>
+                <p>Normalized score across top performers (0-100)</p>
               </div>
               <span className="chart-chip chart-chip-secondary">Quarterly</span>
             </div>
@@ -793,13 +849,20 @@ function Dashboard() {
                 <BarChart data={managerData} barCategoryGap={24}>
                   <CartesianGrid stroke="#e8eef8" strokeDasharray="4 4" vertical={false} />
                   <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: "#6d7a96", fontSize: 12 }} />
-                  <YAxis axisLine={false} tickLine={false} tick={{ fill: "#6d7a96", fontSize: 12 }} />
-                  <Tooltip contentStyle={chartTooltipStyle} cursor={{ fill: "rgba(111, 66, 193, 0.05)" }} />
+                  <YAxis domain={[0, 100]} axisLine={false} tickLine={false} tick={{ fill: "#6d7a96", fontSize: 12 }} />
+                  <Tooltip
+                    contentStyle={chartTooltipStyle}
+                    cursor={{ fill: "rgba(76, 175, 54, 0.08)" }}
+                    formatter={(value, _name, payload) => {
+                      const row = payload?.payload || {};
+                      return [`${toNumber(value)}%`, `${row.deals || 0} deals | ${formatInr(row.revenue || 0)} revenue`];
+                    }}
+                  />
                   <Bar dataKey="score" radius={[10, 10, 4, 4]} maxBarSize={48}>
                     {managerData.map((entry, index) => (
                       <Cell
                         key={index}
-                        fill={activeBarIndex === index ? "#007bff" : "#6f42c1"}
+                        fill={activeBarIndex === index ? "#f4b400" : "#4caf36"}
                         onMouseEnter={() => setActiveBarIndex(index)}
                         onMouseLeave={() => setActiveBarIndex(null)}
                       />

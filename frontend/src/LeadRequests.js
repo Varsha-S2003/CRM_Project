@@ -32,6 +32,7 @@ const REQUEST_TYPE_FILTERS = [
 ];
 const BILLING_CYCLE_OPTIONS = [
   { value: "monthly", label: "Monthly" },
+  { value: "quarterly", label: "Quarterly" },
   { value: "6_months", label: "6 Months" },
   { value: "yearly", label: "Yearly" },
 ];
@@ -910,6 +911,9 @@ function LeadRequests() {
                 contact: String(item.contact || ""),
                 email: String(item.email || ""),
                 amount: String(item.amount || ""),
+                product: String(item.product?.name || ""),
+                source: "requests",
+                proposalOnly: "1",
               });
               navigate(`/documents?${params.toString()}`);
             }}

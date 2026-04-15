@@ -11,6 +11,25 @@ const formatDateTime = (value) => {
   return date.toLocaleString();
 };
 
+const formatStageLabel = (value) => String(value || "-").replaceAll("_", " ");
+
+const parseNeedAnalysisBillingCycle = (text) => {
+  const content = String(text || "");
+  const match = content.match(/Billing\s*Cycle:\s*([^,\n]+)/i);
+  const raw = String(match?.[1] || "").trim().toLowerCase();
+  if (!raw) return "";
+  if (raw === "6 months" || raw === "6_months") return "6_months";
+  if (["monthly", "quarterly", "yearly"].includes(raw)) return raw;
+  return "";
+};
+
+const parseNeedAnalysisUsersOrSeats = (text) => {
+  const content = String(text || "");
+  const match = content.match(/Users\s*\/\s*Seats:\s*(\d+)/i);
+  const parsed = Number(match?.[1]);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+};
+
 const getStatusLabel = (status) => {
   const value = String(status || "draft").trim().toLowerCase();
   const labels = {
@@ -42,9 +61,11 @@ function DocumentsModule() {
   const [searchParams] = useSearchParams();
   const token = localStorage.getItem("token");
   const role = String(localStorage.getItem("role") || "").toUpperCase();
+  const source = String(searchParams.get("source") || "").trim().toLowerCase();
   const isManager = role === "MANAGER";
   const isEmployee = role === "EMPLOYEE";
   const dealId = String(searchParams.get("dealId") || "").trim();
+  const proposalOnlyMode = Boolean(dealId) && (source === "requests" || searchParams.get("proposalOnly") === "1");
 
   const fallbackDraft = useMemo(
     () => ({
@@ -69,11 +90,17 @@ function DocumentsModule() {
 
   const [workspace, setWorkspace] = useState(null);
   const [loading, setLoading] = useState(Boolean(dealId));
+  const [historyLoading, setHistoryLoading] = useState(!dealId);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [busyAction, setBusyAction] = useState("");
   const [showEditor, setShowEditor] = useState(false);
   const [form, setForm] = useState(fallbackDraft);
+  const [historyItems, setHistoryItems] = useState([]);
+  const [proposalCalc, setProposalCalc] = useState({ usersOrSeats: "", billingCycle: "" });
+  const [selectedHistoryId, setSelectedHistoryId] = useState("");
+  const [selectedHistoryWorkspace, setSelectedHistoryWorkspace] = useState(null);
+  const [selectedHistoryLoading, setSelectedHistoryLoading] = useState(false);
 
   const fetchWorkspace = useCallback(async () => {
     if (!dealId || !token) return;
@@ -101,6 +128,22 @@ function DocumentsModule() {
         clientSentAt: draft.clientSentAt || null,
         approvedBy: draft.approvedBy || null,
       });
+      setProposalCalc((prev) => ({
+        usersOrSeats: String(
+          payload?.deal?.usersOrSeats ??
+            parseNeedAnalysisUsersOrSeats(payload?.deal?.description) ??
+            prev.usersOrSeats ??
+            ""
+        ).trim(),
+        billingCycle:
+          String(
+            payload?.deal?.billingCycle ||
+              parseNeedAnalysisBillingCycle(payload?.deal?.description) ||
+              prev.billingCycle ||
+              payload?.deal?.product?.billingCycle ||
+              "monthly"
+          ).trim(),
+      }));
     } catch (err) {
       setError(err.response?.data?.message || "Failed to load document workspace.");
     } finally {
@@ -111,6 +154,70 @@ function DocumentsModule() {
   useEffect(() => {
     fetchWorkspace();
   }, [fetchWorkspace]);
+
+  useEffect(() => {
+    if (!token || dealId) {
+      setHistoryLoading(false);
+      return;
+    }
+
+    const fetchHistory = async () => {
+      try {
+        setHistoryLoading(true);
+        setError("");
+        const res = await axios.get("http://localhost:5000/api/deals/proposal-history", {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        setHistoryItems(Array.isArray(res.data) ? res.data : []);
+      } catch (err) {
+        setError(err.response?.data?.message || "Failed to load client history.");
+        setHistoryItems([]);
+      } finally {
+        setHistoryLoading(false);
+      }
+    };
+
+    fetchHistory();
+  }, [dealId, token]);
+
+  useEffect(() => {
+    if (dealId) return;
+
+    if (!historyItems.length) {
+      setSelectedHistoryId("");
+      setSelectedHistoryWorkspace(null);
+      return;
+    }
+
+    const exists = historyItems.some((item) => String(item?._id || "") === String(selectedHistoryId || ""));
+    if (!selectedHistoryId || !exists) {
+      setSelectedHistoryId(String(historyItems[0]?._id || ""));
+    }
+  }, [dealId, historyItems, selectedHistoryId]);
+
+  useEffect(() => {
+    if (!token || dealId || !selectedHistoryId) {
+      setSelectedHistoryWorkspace(null);
+      setSelectedHistoryLoading(false);
+      return;
+    }
+
+    const fetchSelectedHistoryWorkspace = async () => {
+      try {
+        setSelectedHistoryLoading(true);
+        const res = await axios.get(`http://localhost:5000/api/deals/${selectedHistoryId}/proposal-workspace`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        setSelectedHistoryWorkspace(res.data || null);
+      } catch (_err) {
+        setSelectedHistoryWorkspace(null);
+      } finally {
+        setSelectedHistoryLoading(false);
+      }
+    };
+
+    fetchSelectedHistoryWorkspace();
+  }, [dealId, selectedHistoryId, token]);
 
   useEffect(() => {
     if (!workspace?.deal || workspace?.deal?.proposalDraft?.title || !dealId || !token) return;
@@ -294,6 +401,55 @@ function DocumentsModule() {
     return sum + cgst + sgst + igst;
   }, 0);
   const grandTotal = displayLineItems.reduce((sum, item) => sum + Number(item.totalAmount || 0), 0);
+  const primaryLineItem = displayLineItems[0] || null;
+  const resolvedProductName =
+    (typeof deal?.product === "object" ? deal?.product?.name : "") ||
+    searchParams.get("product") ||
+    "-";
+  const resolvedQuantity = Number(primaryLineItem?.quantity || deal.quantity || 0) || 0;
+  const normalizedProductType = String(deal?.product?.type || "").trim().toLowerCase();
+  const isServicePricing = normalizedProductType === "service";
+  const resolvedUnitPrice = Number(
+    (isServicePricing ? deal?.product?.cost : deal?.product?.price) ??
+    primaryLineItem?.price ??
+    deal?.product?.cost ??
+    deal?.product?.price ??
+    0
+  ) || 0;
+  const fetchedGstPercentRaw =
+    deal?.product?.gst_percent ??
+    deal?.gstPercent ??
+    primaryLineItem?.gstPercent ??
+    taxSummary?.gstPercent ??
+    (String(deal?.product?.type || "").trim().toLowerCase() === "service" ? 18 : 0);
+  const resolvedGstPercent = Number(fetchedGstPercentRaw || 0);
+  const billingCycleKey = String(
+    proposalCalc.billingCycle || deal?.billingCycle || deal?.product?.billingCycle || "monthly"
+  )
+    .trim()
+    .toLowerCase();
+  const durationMonths = {
+    monthly: 1,
+    quarterly: 3,
+    "6_months": 6,
+    yearly: 12,
+  }[billingCycleKey] || 1;
+  const usersOrSeats = Number(proposalCalc.usersOrSeats);
+  const resolvedUsersOrSeats = Number.isFinite(usersOrSeats) && usersOrSeats > 0 ? usersOrSeats : 1;
+  const baseAmountFromDeal = Number(deal.amount || 0);
+  const amountFromProduct = resolvedUnitPrice > 0 && resolvedQuantity > 0
+    ? Number((resolvedUnitPrice * resolvedQuantity).toFixed(2))
+    : 0;
+  const amountFromServiceFormula = isServicePricing && resolvedUnitPrice > 0
+    ? Number((resolvedUnitPrice * resolvedUsersOrSeats * durationMonths).toFixed(2))
+    : 0;
+  const fallbackTaxableAmount = Number(primaryLineItem?.taxableAmount || taxSummary?.taxableAmount || 0);
+  const resolvedTaxableAmount = isServicePricing
+    ? (amountFromServiceFormula > 0 ? amountFromServiceFormula : fallbackTaxableAmount)
+    : (amountFromProduct > 0 ? amountFromProduct : (baseAmountFromDeal > 0 ? baseAmountFromDeal : fallbackTaxableAmount));
+  const resolvedGstAmount = Number(((resolvedTaxableAmount * resolvedGstPercent) / 100).toFixed(2));
+  const resolvedGrandTotal = Number((resolvedTaxableAmount + resolvedGstAmount).toFixed(2));
+  const calculatedDealValue = resolvedGrandTotal;
   const draftStatus = String(workspace?.deal?.proposalDraft?.status || form.status || "draft");
   const dealStage = String(deal?.stage || "").trim().toLowerCase();
   const isNegotiateStage = dealStage === "negotiate";
@@ -306,13 +462,43 @@ function DocumentsModule() {
   const sendToClientBlockedReason = !canSendToClient
     ? "Send To Client is available only for Employee login."
     : "";
-  const history = workspace?.history || [];
+  const history = dealId ? workspace?.history || [] : historyItems;
+  const selectedHistoryDeal = selectedHistoryWorkspace?.deal || null;
+  const selectedHistoryDraft = selectedHistoryDeal?.proposalDraft || null;
+  const selectedHistoryProduct = selectedHistoryDeal?.product?.name || "-";
+  const selectedHistoryCustomer = selectedHistoryDeal?.customerId || {};
+  const selectedHistoryTax = selectedHistoryWorkspace?.taxSummary || null;
+  const selectedHistoryInvoice = selectedHistoryWorkspace?.invoice || {};
+  const selectedHistoryLineItems = Array.isArray(selectedHistoryWorkspace?.lineItems)
+    ? selectedHistoryWorkspace.lineItems
+    : [];
   const notifications = workspace?.notifications || [];
   const timeline = Array.isArray(deal.timeline) ? [...deal.timeline].reverse() : [];
+  const heroStatus = dealId ? draftStatus : String(selectedHistoryDraft?.status || "draft");
+  const canOpenEditor = Boolean(dealId);
+  const heroTitle = dealId ? form.title || "Proposal Draft" : "Proposal Workspace";
+  const heroDescription = dealId
+    ? "Create and manage the selected proposal."
+    : "Select a proposal card to view full details.";
   const heroMeta = [
-      { label: "Deal", value: deal.name || searchParams.get("dealName") || "-" },
-      { label: "Company", value: deal.company || searchParams.get("company") || "-" },
-      { label: "Product", value: deal.product?.name || "-" },
+      {
+        label: "Deal",
+        value: dealId
+          ? deal.name || searchParams.get("dealName") || "-"
+          : selectedHistoryDeal?.name || "-",
+      },
+      {
+        label: "Company",
+        value: dealId
+          ? deal.company || searchParams.get("company") || "-"
+          : selectedHistoryDeal?.company || "-",
+      },
+      {
+        label: "Status",
+        value: dealId
+          ? getStatusLabel(draftStatus)
+          : getStatusLabel(selectedHistoryDraft?.status || "draft"),
+      },
     ];
 
   const openEditor = () => setShowEditor(true);
@@ -322,11 +508,158 @@ function DocumentsModule() {
     <div className="dashboard-layout">
       <Sidebar />
       <div className="main-content documents-page">
+        {proposalOnlyMode ? (
+          <div className="documents-proposal-only">
+            <div className="documents-card documents-proposal-only__card">
+              <div className="documents-card__header documents-proposal-only__header">
+                <div>
+                  <span className="documents-eyebrow">Create Proposal</span>
+                  <h2>{form.title || "Proposal Draft"}</h2>
+                  <p>Fill only required proposal details and submit.</p>
+                </div>
+                <div className={`documents-status-pill ${draftStatus}`}>{getStatusLabel(draftStatus)}</div>
+              </div>
+
+              {error ? <div className="documents-message error">{error}</div> : null}
+              {message ? <div className={`documents-message ${/failed|required/i.test(message) ? "error" : "success"}`}>{message}</div> : null}
+
+              {loading ? (
+                <div className="documents-empty">Loading proposal form...</div>
+              ) : (
+                <>
+                  <div className="documents-proposal-only__meta">
+                    <div><span>Deal</span><strong>{deal.name || searchParams.get("dealName") || "-"}</strong></div>
+                    <div><span>Company</span><strong>{deal.company || searchParams.get("company") || "-"}</strong></div>
+                    <div><span>Contact</span><strong>{deal.contact || searchParams.get("contact") || "-"}</strong></div>
+                    <div><span>Product / Service</span><strong>{resolvedProductName}</strong></div>
+                  </div>
+
+                  <div className="documents-card">
+                    <div className="documents-card__header">
+                      <h2>Auto Pricing</h2>
+                      <p>Base Price x Users x Duration + GST.</p>
+                    </div>
+                    {isServicePricing ? (
+                      <div className="documents-proposal-only__controls">
+                        <label>
+                          Billing Cycle
+                          <select
+                            value={proposalCalc.billingCycle}
+                            onChange={() => {}}
+                            disabled
+                          >
+                            <option value="monthly">Monthly</option>
+                            <option value="quarterly">Quarterly</option>
+                            <option value="6_months">6 Months</option>
+                            <option value="yearly">Yearly</option>
+                          </select>
+                        </label>
+                        <label>
+                          Users / Seats
+                          <input
+                            type="number"
+                            min="1"
+                            step="1"
+                            value={proposalCalc.usersOrSeats}
+                            onChange={() => {}}
+                            readOnly
+                            disabled
+                            placeholder="Enter users/seats"
+                          />
+                        </label>
+                      </div>
+                    ) : null}
+                    <div className="documents-proposal-only__calc-grid">
+                      <div><span>Product / Service</span><strong>{resolvedProductName}</strong></div>
+                      <div><span>Base Price</span><strong>{formatCurrency(resolvedUnitPrice)}</strong></div>
+                      <div><span>Deal Value</span><strong>{formatCurrency(calculatedDealValue)}</strong></div>
+                      <div><span>{isServicePricing ? "Users / Seats" : "Quantity"}</span><strong>{isServicePricing ? resolvedUsersOrSeats : (resolvedQuantity || "-")}</strong></div>
+                      <div><span>Duration</span><strong>{durationMonths} month(s)</strong></div>
+                      <div><span>GST %</span><strong>{formatPercent(resolvedGstPercent)}</strong></div>
+                      <div><span>Taxable Amount</span><strong>{formatCurrency(resolvedTaxableAmount)}</strong></div>
+                      <div><span>Total GST</span><strong>{formatCurrency(resolvedGstAmount)}</strong></div>
+                      <div><span>Grand Total</span><strong>{formatCurrency(resolvedGrandTotal)}</strong></div>
+                    </div>
+                  </div>
+
+                  <div className="documents-proposal-only__form">
+                    <div className="documents-card">
+                      <div className="documents-card__header">
+                        <h2>Title</h2>
+                      </div>
+                      <input
+                        type="text"
+                        value={form.title}
+                        onChange={(event) => updateField("title", event.target.value)}
+                        placeholder="Proposal title"
+                      />
+                    </div>
+
+                    <div className="documents-card">
+                      <div className="documents-card__header">
+                        <h2>Introduction</h2>
+                      </div>
+                      <textarea rows="4" value={form.introduction} onChange={(event) => updateField("introduction", event.target.value)} />
+                    </div>
+
+                    <div className="documents-card">
+                      <div className="documents-card__header">
+                        <h2>Problem</h2>
+                      </div>
+                      <textarea rows="3" value={form.problem} onChange={(event) => updateField("problem", event.target.value)} />
+                    </div>
+
+                    <div className="documents-card">
+                      <div className="documents-card__header">
+                        <h2>Solution</h2>
+                      </div>
+                      <textarea rows="3" value={form.solution} onChange={(event) => updateField("solution", event.target.value)} />
+                    </div>
+
+                    <div className="documents-card">
+                      <div className="documents-card__header">
+                        <h2>Scope</h2>
+                      </div>
+                      <textarea rows="3" value={form.scope} onChange={(event) => updateField("scope", event.target.value)} />
+                    </div>
+
+                    <div className="documents-card">
+                      <div className="documents-card__header">
+                        <h2>Pricing Notes</h2>
+                      </div>
+                      <textarea rows="3" value={form.pricingNotes} onChange={(event) => updateField("pricingNotes", event.target.value)} />
+                    </div>
+
+                    <div className="documents-card">
+                      <div className="documents-card__header">
+                        <h2>Terms</h2>
+                      </div>
+                      <textarea rows="3" value={form.terms} onChange={(event) => updateField("terms", event.target.value)} />
+                    </div>
+                  </div>
+
+                  <div className="documents-actions documents-proposal-only__actions">
+                    <button type="button" className="documents-primary-btn" onClick={handleSaveDraft} disabled={busyAction !== ""}>
+                      {busyAction === "save" ? "Saving..." : "Save Proposal"}
+                    </button>
+                    <button type="button" className="documents-secondary-btn" onClick={handleSendForApproval} disabled={!canSendForApproval || busyAction !== ""}>
+                      {busyAction === "approval" ? "Sending..." : "Send To Manager"}
+                    </button>
+                    <button type="button" className="documents-secondary-btn" onClick={handleSendToClient} disabled={!canSendToClient || busyAction !== ""}>
+                      {busyAction === "client" ? "Sending..." : "Send To Client"}
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        ) : (
+        <>
         <div className="documents-hero">
           <div className="documents-hero__copy">
             <span className="documents-eyebrow">Documents Workspace</span>
-            <h1>{form.title || "Proposal Draft"}</h1>
-            <p>Keep the page clean, open the proposal editor only when needed, and review history at a glance.</p>
+            <h1>{heroTitle}</h1>
+            <p>{heroDescription}</p>
             <div className="documents-hero__meta">
               {heroMeta.map((item) => (
                 <div className="documents-meta-pill" key={item.label}>
@@ -337,9 +670,14 @@ function DocumentsModule() {
             </div>
           </div>
           <div className="documents-hero__status">
-            <div className={`documents-status-pill ${draftStatus}`}>{getStatusLabel(draftStatus)}</div>
-            <button type="button" className="documents-primary-btn documents-primary-btn--hero" onClick={openEditor} disabled={busyAction !== ""}>
-              {busyAction === "save" ? "Saving..." : "Create Proposal"}
+            <div className={`documents-status-pill ${heroStatus}`}>{getStatusLabel(heroStatus)}</div>
+            <button
+              type="button"
+              className="documents-primary-btn documents-primary-btn--hero"
+              onClick={openEditor}
+              disabled={!canOpenEditor || busyAction !== ""}
+            >
+              {!canOpenEditor ? "Read Only" : busyAction === "save" ? "Saving..." : "Create Proposal"}
             </button>
           </div>
         </div>
@@ -347,31 +685,90 @@ function DocumentsModule() {
         {error ? <div className="documents-message error">{error}</div> : null}
         {message ? <div className={`documents-message ${/failed|required/i.test(message) ? "error" : "success"}`}>{message}</div> : null}
 
-        {loading ? (
-          <div className="documents-card">Loading document workspace...</div>
+        {(dealId ? loading : historyLoading) ? (
+          <div className="documents-card">{dealId ? "Loading document workspace..." : "Loading client history..."}</div>
         ) : (
           <div className="documents-empty-page">
             <div className="documents-card documents-history-card">
               <div className="documents-card__header documents-card__header--row">
                 <div>
                   <h2>History</h2>
-                  <p>Completed proposals and prior customer activity stay visible here.</p>
+                  <p>Only created proposal history is shown here.</p>
                 </div>
               </div>
               <div className="documents-stack-list">
                 {history.length ? history.map((item) => (
-                  <div className="documents-stack-item" key={item._id}>
+                  <button
+                    type="button"
+                    className={`documents-stack-item documents-stack-item--clickable ${String(item._id) === String(selectedHistoryId) ? "active" : ""}`}
+                    key={item._id}
+                    onClick={() => !dealId && setSelectedHistoryId(String(item._id || ""))}
+                    disabled={Boolean(dealId)}
+                  >
                     <strong>{item.name || "Deal"}</strong>
-                    <p>{item.company || "-"} • {String(item.stage || "-").replaceAll("_", " ")}</p>
+                    <p>{item.company || "-"} • {formatStageLabel(item.stage)}</p>
                     <span>{formatDateTime(item.updatedAt || item.createdAt)}</span>
-                  </div>
+                  </button>
                 )) : <div className="documents-empty">No previous customer history found.</div>}
               </div>
+
+              {!dealId && history.length ? (
+                <div className="documents-history-details">
+                  <div className="documents-card__header">
+                    <h2>Proposal Details</h2>
+                    <p>Full details for the selected proposal.</p>
+                  </div>
+
+                  {selectedHistoryLoading ? (
+                    <div className="documents-empty">Loading selected proposal details...</div>
+                  ) : selectedHistoryDeal ? (
+                    <>
+                      <div className="documents-info-list documents-history-details__grid">
+                        <div><span>Deal</span><strong>{selectedHistoryDeal.name || "-"}</strong></div>
+                        <div><span>Company</span><strong>{selectedHistoryDeal.company || "-"}</strong></div>
+                        <div><span>Contact</span><strong>{selectedHistoryDeal.contact || "-"}</strong></div>
+                        <div><span>Email</span><strong>{selectedHistoryDeal.email || selectedHistoryCustomer.email || "-"}</strong></div>
+                        <div><span>Product</span><strong>{selectedHistoryProduct}</strong></div>
+                        <div><span>Stage</span><strong>{formatStageLabel(selectedHistoryDeal.stage)}</strong></div>
+                        <div><span>Amount</span><strong>{formatCurrency(selectedHistoryDeal.amount || 0)}</strong></div>
+                        <div><span>Proposal Status</span><strong>{getStatusLabel(selectedHistoryDraft?.status || "draft")}</strong></div>
+                        <div><span>Approval Requested</span><strong>{formatDateTime(selectedHistoryDraft?.approvalRequestedAt)}</strong></div>
+                        <div><span>Approval Responded</span><strong>{formatDateTime(selectedHistoryDraft?.approvalRespondedAt)}</strong></div>
+                        <div><span>Sent To Client</span><strong>{formatDateTime(selectedHistoryDraft?.clientSentAt)}</strong></div>
+                        <div><span>Last Updated</span><strong>{formatDateTime(selectedHistoryDeal.updatedAt || selectedHistoryDeal.createdAt)}</strong></div>
+                      </div>
+
+                      <div className="documents-info-list documents-history-details__sections">
+                        <div><span>Title</span><strong>{selectedHistoryDraft?.title || "-"}</strong></div>
+                        <div><span>Introduction</span><strong>{selectedHistoryDraft?.introduction || "-"}</strong></div>
+                        <div><span>Problem</span><strong>{selectedHistoryDraft?.problem || "-"}</strong></div>
+                        <div><span>Solution</span><strong>{selectedHistoryDraft?.solution || "-"}</strong></div>
+                        <div><span>Scope</span><strong>{selectedHistoryDraft?.scope || "-"}</strong></div>
+                        <div><span>Pricing Notes</span><strong>{selectedHistoryDraft?.pricingNotes || "-"}</strong></div>
+                        <div><span>Terms</span><strong>{selectedHistoryDraft?.terms || "-"}</strong></div>
+                      </div>
+
+                      {(selectedHistoryTax || selectedHistoryLineItems.length) ? (
+                        <div className="documents-info-list documents-history-details__grid">
+                          <div><span>GST %</span><strong>{formatPercent(selectedHistoryTax?.gstPercent || 0)}</strong></div>
+                          <div><span>Taxable Amount</span><strong>{formatCurrency(selectedHistoryTax?.taxableAmount || 0)}</strong></div>
+                          <div><span>GST Amount</span><strong>{formatCurrency(selectedHistoryTax?.gstAmount || 0)}</strong></div>
+                          <div><span>Grand Total</span><strong>{formatCurrency(selectedHistoryTax?.grandTotal || selectedHistoryDeal.amount || 0)}</strong></div>
+                          <div><span>Seller State</span><strong>{selectedHistoryInvoice?.sellerState || "-"}</strong></div>
+                          <div><span>Customer State</span><strong>{selectedHistoryInvoice?.customerState || "-"}</strong></div>
+                        </div>
+                      ) : null}
+                    </>
+                  ) : (
+                    <div className="documents-empty">Unable to load selected proposal details.</div>
+                  )}
+                </div>
+              ) : null}
             </div>
           </div>
         )}
 
-        {showEditor ? (
+        {showEditor && !proposalOnlyMode ? (
           <div className="documents-modal" role="dialog" aria-modal="true" aria-label="Proposal editor">
             <div className="documents-modal__backdrop" onClick={closeEditor} />
             <div className="documents-modal__panel">
@@ -589,6 +986,8 @@ function DocumentsModule() {
             </div>
           </div>
         ) : null}
+        </>
+        )}
       </div>
     </div>
   );

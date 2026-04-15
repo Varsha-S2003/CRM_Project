@@ -3,11 +3,39 @@ import axios from "axios";
 import Sidebar from "./Sidebar";
 import "./ActivityModule.css";
 
+const parseDateValue = (value) => {
+  if (!value) return null;
+
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value;
+  }
+
+  const text = String(value).trim();
+  if (!text) return null;
+
+  const direct = new Date(text);
+  if (!Number.isNaN(direct.getTime())) return direct;
+
+  // Handles values like "2026-04-16 11:10:00" (no timezone designator).
+  const normalized = text.replace(" ", "T");
+  const fallback = new Date(normalized);
+  if (!Number.isNaN(fallback.getTime())) return fallback;
+
+  return null;
+};
+
 const formatDateTime = (value) => {
-  if (!value) return "-";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "-";
-  return date.toLocaleString();
+  const date = parseDateValue(value);
+  if (!date) return "-";
+
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+  }).format(date);
 };
 
 const parseUsecaseSections = (value) => {
@@ -31,50 +59,9 @@ const parseUsecaseSections = (value) => {
     });
 };
 
-const USECASE_GROUPS = [
-  {
-    title: "Requirement",
-    labels: ["Business Requirement Summary"],
-  },
-  {
-    title: "Challenges",
-    labels: ["Pain Points"],
-  },
-  {
-    title: "Features Needed",
-    labels: ["Features Needed", "Required Features / Expectations"],
-  },
-  {
-    title: "Qualification",
-    labels: ["Budget", "Authority", "Timeline"],
-  },
-  {
-    title: "Notes",
-    labels: ["Meeting Notes"],
-  },
-];
-
-const groupUsecaseSections = (sections) => {
-  const remaining = [...sections];
-
-  const groups = USECASE_GROUPS.map((group) => {
-    const items = group.labels
-      .map((label) => {
-        const index = remaining.findIndex((section) => section.label === label);
-        if (index === -1) return null;
-        const [match] = remaining.splice(index, 1);
-        return match;
-      })
-      .filter(Boolean);
-
-    return { title: group.title, items };
-  }).filter((group) => group.items.length);
-
-  if (remaining.length) {
-    groups.push({ title: "Additional Notes", items: remaining });
-  }
-
-  return groups;
+const getUsecaseValue = (sections, labels) => {
+  const match = sections.find((section) => labels.includes(section.label));
+  return match?.value || "-";
 };
 
 function UsecaseModule() {
@@ -119,12 +106,11 @@ function UsecaseModule() {
     [activities]
   );
 
-  const usecaseCards = useMemo(
+  const usecaseRows = useMemo(
     () =>
       usecaseActivities.map((activity) => ({
         ...activity,
         parsedNotes: parseUsecaseSections(activity.outcomeReason),
-        groupedNotes: groupUsecaseSections(parseUsecaseSections(activity.outcomeReason)),
       })),
     [usecaseActivities]
   );
@@ -133,12 +119,11 @@ function UsecaseModule() {
     const uniqueLeads = new Set(
       usecaseActivities.map((activity) => String(activity.relatedTo?.recordName || "").trim()).filter(Boolean)
     ).size;
-    const latestActivity = [...usecaseActivities]
-      .sort(
-        (a, b) =>
-          new Date(b.startDateTime || b.dueDate || b.createdAt).getTime() -
-          new Date(a.startDateTime || a.dueDate || a.createdAt).getTime()
-      )[0];
+    const latestActivity = [...usecaseActivities].sort((a, b) => {
+      const bTime = parseDateValue(b.startDateTime || b.dueDate || b.createdAt)?.getTime() || 0;
+      const aTime = parseDateValue(a.startDateTime || a.dueDate || a.createdAt)?.getTime() || 0;
+      return bTime - aTime;
+    })[0];
 
     return {
       totalNotes: usecaseActivities.length,
@@ -234,52 +219,58 @@ function UsecaseModule() {
               <strong>Loading usecase notes...</strong>
               <span>Fetching the latest interested meetings from the CRM.</span>
             </div>
-          ) : usecaseCards.length === 0 ? (
+          ) : usecaseRows.length === 0 ? (
             <div className="activity-table-card usecase-state-card">
               <strong>No usecase notes found yet.</strong>
               <span>When a lead meeting is marked Interested, the note details will appear here.</span>
             </div>
           ) : (
-            <div className="usecase-card-grid">
-              {usecaseCards.map((activity) => (
-                <article key={activity._id} className="usecase-note-card">
-                  <div className="usecase-note-card__top">
-                    <div>
-                      <div className="usecase-note-card__lead">{activity.relatedTo?.recordName || "Lead"}</div>
-                      <h3>{activity.title || "Meeting Note"}</h3>
-                    </div>
-                    <span className="usecase-note-card__badge">Interested</span>
-                  </div>
+            <div className="activity-table-card usecase-table-wrap">
+              <table className="usecase-table">
+                <thead>
+                  <tr>
+                    <th>Lead</th>
+                    <th>Meeting</th>
+                    <th>Owner</th>
+                    <th>Updated</th>
+                    <th>Requirement</th>
+                    <th>Pain Points</th>
+                    <th>Features Needed</th>
+                    <th>Qualification</th>
+                    <th>Meeting Notes</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {usecaseRows.map((activity) => {
+                    const qualification = [
+                      getUsecaseValue(activity.parsedNotes, ["Budget"]),
+                      getUsecaseValue(activity.parsedNotes, ["Authority"]),
+                      getUsecaseValue(activity.parsedNotes, ["Timeline"]),
+                    ]
+                      .filter((value) => value && value !== "-")
+                      .join(" | ");
 
-                  <div className="usecase-note-card__meta">
-                    <span>Owner: {activity.owner?.name || activity.owner?.username || "-"}</span>
-                    <span>Updated: {formatDateTime(activity.startDateTime || activity.dueDate || activity.createdAt)}</span>
-                  </div>
-
-                  <div className="usecase-note-card__notes">
-                    {activity.groupedNotes.length ? (
-                      activity.groupedNotes.map((group) => (
-                        <section className="usecase-note-card__group" key={`${activity._id}-${group.title}`}>
-                          <div className="usecase-note-card__group-title">{group.title}</div>
-                          <div className="usecase-note-card__group-grid">
-                            {group.items.map((section, index) => (
-                              <div className="usecase-note-card__note" key={`${activity._id}-${section.label}-${index}`}>
-                                <span>{section.label}</span>
-                                <p>{section.value}</p>
-                              </div>
-                            ))}
-                          </div>
-                        </section>
-                      ))
-                    ) : (
-                      <div className="usecase-note-card__note">
-                        <span>Notes</span>
-                        <p>-</p>
-                      </div>
-                    )}
-                  </div>
-                </article>
-              ))}
+                    return (
+                      <tr key={activity._id}>
+                        <td>{activity.relatedTo?.recordName || "-"}</td>
+                        <td>{activity.title || "Meeting Note"}</td>
+                        <td>{activity.owner?.name || activity.owner?.username || "-"}</td>
+                        <td>{formatDateTime(activity.startDateTime || activity.dueDate || activity.createdAt)}</td>
+                        <td>{getUsecaseValue(activity.parsedNotes, ["Business Requirement Summary"])}</td>
+                        <td>{getUsecaseValue(activity.parsedNotes, ["Pain Points"])}</td>
+                        <td>
+                          {getUsecaseValue(activity.parsedNotes, [
+                            "Features Needed",
+                            "Required Features / Expectations",
+                          ])}
+                        </td>
+                        <td>{qualification || "-"}</td>
+                        <td>{getUsecaseValue(activity.parsedNotes, ["Meeting Notes", "Notes"])}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
           )}
         </div>

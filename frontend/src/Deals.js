@@ -35,6 +35,7 @@ const DEFAULT_PROBABILITY_BY_STAGE = {
 const dealTypeOptions = ["", "New Business", "Existing Business", "Renewal", "Upsell", "Other"];
 const billingCycleOptions = [
   { value: "monthly", label: "Monthly" },
+  { value: "quarterly", label: "Quarterly" },
   { value: "6_months", label: "6 Months" },
   { value: "yearly", label: "Yearly" },
 ];

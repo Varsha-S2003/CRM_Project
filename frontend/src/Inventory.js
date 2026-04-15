@@ -312,7 +312,7 @@ function Inventory() {
                             ? formatCurrency(item.cost)
                             : formatCurrency(item.price)}
                         </td>
-                        <td>{(item.type || "product") === "product" ? `${Number(item.gst_percent ?? 18)}%` : "-"}</td>
+                        <td>{`${Number(item.gst_percent ?? 18)}%`}</td>
                         <td>{(item.type || "product") === "product" ? (item.hsn_sac || "-") : "-"}</td>
                         <td>
                           <span className={`stock-badge ${status.className}`}>{status.text}</span>

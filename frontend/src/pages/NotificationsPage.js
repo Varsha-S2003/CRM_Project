@@ -47,23 +47,53 @@ const isProposalEmployeeResponse = (item) => {
 
 const isDealInNegotiateStage = (item) => String(item?.dealId?.stage || "").toLowerCase() === "negotiate";
 
-const getNotificationPill = (item) => {
-  if (item?.source === "activity") return "Activity Reminder";
-  if (isRefillNotification(item)) return "Need Analysis";
-  if (isProposalNotification(item)) return "Proposal Approval";
-  return "General";
+const formatStageLabel = (value = "") =>
+  String(value || "")
+    .replaceAll("_", " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+
+const formatRelativeTime = (value) => {
+  const timestamp = new Date(value || 0).getTime();
+  if (!Number.isFinite(timestamp) || timestamp <= 0) return "Just now";
+
+  const diffMs = Math.max(0, Date.now() - timestamp);
+  const minutes = Math.floor(diffMs / 60000);
+  if (minutes < 1) return "Just now";
+  if (minutes < 60) return `${minutes} min ago`;
+
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} hr ago`;
+
+  const days = Math.floor(hours / 24);
+  return `${days} day${days > 1 ? "s" : ""} ago`;
+};
+
+const getNotificationCategory = (item) => {
+  if (isProposalNotification(item)) return "approvals";
+  if (isRefillNotification(item) || item?.source === "activity") return "alerts";
+  return "deals";
+};
+
+const getPriorityMeta = (item) => {
+  if (isProposalNotification(item)) {
+    return { tone: "approval", icon: "🟡", label: "Proposal Approval" };
+  }
+  if (isRefillNotification(item) || item?.source === "activity") {
+    return { tone: "alert", icon: "🔴", label: item?.source === "activity" ? "Activity Alert" : "Deal Alert" };
+  }
+  return { tone: "deal", icon: "🔵", label: "Deal Movement" };
 };
 
 const parseRefillDetails = (message = "") => {
   const text = String(message || "");
 
-  const product = text.match(/Product:\s*([^\.]+)\./i)?.[1]?.trim() || "-";
-  const requested = text.match(/Requested:\s*([^\.]+)\./i)?.[1]?.trim() || "-";
-  const available = text.match(/Available:\s*([^\.]+)\./i)?.[1]?.trim() || "-";
-  const customer = text.match(/Customer:\s*([^\.]+)\./i)?.[1]?.trim() || "-";
-  const company = text.match(/Company:\s*([^\.]+)\./i)?.[1]?.trim() || "-";
-  const email = text.match(/Email:\s*([^\.]+)\./i)?.[1]?.trim() || "-";
-  const phone = text.match(/Phone:\s*([^\.]+)\./i)?.[1]?.trim() || "-";
+  const product = text.match(/Product:\s*([^.]+)\./i)?.[1]?.trim() || "-";
+  const requested = text.match(/Requested:\s*([^.]+)\./i)?.[1]?.trim() || "-";
+  const available = text.match(/Available:\s*([^.]+)\./i)?.[1]?.trim() || "-";
+  const customer = text.match(/Customer:\s*([^.]+)\./i)?.[1]?.trim() || "-";
+  const company = text.match(/Company:\s*([^.]+)\./i)?.[1]?.trim() || "-";
+  const email = text.match(/Email:\s*([^.]+)\./i)?.[1]?.trim() || "-";
+  const phone = text.match(/Phone:\s*([^.]+)\./i)?.[1]?.trim() || "-";
 
   return { product, requested, available, customer, company, email, phone };
 };
@@ -72,6 +102,7 @@ export default function NotificationsPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const role = String(localStorage.getItem("role") || "").toUpperCase();
+  const isAdmin = role === "ADMIN";
   const isManager = role === "MANAGER";
   const isEmployee = role === "EMPLOYEE";
   const autoOpenHandledRef = useRef(false);
@@ -95,9 +126,12 @@ export default function NotificationsPage() {
     discountPercent: "0",
   });
   const [proposalDraftBaseline, setProposalDraftBaseline] = useState(null);
-  const [statusFilter, setStatusFilter] = useState("all");
+  const [activeFeedTab, setActiveFeedTab] = useState("all");
   const [searchTerm, setSearchTerm] = useState("");
-  const [selectedDeal, setSelectedDeal] = useState("");
+  const [selectedNotificationIds, setSelectedNotificationIds] = useState([]);
+  const [assignableUsers, setAssignableUsers] = useState([]);
+  const [selectedAssigneeId, setSelectedAssigneeId] = useState("");
+  const [assigneesLoading, setAssigneesLoading] = useState(false);
 
   const fetchNotifications = useCallback(async () => {
     try {
@@ -148,63 +182,67 @@ export default function NotificationsPage() {
     fetchNotifications();
   }, [fetchNotifications]);
 
-  const unreadCount = notifications.filter((item) => !item?.isRead).length;
-  const readCount = notifications.length - unreadCount;
-  const dealOptions = useMemo(() => {
-    const counters = new Map();
-
-    notifications.forEach((item) => {
-      if (item?.source !== "deal") return;
-      const dealKey = String(item?.dealId?._id || item?.dealId || "");
-      const dealName = String(item?.dealId?.name || "Deal Alert").trim();
-      if (!dealKey) return;
-
-      const existing = counters.get(dealKey) || { key: dealKey, name: dealName, count: 0 };
-      existing.count += 1;
-      counters.set(dealKey, existing);
-    });
-
-    return Array.from(counters.values()).sort((a, b) => a.name.localeCompare(b.name));
-  }, [notifications]);
-
-  const selectedDealMeta = useMemo(
-    () => dealOptions.find((deal) => deal.key === selectedDeal) || null,
-    [dealOptions, selectedDeal]
-  );
-
-  const matchingDealOptions = useMemo(() => {
-    const normalizedQuery = searchTerm.trim().toLowerCase();
-    if (!normalizedQuery) {
-      return dealOptions.slice(0, 8);
+  useEffect(() => {
+    if (!(isAdmin || isManager)) {
+      setAssignableUsers([]);
+      setSelectedAssigneeId("");
+      return;
     }
 
-    return dealOptions
-      .filter((deal) => deal.name.toLowerCase().includes(normalizedQuery))
-      .slice(0, 8);
-  }, [dealOptions, searchTerm]);
+    const fetchAssignableUsers = async () => {
+      try {
+        setAssigneesLoading(true);
+        const res = await api.get("/deals/notifications/assignees");
+        setAssignableUsers(Array.isArray(res.data) ? res.data : []);
+      } catch (err) {
+        console.error("Notification assignees fetch error:", err);
+        setAssignableUsers([]);
+      } finally {
+        setAssigneesLoading(false);
+      }
+    };
+
+    fetchAssignableUsers();
+  }, [isAdmin, isManager]);
 
   useEffect(() => {
-    if (!selectedDeal) return;
-    const stillExists = dealOptions.some((deal) => deal.key === selectedDeal);
-    if (!stillExists) {
-      setSelectedDeal("");
-    }
-  }, [dealOptions, selectedDeal]);
+    setSelectedNotificationIds((prev) =>
+      prev.filter((id) => notifications.some((item) => String(item?._id || "") === String(id || "")))
+    );
+  }, [notifications]);
+
+  const unreadCount = notifications.filter((item) => !item?.isRead).length;
+  const readCount = notifications.length - unreadCount;
+  const categoryCounts = useMemo(() => {
+    const counts = {
+      all: notifications.length,
+      unread: 0,
+      approvals: 0,
+      deals: 0,
+      alerts: 0,
+    };
+
+    notifications.forEach((item) => {
+      if (!item?.isRead) counts.unread += 1;
+      const category = getNotificationCategory(item);
+      if (category in counts) {
+        counts[category] += 1;
+      }
+    });
+
+    return counts;
+  }, [notifications]);
 
   const visibleNotifications = useMemo(() => {
     const normalizedSearch = searchTerm.trim().toLowerCase();
 
     return notifications.filter((item) => {
-      const passesStatusFilter =
-        statusFilter === "all" ||
-        (statusFilter === "unread" && !item?.isRead) ||
-        (statusFilter === "read" && Boolean(item?.isRead));
+      if (activeFeedTab === "unread" && item?.isRead) return false;
 
-      if (!passesStatusFilter) return false;
-
-      const itemDealKey = String(item?.dealId?._id || item?.dealId || "");
-      const passesDealFilter = !selectedDeal || itemDealKey === selectedDeal;
-      if (!passesDealFilter) return false;
+      if (["approvals", "deals", "alerts"].includes(activeFeedTab)) {
+        const category = getNotificationCategory(item);
+        if (category !== activeFeedTab) return false;
+      }
 
       if (!normalizedSearch) return true;
 
@@ -224,7 +262,80 @@ export default function NotificationsPage() {
 
       return haystack.includes(normalizedSearch);
     });
-  }, [notifications, searchTerm, selectedDeal, statusFilter]);
+  }, [activeFeedTab, notifications, searchTerm]);
+
+  const feedItems = useMemo(() => {
+    const groupedKeys = new Set();
+    const rows = [];
+
+    visibleNotifications.forEach((item) => {
+      const canGroup =
+        item?.source === "deal" &&
+        !isProposalNotification(item) &&
+        !isRefillNotification(item);
+
+      if (!canGroup) {
+        rows.push({ type: "single", key: `single-${item._id}`, item });
+        return;
+      }
+
+      const dealKey = String(item?.dealId?._id || item?.dealId || "");
+      if (!dealKey || groupedKeys.has(dealKey)) {
+        return;
+      }
+
+      groupedKeys.add(dealKey);
+      const updates = visibleNotifications.filter((candidate) => {
+        const candidateDealKey = String(candidate?.dealId?._id || candidate?.dealId || "");
+        return (
+          candidate?.source === "deal" &&
+          !isProposalNotification(candidate) &&
+          !isRefillNotification(candidate) &&
+          candidateDealKey === dealKey
+        );
+      });
+
+      if (updates.length <= 1) {
+        rows.push({ type: "single", key: `single-${item._id}`, item });
+        return;
+      }
+
+      rows.push({
+        type: "group",
+        key: `group-${dealKey}`,
+        dealId: dealKey,
+        dealName: updates[0]?.dealId?.name || "Deal Update",
+        updates,
+        isRead: updates.every((entry) => entry?.isRead),
+      });
+    });
+
+    return rows;
+  }, [visibleNotifications]);
+
+  const visibleDealNotificationIds = useMemo(() => {
+    const ids = [];
+    feedItems.forEach((entry) => {
+      if (entry.type === "group") {
+        entry.updates.forEach((update) => {
+          const id = String(update?._id || "").trim();
+          if (id) ids.push(id);
+        });
+        return;
+      }
+
+      const id = String(entry?.item?._id || "").trim();
+      if (entry?.item?.source === "deal" && id) {
+        ids.push(id);
+      }
+    });
+    return Array.from(new Set(ids));
+  }, [feedItems]);
+
+  const selectedSet = useMemo(() => new Set(selectedNotificationIds), [selectedNotificationIds]);
+  const selectedCount = selectedNotificationIds.length;
+  const allVisibleSelected =
+    visibleDealNotificationIds.length > 0 && visibleDealNotificationIds.every((id) => selectedSet.has(id));
 
   const selectedProposalNotification = useMemo(
     () => notifications.find((item) => String(item?._id || "") === String(openProposalDetailsId || "")) || null,
@@ -351,7 +462,6 @@ export default function NotificationsPage() {
 
     autoOpenHandledRef.current = true;
     if (target) {
-      setSelectedDeal(autoOpenDealId);
       openProposalDetailsDialog(target);
     }
 
@@ -510,6 +620,121 @@ export default function NotificationsPage() {
     }
   };
 
+  const markGroupAsRead = async (updates = []) => {
+    const unreadDealIds = updates
+      .filter((entry) => entry?.source === "deal" && !entry?.isRead)
+      .map((entry) => entry?._id)
+      .filter(Boolean);
+
+    if (!unreadDealIds.length) return;
+
+    try {
+      await api.patch(`/deals/notifications/${unreadDealIds.join(",")}/read`, {});
+      setNotifications((prev) =>
+        prev.map((entry) =>
+          unreadDealIds.includes(entry?._id)
+            ? {
+                ...entry,
+                isRead: true,
+              }
+            : entry
+        )
+      );
+    } catch (err) {
+      console.error("Notification mark group read error:", err);
+    }
+  };
+
+  const toggleSingleSelection = (notificationId, checked) => {
+    const id = String(notificationId || "").trim();
+    if (!id) return;
+
+    setSelectedNotificationIds((prev) => {
+      const next = new Set(prev);
+      if (checked) {
+        next.add(id);
+      } else {
+        next.delete(id);
+      }
+      return Array.from(next);
+    });
+  };
+
+  const toggleGroupSelection = (updates = [], checked) => {
+    const ids = updates
+      .map((entry) => String(entry?._id || "").trim())
+      .filter(Boolean);
+    if (!ids.length) return;
+
+    setSelectedNotificationIds((prev) => {
+      const next = new Set(prev);
+      ids.forEach((id) => {
+        if (checked) {
+          next.add(id);
+        } else {
+          next.delete(id);
+        }
+      });
+      return Array.from(next);
+    });
+  };
+
+  const toggleSelectAllVisible = (checked) => {
+    setSelectedNotificationIds((prev) => {
+      const next = new Set(prev);
+      visibleDealNotificationIds.forEach((id) => {
+        if (checked) {
+          next.add(id);
+        } else {
+          next.delete(id);
+        }
+      });
+      return Array.from(next);
+    });
+  };
+
+  const handleBulkDelete = async () => {
+    if (!selectedNotificationIds.length) return;
+    try {
+      setActionLoadingId("bulk-delete");
+      await api.delete("/deals/notifications/bulk", {
+        data: {
+          ids: selectedNotificationIds,
+        },
+      });
+      setNotifications((prev) =>
+        prev.filter((entry) => !selectedSet.has(String(entry?._id || "")))
+      );
+      setSelectedNotificationIds([]);
+    } catch (err) {
+      window.alert(err.response?.data?.message || "Failed to delete selected notifications.");
+    } finally {
+      setActionLoadingId("");
+    }
+  };
+
+  const handleBulkAssign = async () => {
+    if (!selectedNotificationIds.length) return;
+    if (!selectedAssigneeId) {
+      window.alert("Select an assignee first.");
+      return;
+    }
+
+    try {
+      setActionLoadingId("bulk-assign");
+      await api.patch("/deals/notifications/bulk/assign", {
+        ids: selectedNotificationIds,
+        assigneeId: selectedAssigneeId,
+      });
+      setSelectedNotificationIds([]);
+      await fetchNotifications();
+    } catch (err) {
+      window.alert(err.response?.data?.message || "Failed to assign selected notifications.");
+    } finally {
+      setActionLoadingId("");
+    }
+  };
+
   return (
     <div className="dashboard-layout">
       <Sidebar />
@@ -517,8 +742,10 @@ export default function NotificationsPage() {
         <div className="notifications-page">
           <div className="notifications-page-header">
             <div className="notifications-page-header-text">
-              <h1>Notifications Center</h1>
-              <p>Review stock, proposal approvals, and system alerts from one place.</p>
+              <h1>
+                Notifications <span className="notifications-title-accent">Center</span>
+              </h1>
+              <p>Live CRM feed for approvals, deal movement, and operational alerts.</p>
             </div>
 
             <div className="notifications-summary">
@@ -539,211 +766,290 @@ export default function NotificationsPage() {
             <div className="notifications-page-actions">
               <button
                 type="button"
-                className="notifications-btn secondary"
-                onClick={() => navigate("/dashboard")}
-              >
-                Back to Dashboard
-              </button>
-              <button
-                type="button"
                 className="notifications-btn"
                 onClick={markAllAsRead}
                 disabled={actionLoadingId === "all" || unreadCount === 0}
               >
                 {actionLoadingId === "all" ? "Marking..." : `Mark all read (${unreadCount})`}
               </button>
+              <button
+                type="button"
+                className="notifications-btn secondary"
+                onClick={handleBulkDelete}
+                disabled={selectedCount === 0 || actionLoadingId === "bulk-delete"}
+              >
+                {actionLoadingId === "bulk-delete" ? "Deleting..." : `Delete (${selectedCount})`}
+              </button>
+              {(isAdmin || isManager) ? (
+                <label className="notifications-assign-wrap" htmlFor="notifications-bulk-assignee">
+                  <select
+                    id="notifications-bulk-assignee"
+                    className="notifications-assignee-select"
+                    value={selectedAssigneeId}
+                    onChange={(event) => setSelectedAssigneeId(event.target.value)}
+                    disabled={assigneesLoading}
+                  >
+                    <option value="">Assign to...</option>
+                    {assignableUsers.map((user) => (
+                      <option key={user._id} value={user._id}>
+                        {user.name || user.username || user.email || "User"}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
+              <button
+                type="button"
+                className="notifications-btn secondary"
+                onClick={handleBulkAssign}
+                disabled={
+                  !(isAdmin || isManager) ||
+                  !selectedAssigneeId ||
+                  selectedCount === 0 ||
+                  actionLoadingId === "bulk-assign"
+                }
+              >
+                {actionLoadingId === "bulk-assign" ? "Assigning..." : `Assign (${selectedCount})`}
+              </button>
+              <button
+                type="button"
+                className="notifications-btn secondary"
+                onClick={() => navigate("/dashboard")}
+              >
+                Back to Dashboard
+              </button>
             </div>
           </div>
 
-          <div className="notifications-toolbar">
+          <div className="notifications-toolbar" role="region" aria-label="Notification filters">
             <div className="notifications-filter-group" role="tablist" aria-label="Filter notifications">
               <button
                 type="button"
-                className={`notifications-filter-btn ${statusFilter === "all" ? "active" : ""}`}
-                onClick={() => setStatusFilter("all")}
+                className={`notifications-filter-btn ${activeFeedTab === "all" ? "active" : ""}`}
+                onClick={() => setActiveFeedTab("all")}
               >
-                All
+                All <span className="count">{categoryCounts.all}</span>
               </button>
               <button
                 type="button"
-                className={`notifications-filter-btn ${statusFilter === "unread" ? "active" : ""}`}
-                onClick={() => setStatusFilter("unread")}
+                className={`notifications-filter-btn ${activeFeedTab === "unread" ? "active" : ""}`}
+                onClick={() => setActiveFeedTab("unread")}
               >
-                Unread
+                Unread <span className="count">{categoryCounts.unread}</span>
               </button>
               <button
                 type="button"
-                className={`notifications-filter-btn ${statusFilter === "read" ? "active" : ""}`}
-                onClick={() => setStatusFilter("read")}
+                className={`notifications-filter-btn ${activeFeedTab === "approvals" ? "active" : ""}`}
+                onClick={() => setActiveFeedTab("approvals")}
               >
-                Read
+                Approvals <span className="count">{categoryCounts.approvals}</span>
+              </button>
+              <button
+                type="button"
+                className={`notifications-filter-btn ${activeFeedTab === "deals" ? "active" : ""}`}
+                onClick={() => setActiveFeedTab("deals")}
+              >
+                Deals <span className="count">{categoryCounts.deals}</span>
+              </button>
+              <button
+                type="button"
+                className={`notifications-filter-btn ${activeFeedTab === "alerts" ? "active" : ""}`}
+                onClick={() => setActiveFeedTab("alerts")}
+              >
+                Alerts <span className="count">{categoryCounts.alerts}</span>
               </button>
             </div>
 
-            <label className="notifications-search-wrap" htmlFor="notifications-search">
-              <input
-                id="notifications-search"
-                type="search"
-                className="notifications-search"
-                placeholder="Search by deal, message, type, or user"
-                value={searchTerm}
-                onChange={(event) => setSearchTerm(event.target.value)}
-              />
-            </label>
+            <div className="notifications-toolbar-right">
+              <label className="notifications-search-wrap" htmlFor="notifications-search">
+                <input
+                  id="notifications-search"
+                  type="search"
+                  className="notifications-search"
+                  placeholder="Search by deal, message, type, or user"
+                  value={searchTerm}
+                  onChange={(event) => setSearchTerm(event.target.value)}
+                />
+              </label>
+              <span className="notifications-results" aria-live="polite">
+                Showing {feedItems.length}
+              </span>
+              <label className="notifications-select-all" htmlFor="notifications-select-all">
+                <input
+                  id="notifications-select-all"
+                  type="checkbox"
+                  checked={allVisibleSelected}
+                  onChange={(event) => toggleSelectAllVisible(event.target.checked)}
+                  disabled={visibleDealNotificationIds.length === 0}
+                />
+                Select visible ({visibleDealNotificationIds.length})
+              </label>
+            </div>
           </div>
-
-          {dealOptions.length > 0 ? (
-            <div className="notifications-deal-filter" role="group" aria-label="Deal filter">
-              <div className="notifications-deal-filter-top">
-                <label className="notifications-deal-filter-label" htmlFor="deal-filter-input">
-                  Filter by Deal
-                </label>
-                {selectedDealMeta ? (
-                  <button
-                    type="button"
-                    className="notifications-btn secondary"
-                    onClick={() => {
-                      setSelectedDeal("");
-                    }}
-                  >
-                    Clear Deal Filter
-                  </button>
-                ) : null}
-              </div>
-
-              {selectedDealMeta ? (
-                <p className="notifications-deal-current">
-                  Showing notifications for: <strong>{selectedDealMeta.name}</strong>
-                </p>
-              ) : null}
-
-              <div className="notifications-deal-results" aria-label="Matching deals">
-                {matchingDealOptions.map((deal) => (
-                  <button
-                    key={deal.key}
-                    type="button"
-                    className={`notifications-deal-result ${selectedDeal === deal.key ? "active" : ""}`}
-                    onClick={() => {
-                      setSelectedDeal(deal.key);
-                    }}
-                  >
-                    {deal.name} ({deal.count})
-                  </button>
-                ))}
-                {!matchingDealOptions.length ? (
-                  <span className="notifications-deal-empty">No deals found</span>
-                ) : null}
-              </div>
-            </div>
-          ) : null}
 
           {loading ? (
             <div className="notifications-empty-card">Loading notifications...</div>
-          ) : visibleNotifications.length === 0 ? (
+          ) : feedItems.length === 0 ? (
             <div className="notifications-empty-card">
               No notifications match this view. Try changing filters or search text.
             </div>
           ) : (
-            <div className="notifications-grid">
-              {visibleNotifications.map((item) => {
+            <div className="notifications-feed" role="list" aria-label="Notifications feed">
+              {feedItems.map((entry, index) => {
+                if (entry.type === "group") {
+                  const latest = entry.updates[0] || null;
+                  if (!latest) return null;
+                  const meta = getPriorityMeta(latest);
+                  const hasNew = Date.now() - new Date(latest?.createdAt || 0).getTime() <= 5 * 60 * 1000;
+                  const groupIds = entry.updates
+                    .map((update) => String(update?._id || "").trim())
+                    .filter(Boolean);
+                  const isGroupSelected = groupIds.length > 0 && groupIds.every((id) => selectedSet.has(id));
+                  return (
+                    <article
+                      key={entry.key}
+                      role="listitem"
+                      className={`notification-row notification-row-group ${entry.isRead ? "read" : "unread"} tone-${meta.tone}`}
+                      style={{ animationDelay: `${Math.min(index * 35, 320)}ms` }}
+                    >
+                      <label className="notification-select-box" htmlFor={`notification-group-${entry.key}`}>
+                        <input
+                          id={`notification-group-${entry.key}`}
+                          type="checkbox"
+                          checked={isGroupSelected}
+                          onChange={(event) => toggleGroupSelection(entry.updates, event.target.checked)}
+                        />
+                      </label>
+                      <div className="notification-row-main">
+                        <div className="notification-row-title-wrap">
+                          <span className="notification-row-icon" aria-hidden="true">{meta.icon}</span>
+                          <div>
+                            <p className="notification-row-title">
+                              {entry.dealName} ({entry.updates.length} updates)
+                            </p>
+                            <p className="notification-row-meta">
+                              👤 {latest?.changedByName || "System"} • ⏱ {formatRelativeTime(latest?.createdAt)}
+                              {hasNew ? <span className="notification-live-pill">New</span> : null}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="notification-group-preview" aria-label="Grouped updates preview">
+                          {entry.updates.slice(0, 3).map((update) => (
+                            <p key={update._id} className="notification-group-line">
+                              • {formatStageLabel(update?.toStage || "status updated")}
+                            </p>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="notification-row-actions">
+                        <button
+                          type="button"
+                          className="notifications-btn secondary compact"
+                          onClick={() => markGroupAsRead(entry.updates)}
+                          disabled={entry.isRead}
+                        >
+                          {entry.isRead ? "Read" : "Mark Read"}
+                        </button>
+                      </div>
+                    </article>
+                  );
+                }
+
+                const item = entry.item;
                 const refillType = isRefillNotification(item);
                 const activityType = item?.source === "activity";
                 const proposalType = !activityType && isProposalNotification(item);
                 const proposalResponseForEmployee = proposalType && isProposalEmployeeResponse(item);
                 const negotiateStage = isDealInNegotiateStage(item);
                 const details = refillType ? parseRefillDetails(item?.message || "") : null;
+                const priorityMeta = getPriorityMeta(item);
+                const relativeTime = formatRelativeTime(item?.createdAt);
+                const hasNew = Date.now() - new Date(item?.createdAt || 0).getTime() <= 5 * 60 * 1000;
+                const itemId = String(item?._id || "").trim();
+                const selectable = item?.source === "deal" && Boolean(itemId);
+                const isSelected = selectable && selectedSet.has(itemId);
                 return (
                   <article
-                    key={item._id}
-                    className={`notification-card ${item?.isRead ? "read" : "unread"}`}
+                    key={entry.key}
+                    role="listitem"
+                    className={`notification-row ${item?.isRead ? "read" : "unread"} tone-${priorityMeta.tone}`}
+                    style={{ animationDelay: `${Math.min(index * 35, 320)}ms` }}
                   >
-                    <div className="notification-card-top">
-                      <span className="notification-pill">{getNotificationPill(item)}</span>
-                      <span className="notification-time">
-                        {item?.createdAt ? new Date(item.createdAt).toLocaleString() : ""}
-                      </span>
+                    <label className="notification-select-box" htmlFor={`notification-${itemId || entry.key}`}>
+                      <input
+                        id={`notification-${itemId || entry.key}`}
+                        type="checkbox"
+                        checked={Boolean(isSelected)}
+                        onChange={(event) => toggleSingleSelection(itemId, event.target.checked)}
+                        disabled={!selectable}
+                      />
+                    </label>
+                    <div className="notification-row-main">
+                      <div className="notification-row-title-wrap">
+                        <span className="notification-row-icon" aria-hidden="true">{priorityMeta.icon}</span>
+                        <div>
+                          <p className="notification-row-title">
+                            {activityType
+                              ? item?.title || "Activity Reminder"
+                              : item?.dealId?.name || "Deal Alert"}
+                          </p>
+                          <p className="notification-row-meta">
+                            {priorityMeta.label} • 👤 {item?.changedByName || item?.owner?.name || "System"} • ⏱ {relativeTime}
+                            {hasNew ? <span className="notification-live-pill">New</span> : null}
+                          </p>
+                        </div>
+                      </div>
+
+                      <p className="notification-row-message">
+                        {activityType
+                          ? `📌 ${formatStageLabel(item?.activityType || "activity")} • ${item?.relatedTo?.recordName || "No record"}`
+                          : refillType
+                          ? `📦 ${details?.product || "Product"} • Requested ${details?.requested || "-"} • Available ${details?.available || "-"}`
+                          : proposalType
+                          ? `📊 ${formatStageLabel(item?.toStage || "proposal")} • ₹${Number(item?.dealId?.amount || 0).toLocaleString("en-IN")}`
+                          : `📊 ${formatStageLabel(item?.toStage || "deal updated")}`}
+                      </p>
                     </div>
 
-                    <h3>
-                      {activityType ? (
-                        item?.title || "Activity Reminder"
-                      ) : item?.dealId?.name ? (
+                    <div className="notification-row-actions">
+                      {!activityType && !proposalType && (
                         <button
                           type="button"
-                          className="notification-deal-link"
+                          className="notifications-btn secondary compact"
                           onClick={() => {
-                            const key = String(item?.dealId?._id || item?.dealId || "");
-                            setSelectedDeal(key);
+                            const dealId = String(item?.dealId?._id || item?.dealId || "");
+                            if (dealId) {
+                              navigate(`/deals?dealId=${encodeURIComponent(dealId)}`);
+                            }
                           }}
                         >
-                          {item.dealId.name}
+                          View
                         </button>
-                      ) : (
-                        "Deal Alert"
-                      )} 
-                    </h3>
-
-                    {activityType ? (
-                      <div className="notification-details two-column">
-                        <div><strong>Type:</strong> {String(item?.activityType || "activity").replaceAll("_", " ")}</div>
-                        <div><strong>Reminder:</strong> {item?.reminderTime ? new Date(item.reminderTime).toLocaleString() : "-"}</div>
-                        <div><strong>Related:</strong> {item?.relatedTo?.recordType || "-"}</div>
-                        <div><strong>Name:</strong> {item?.relatedTo?.recordName || "-"}</div>
-                        <div><strong>Owner:</strong> {item?.owner?.name || item?.owner?.username || "-"}</div>
-                        <div><strong>Status:</strong> {item?.isRead ? "Read" : "Unread"}</div>
-                      </div>
-                    ) : refillType ? (
-                      <div className="notification-details two-column">
-                        <div><strong>Product:</strong> {details.product}</div>
-                        <div><strong>Requested Qty:</strong> {details.requested}</div>
-                        <div><strong>Available Qty:</strong> {details.available}</div>
-                        <div><strong>Customer:</strong> {details.customer}</div>
-                        <div><strong>Company:</strong> {details.company}</div>
-                        <div><strong>Email:</strong> {details.email}</div>
-                        <div><strong>Phone:</strong> {details.phone}</div>
-                        <div><strong>Updated By:</strong> {item?.changedByName || "Employee"}</div>
-                      </div>
-                    ) : proposalType ? (
-                      <div className="notification-details two-column">
-                        <div><strong>Deal Stage:</strong> {String(item?.dealId?.stage || "-").replaceAll("_", " ")}</div>
-                        <div><strong>Workflow:</strong> {String(item?.toStage || "proposal").replaceAll("_", " ")}</div>
-                        <div><strong>Company:</strong> {item?.dealId?.company || "-"}</div>
-                        <div><strong>Amount:</strong> {item?.dealId?.amount ? `Rs.${Number(item.dealId.amount).toLocaleString("en-IN")}` : "-"}</div>
-                        <div><strong>Updated By:</strong> {item?.changedByName || "System"}</div>
-                        <div><strong>Allowed Now:</strong> {negotiateStage ? "Yes" : "No (move deal to Negotiate stage)"}</div>
-                      </div>
-                    ) : (
-                      <div className="notification-details">
-                        <div><strong>Type:</strong> {String(item?.toStage || "notification").replaceAll("_", " ")}</div>
-                        <div><strong>Updated By:</strong> {item?.changedByName || "System"}</div>
-                      </div>
-                    )}
-
-                    <p className="notification-message">{item?.message || ""}</p>
-
-                    <div className="notification-actions">
+                      )}
                       {refillType ? (
                         <button
                           type="button"
-                          className="notifications-btn"
+                          className="notifications-btn compact"
                           onClick={() => openVendorsForPurchase(item)}
                         >
-                          Make Purchase
+                          Resolve
                         </button>
                       ) : null}
                       {proposalType ? (
                         <button
                           type="button"
-                          className="notifications-btn"
+                          className="notifications-btn compact"
                           onClick={() => openProposalDetailsDialog(item)}
                         >
-                          Open Details
+                          {isManagerReviewRequest(item) && negotiateStage ? "Approve" : "View"}
                         </button>
                       ) : null}
                       {isEmployee && proposalResponseForEmployee ? (
                         <button
                           type="button"
-                          className="notifications-btn"
+                          className="notifications-btn compact"
                           onClick={() => handleSaveToQuotation(item)}
                           disabled={actionLoadingId === `${item._id}:save_to_quotation`}
                         >
@@ -752,7 +1058,7 @@ export default function NotificationsPage() {
                       ) : null}
                       <button
                         type="button"
-                        className="notifications-btn secondary"
+                        className="notifications-btn secondary compact"
                         onClick={() => markSingleAsRead(item._id)}
                         disabled={Boolean(item?.isRead)}
                       >

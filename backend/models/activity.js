@@ -133,7 +133,37 @@ const activitySchema = new mongoose.Schema(
       },
       callStatus: {
         type: String,
-        enum: ["Scheduled", "Completed"],
+        enum: ["Scheduled", "Ringing", "In Progress", "Missed", "Completed"],
+      },
+      provider: {
+        type: String,
+        default: "",
+      },
+      providerCallSid: {
+        type: String,
+        default: "",
+        index: true,
+      },
+      providerStatus: {
+        type: String,
+        default: "",
+      },
+      toNumber: {
+        type: String,
+        default: "",
+      },
+      fromNumber: {
+        type: String,
+        default: "",
+      },
+      teamsLink: {
+        type: String,
+        default: "",
+      },
+      teamsMode: {
+        type: String,
+        enum: ["voice", "video", ""],
+        default: "",
       },
     },
     outcome: {

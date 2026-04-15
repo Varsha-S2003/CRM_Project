@@ -483,11 +483,18 @@ const normalizeActivityPayload = async (payload, userId) => {
     call:
       activityType === "call"
         ? {
-            callSubject: payload.callSubject || payload.title || "",
-            callType: payload.callType || "Outbound",
-            callDuration: Number(payload.callDuration) || 0,
-            callNotes: payload.callNotes || payload.description || "",
-            callStatus: payload.callStatus || status,
+            callSubject: payload.callSubject || payload.call?.callSubject || payload.title || "",
+            callType: payload.callType || payload.call?.callType || "Outbound",
+            callDuration: Number(payload.callDuration ?? payload.call?.callDuration) || 0,
+            callNotes: payload.callNotes || payload.call?.callNotes || payload.description || "",
+            callStatus: payload.callStatus || payload.call?.callStatus || status,
+            provider: payload.call?.provider || payload.provider || "",
+            providerCallSid: payload.call?.providerCallSid || payload.providerCallSid || "",
+            providerStatus: payload.call?.providerStatus || payload.providerStatus || "",
+            toNumber: payload.call?.toNumber || payload.toNumber || "",
+            fromNumber: payload.call?.fromNumber || payload.fromNumber || "",
+            teamsLink: payload.call?.teamsLink || payload.teamsLink || "",
+            teamsMode: payload.call?.teamsMode || payload.teamsMode || "",
           }
         : undefined,
     cancelledAt: status === "Cancelled" ? new Date() : null,

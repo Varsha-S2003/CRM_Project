@@ -201,7 +201,7 @@ function Products() {
                         <td>{(item.type || "product") === "service" ? "Service" : "Product"}</td>
                         <td>{item.category}</td>
                         <td>{formatCurrency(getDisplayPrice(item))}</td>
-                        <td>{(item.type || "product") === "product" ? `${Number(item.gst_percent ?? 18)}%` : "-"}</td>
+                        <td>{`${Number(item.gst_percent ?? 18)}%`}</td>
                         <td>{(item.type || "product") === "product" ? (item.hsn_sac || "-") : "-"}</td>
                         <td>
                           <span className={`stock-badge ${alertInfo.className}`}>{alertInfo.text}</span>

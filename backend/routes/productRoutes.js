@@ -106,8 +106,8 @@ const getValidatedTypePayload = (body) => {
     const startDate = parseOptionalDate(body.startDate);
     const endDate = parseOptionalDate(body.endDate);
 
-    if (!["monthly", "yearly"].includes(body.billingCycle)) {
-      errors.push("billingCycle is required and must be monthly or yearly");
+    if (!["monthly", "quarterly", "6_months", "yearly"].includes(body.billingCycle)) {
+      errors.push("billingCycle is required and must be monthly, quarterly, 6 months, or yearly");
     }
     if (startDate === null) {
       errors.push("startDate must be a valid date");

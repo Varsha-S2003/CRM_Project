@@ -19,7 +19,7 @@ const SERVICE_TYPE_CATEGORY_MAP = {
   storage: ["Cloud Services", "Infrastructure", "Backup & Recovery"],
   subscription: ["Cloud Services", "Managed Services", "Security"]
 };
-const BILLING_CYCLE_VALUES = ["monthly", "yearly"];
+const BILLING_CYCLE_VALUES = ["monthly", "quarterly", "6_months", "yearly"];
 const STORAGE_UNIT_VALUES = ["GB", "TB"];
 const SERVICE_STATUS_VALUES = ["Active", "Inactive"];
 const GST_PERCENT_VALUES = [5, 12, 18, 28];
@@ -237,7 +237,9 @@ const buildItemPayload = (body, existing = null) => {
     return { payload, errors };
   }
 
-  payload.gst_percent = null;
+  if (Number.isNaN(payload.gst_percent) || payload.gst_percent === undefined || payload.gst_percent < 0) {
+    payload.gst_percent = 18;
+  }
   payload.hsn_sac = String(source.hsn_sac || "").trim();
 
   if (!source.serviceType) {
@@ -287,7 +289,7 @@ const buildItemPayload = (body, existing = null) => {
     payload.status = String(source.status || "Active").trim();
 
     if (!BILLING_CYCLE_VALUES.includes(source.billingCycle)) {
-      errors.push("billingCycle is required and must be monthly or yearly for subscription services");
+      errors.push("billingCycle is required and must be monthly, quarterly, 6 months, or yearly for subscription services");
     }
     if (Number.isNaN(cost) || cost === undefined || cost < 0) {
       errors.push("cost is required for subscription services and must be a non-negative number");
@@ -314,7 +316,7 @@ const buildItemPayload = (body, existing = null) => {
       errors.push("storageUnit must be GB or TB for storage services");
     }
     if (!BILLING_CYCLE_VALUES.includes(source.billingCycle)) {
-      errors.push("billingCycle is required and must be monthly or yearly for storage services");
+      errors.push("billingCycle is required and must be monthly, quarterly, 6 months, or yearly for storage services");
     }
     if (Number.isNaN(cost) || cost === undefined || cost < 0) {
       errors.push("cost is required for storage services and must be a non-negative number");

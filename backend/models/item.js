@@ -20,7 +20,7 @@ const SERVICE_TYPE_CATEGORY_MAP = {
   subscription: ["Cloud Services", "Managed Services", "Security"]
 };
 const SERVICE_STATUS_VALUES = ["Active", "Inactive"];
-const BILLING_CYCLE_VALUES = ["monthly", "yearly"];
+const BILLING_CYCLE_VALUES = ["monthly", "quarterly", "6_months", "yearly"];
 const STORAGE_UNIT_VALUES = ["GB", "TB"];
 const normalizeServiceCategory = (category, serviceType) => {
   const value = String(category || "").trim();
@@ -286,7 +286,11 @@ itemSchema.pre("validate", function validateByType() {
     this.stock = 0;
     this.lowStockThreshold = 0;
     this.price = null;
-    this.gst_percent = null;
+    if (this.gst_percent === undefined || this.gst_percent === null || Number.isNaN(Number(this.gst_percent))) {
+      this.gst_percent = 18;
+    } else {
+      this.gst_percent = Number(this.gst_percent);
+    }
     this.hsn_sac = String(this.hsn_sac || "").trim();
 
   if (!SERVICE_STATUS_VALUES.includes(this.status)) {
@@ -326,7 +330,7 @@ itemSchema.pre("validate", function validateByType() {
     this.provider = "";
   } else if (this.serviceType === "subscription") {
     if (!BILLING_CYCLE_VALUES.includes(this.billingCycle)) {
-      this.invalidate("billingCycle", "billingCycle must be monthly or yearly for subscription services");
+      this.invalidate("billingCycle", "billingCycle must be monthly, quarterly, 6 months, or yearly for subscription services");
     }
     if (this.cost === undefined || this.cost === null) {
       this.invalidate("cost", "cost is required for subscription services");
@@ -352,7 +356,7 @@ itemSchema.pre("validate", function validateByType() {
       this.invalidate("totalStorage", "totalStorage is required for storage services");
     }
     if (!BILLING_CYCLE_VALUES.includes(this.billingCycle)) {
-      this.invalidate("billingCycle", "billingCycle must be monthly or yearly for storage services");
+      this.invalidate("billingCycle", "billingCycle must be monthly, quarterly, 6 months, or yearly for storage services");
     }
     if (this.cost === undefined || this.cost === null) {
       this.invalidate("cost", "cost is required for storage services");

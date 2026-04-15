@@ -350,6 +350,37 @@
   color: var(--theme-text);
   line-height: 1.4;
 }
+.documents-stack-item--clickable {
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 140ms ease, background 140ms ease, box-shadow 140ms ease;
+}
+.documents-stack-item--clickable:hover:not(:disabled) {
+  border-color: var(--theme-border-strong);
+  background: rgba(241, 247, 253, 0.95);
+}
+.documents-stack-item--clickable.active {
+  border-color: rgba(16, 163, 127, 0.42);
+  background: rgba(16, 163, 127, 0.08);
+  box-shadow: inset 0 0 0 1px rgba(16, 163, 127, 0.18);
+}
+.documents-stack-item--clickable:disabled {
+  cursor: default;
+}
+.documents-history-details {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--theme-border);
+  display: grid;
+  gap: 12px;
+}
+.documents-history-details__grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.documents-history-details__sections {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
 
 .documents-empty {
   color: var(--docs-muted);
@@ -531,6 +562,123 @@
   padding: 8px 10px;
 }
 
+.documents-proposal-only {
+  display: grid;
+}
+
+.documents-proposal-only__card {
+  display: grid;
+  gap: 14px;
+}
+
+.documents-proposal-only__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.documents-proposal-only__meta {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.documents-proposal-only__meta > div {
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  border: 1px solid var(--theme-border);
+  border-radius: 12px;
+  background: rgba(247, 250, 254, 0.88);
+}
+
+.documents-proposal-only__meta span {
+  color: var(--docs-muted);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+}
+
+.documents-proposal-only__meta strong {
+  color: var(--docs-ink);
+  font-weight: 700;
+}
+
+.documents-proposal-only__form {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.documents-proposal-only__controls {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-bottom: 10px;
+}
+
+.documents-proposal-only__controls label {
+  display: grid;
+  gap: 6px;
+  color: var(--docs-muted);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.documents-proposal-only__controls select,
+.documents-proposal-only__controls input {
+  width: 100%;
+  border: 1px solid var(--theme-border);
+  background: var(--docs-surface);
+  border-radius: 12px;
+  padding: 12px 13px;
+  box-sizing: border-box;
+  color: var(--theme-text);
+  font-family: inherit;
+}
+
+.documents-proposal-only__calc-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.documents-proposal-only__calc-grid > div {
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  border: 1px solid var(--theme-border);
+  border-radius: 12px;
+  background: rgba(247, 250, 254, 0.88);
+}
+
+.documents-proposal-only__calc-grid span {
+  color: var(--docs-muted);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+}
+
+.documents-proposal-only__calc-grid strong {
+  color: var(--docs-ink);
+  font-weight: 700;
+}
+
+.documents-proposal-only__form .documents-card:first-child,
+.documents-proposal-only__form .documents-card:nth-child(2),
+.documents-proposal-only__form .documents-card:last-child {
+  grid-column: 1 / -1;
+}
+
+.documents-proposal-only__actions {
+  justify-content: flex-end;
+}
+
 @media (max-width: 1200px) {
   .documents-layout {
     grid-template-columns: 1fr;
@@ -567,6 +715,10 @@
   .documents-tax-summary {
     grid-template-columns: 1fr;
   }
+  .documents-history-details__grid,
+  .documents-history-details__sections {
+    grid-template-columns: 1fr;
+  }
 
   .documents-hero__status {
     gap: 10px;
@@ -587,6 +739,13 @@
 
   .documents-modal__body {
     padding: 14px;
+  }
+
+  .documents-proposal-only__meta,
+  .documents-proposal-only__controls,
+  .documents-proposal-only__calc-grid,
+  .documents-proposal-only__form {
+    grid-template-columns: 1fr;
   }
 }
 

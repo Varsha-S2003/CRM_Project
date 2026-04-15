@@ -482,10 +482,89 @@ async function sendInvoiceEmailToClient({
   return { result, preview };
 }
 
+async function sendTeamsCallInviteEmail({
+  to,
+  recipientName,
+  ownerName,
+  activity = {},
+  teamsLink,
+  mode = "video",
+}) {
+  const mailer = await getTransporter();
+  const appName = "Elogixa CRM";
+  const emailConfig = await getEmailConfig();
+  const sender = emailConfig.auth?.user || "";
+
+  const title = String(activity.title || "CRM call").trim() || "CRM call";
+  const relatedName = String(activity.relatedTo?.recordName || "Customer").trim() || "Customer";
+  const scheduledAt = activity.startDateTime ? new Date(activity.startDateTime) : null;
+  const scheduledLabel = scheduledAt && !Number.isNaN(scheduledAt.getTime())
+    ? scheduledAt.toLocaleString()
+    : "As discussed";
+  const callModeLabel = String(mode || "video").toLowerCase() === "voice" ? "Voice" : "Video";
+  const greeting = String(recipientName || "there").trim() || "there";
+  const organizer = String(ownerName || "CRM Team").trim() || "CRM Team";
+
+  const result = await mailer.sendMail({
+    from: `"${appName}" <${sender}>`,
+    to,
+    subject: `${appName} ${callModeLabel} Call Link: ${title}`,
+    text: [
+      `Hello ${greeting},`,
+      "",
+      `${organizer} invited you to a Microsoft Teams ${callModeLabel.toLowerCase()} call.`,
+      `Topic: ${title}`,
+      `Related: ${relatedName}`,
+      `Scheduled: ${scheduledLabel}`,
+      "",
+      `Join link: ${teamsLink}`,
+      "",
+      "Regards,",
+      appName,
+    ].join("\n"),
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 620px; margin: 0 auto; border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden;">
+        <div style="background: #2563eb; padding: 16px 20px; color: #ffffff;">
+          <h2 style="margin: 0; font-size: 20px;">${appName} Teams ${callModeLabel} Call</h2>
+        </div>
+        <div style="padding: 20px; background: #ffffff; color: #111827;">
+          <p style="margin: 0 0 12px;">Hello ${greeting},</p>
+          <p style="margin: 0 0 12px;">${organizer} invited you to a Microsoft Teams ${callModeLabel.toLowerCase()} call.</p>
+          <table style="width: 100%; border-collapse: collapse; margin-bottom: 16px;">
+            <tr>
+              <td style="padding: 8px; border: 1px solid #e5e7eb; font-weight: 600; width: 160px;">Topic</td>
+              <td style="padding: 8px; border: 1px solid #e5e7eb;">${title}</td>
+            </tr>
+            <tr>
+              <td style="padding: 8px; border: 1px solid #e5e7eb; font-weight: 600;">Related</td>
+              <td style="padding: 8px; border: 1px solid #e5e7eb;">${relatedName}</td>
+            </tr>
+            <tr>
+              <td style="padding: 8px; border: 1px solid #e5e7eb; font-weight: 600;">Scheduled</td>
+              <td style="padding: 8px; border: 1px solid #e5e7eb;">${scheduledLabel}</td>
+            </tr>
+          </table>
+          <a href="${teamsLink}" style="display: inline-block; padding: 12px 20px; border-radius: 8px; background: #2563eb; color: #ffffff; text-decoration: none; font-weight: 700;">
+            Join Teams ${callModeLabel} Call
+          </a>
+        </div>
+      </div>
+    `,
+  });
+
+  const preview = isEtherealConfig(emailConfig) ? nodemailer.getTestMessageUrl(result) : null;
+  if (preview) {
+    console.log("Ethereal Teams invite preview URL:", preview);
+  }
+
+  return { result, preview };
+}
+
 module.exports = {
   sendPasswordResetEmail,
   sendLeadProposalEmail,
   sendActivityReminderEmail,
   sendLowStockCustomerEmail,
   sendInvoiceEmailToClient,
+  sendTeamsCallInviteEmail,
 };

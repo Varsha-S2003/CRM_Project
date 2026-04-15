@@ -84,9 +84,14 @@ const dealSchema = new mongoose.Schema(
       min: 0,
       default: null,
     },
+    usersOrSeats: {
+      type: Number,
+      min: 0,
+      default: null,
+    },
     billingCycle: {
       type: String,
-      enum: ["", "monthly", "6_months", "yearly"],
+      enum: ["", "monthly", "quarterly", "6_months", "yearly"],
       default: "",
       trim: true,
     },

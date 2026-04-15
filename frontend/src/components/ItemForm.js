@@ -436,6 +436,8 @@ function ItemForm({
                     required
                   >
                     <option value="monthly">Monthly</option>
+                    <option value="quarterly">Quarterly</option>
+                    <option value="6_months">6 Months</option>
                     <option value="yearly">Yearly</option>
                   </select>
                 </div>
@@ -489,6 +491,8 @@ function ItemForm({
                     required
                   >
                     <option value="monthly">Monthly</option>
+                    <option value="quarterly">Quarterly</option>
+                    <option value="6_months">6 Months</option>
                     <option value="yearly">Yearly</option>
                   </select>
                 </div>

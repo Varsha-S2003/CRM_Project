@@ -70,8 +70,8 @@
 .dashboard-wrapper {
   padding: 25px;
   background:
-    radial-gradient(circle at top right, rgba(111, 66, 193, 0.08), transparent 18%),
-    radial-gradient(circle at bottom left, rgba(13, 202, 240, 0.08), transparent 22%),
+    radial-gradient(circle at top right, rgba(244, 180, 0, 0.16), transparent 20%),
+    radial-gradient(circle at bottom left, rgba(76, 175, 54, 0.12), transparent 24%),
     var(--theme-bg);
   min-height: 100vh;
 }
@@ -426,6 +426,8 @@
 }
 
 .stat-card {
+  position: relative;
+  overflow: hidden;
   background: rgba(255, 255, 255, 0.98);
   padding: 20px;
   border-radius: 18px;
@@ -435,20 +437,18 @@
   animation: dashboardFadeIn 0.6s ease both;
 }
 
+.stat-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 5px;
+  background: linear-gradient(180deg, #4caf36, #f4b400);
+}
+
 .stat-card:hover {
   transform: translateY(-4px);
   box-shadow: var(--theme-shadow-md);
   border-color: var(--theme-border-strong);
-}
-
-.stat-card-accent {
-  background: linear-gradient(135deg, rgba(111, 66, 193, 0.96), rgba(0, 123, 255, 0.94));
-  border-color: transparent;
-}
-
-.stat-card-accent h4,
-.stat-card-accent h2 {
-  color: #ffffff;
 }
 
 .stat-card h4 {
@@ -744,6 +744,11 @@
   animation: dashboardFadeIn 0.7s ease both;
 }
 
+.chart-card.full-width {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(244, 249, 234, 0.92));
+}
+
 .chart-card-header {
   display: flex;
   align-items: flex-start;
@@ -771,15 +776,15 @@
   min-height: 34px;
   padding: 0 12px;
   border-radius: 999px;
-  background: rgba(23, 162, 184, 0.12);
-  color: #12879a;
+  background: rgba(76, 175, 54, 0.16);
+  color: #2f8f2f;
   font-size: 12px;
   font-weight: 700;
 }
 
 .chart-chip-secondary {
-  background: rgba(111, 66, 193, 0.1);
-  color: var(--theme-gold-strong);
+  background: rgba(244, 180, 0, 0.18);
+  color: #8a5a00;
 }
 
 .chart-wrap {
@@ -813,6 +818,10 @@
 }
 .chart-card .recharts-bar-rectangle:hover {
   opacity: 0.8;
+}
+
+.chart-card .recharts-cartesian-grid line {
+  stroke: #e5ecd8;
 }
 
 .logout-btn {

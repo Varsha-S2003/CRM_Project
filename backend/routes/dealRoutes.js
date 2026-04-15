@@ -1,8 +1,9 @@
 const express = require("express");
 const router = express.Router();
 const jwt = require("jsonwebtoken");
+const mongoose = require("mongoose");
 const { verifyToken } = require("../middleware/authMiddleware");
-const { permitDealAccess, getUserDealsFilter, getTeamMembers } = require("../middleware/dealAuth");
+const { permitDealAccess, getTeamMembers } = require("../middleware/dealAuth");
 const Deal = require("../models/deal");
 const Lead = require("../models/lead");
 const Customer = require("../models/customer");
@@ -215,6 +216,7 @@ const computeServiceLifecycle = (billingCycle, startDate = new Date()) => {
   const normalizedBillingCycle = normalizeBillingCycle(billingCycle);
   const durations = {
     monthly: 1,
+    quarterly: 3,
     "6_months": 6,
     yearly: 12,
   };
@@ -288,7 +290,9 @@ const computeTaxSummary = ({ item, quantity, customerState = "", sellerState = "
     qty = 1;
   }
   const taxableAmount = Number((unitPrice * qty).toFixed(2));
-  const gstPercent = Number(item.gst_percent || 0);
+  const gstPercent = Number(
+    item.gst_percent ?? (String(item.type || "").toLowerCase() === "service" ? 18 : 0)
+  );
   const gstAmount = Number(((taxableAmount * gstPercent) / 100).toFixed(2));
   const sameState =
     normalizeState(customerState).toLowerCase() &&
@@ -393,6 +397,11 @@ const normalizeDealBusinessFields = (payload) => {
   if (Object.prototype.hasOwnProperty.call(normalized, "quantity")) {
     const quantity = parseOptionalNumber(normalized.quantity);
     normalized.quantity = Number.isNaN(quantity) ? null : quantity;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(normalized, "usersOrSeats")) {
+    const usersOrSeats = parseOptionalNumber(normalized.usersOrSeats);
+    normalized.usersOrSeats = Number.isNaN(usersOrSeats) ? null : usersOrSeats;
   }
 
   if (Object.prototype.hasOwnProperty.call(normalized, "billingCycle")) {
@@ -680,6 +689,75 @@ const getManagerLeadScopeIds = async (managerId) => {
   return leads.map((lead) => lead._id);
 };
 
+const buildRoleScopedDealFilter = async (user) => {
+  const role = String(user?.role || "").toUpperCase();
+
+  if (role === "ADMIN") {
+    return {};
+  }
+
+  if (role === "MANAGER") {
+    const teamIds = await getTeamMembers(user._id);
+    const managerLeadIds = await getManagerLeadScopeIds(user._id);
+    return {
+      $or: [
+        { assignedTo: user._id },
+        { assignedTo: { $in: teamIds } },
+        { sourceLeadId: { $in: managerLeadIds } },
+      ],
+    };
+  }
+
+  if (role === "EMPLOYEE") {
+    return { assignedTo: user._id };
+  }
+
+  return { assignedTo: user._id };
+};
+
+const buildCreatedProposalFilter = () => ({
+  $or: [
+    { "proposalDraft.title": { $exists: true, $nin: ["", null] } },
+    { "proposalDraft.approvalRequestedAt": { $ne: null } },
+    { "proposalDraft.approvalRespondedAt": { $ne: null } },
+    { "proposalDraft.clientSentAt": { $ne: null } },
+    {
+      "proposalDraft.status": {
+        $in: ["pending_approval", "approved", "changes_requested", "rejected", "sent_to_client"],
+      },
+    },
+  ],
+});
+
+const getNotificationAssignableUsers = async (user) => {
+  const role = String(user?.role || "").toUpperCase();
+
+  if (role === "ADMIN") {
+    return User.find({ role: { $regex: "^MANAGER$", $options: "i" } })
+      .select("name username email role employee_id")
+      .sort({ createdAt: -1 })
+      .lean();
+  }
+
+  if (role === "MANAGER") {
+    const teamIds = await getTeamMembers(user._id);
+    if (!teamIds.length) return [];
+    return User.find({ _id: { $in: teamIds } })
+      .select("name username email role employee_id")
+      .sort({ createdAt: -1 })
+      .lean();
+  }
+
+  return [];
+};
+
+const parseNotificationIds = (input = []) => {
+  if (!Array.isArray(input)) return [];
+  return input
+    .map((id) => String(id || "").trim())
+    .filter((id) => mongoose.Types.ObjectId.isValid(id));
+};
+
 const validateWonDealAgainstItem = ({ item, quantity, billingCycle }) => {
   if (!item) {
     return "Selected product not found";
@@ -921,19 +999,7 @@ router.post("/filter", verifyToken, async (req, res) => {
   try {
     const { filters, sort = { createdAt: -1 }, limit = 100, skip = 0, status } = req.body;
     const baseConditions = [];
-    let accessFilter = getUserDealsFilter(req.user);
-
-    if (req.user.role.toUpperCase() === "MANAGER") {
-      const teamIds = await getTeamMembers(req.user._id);
-      const managerLeadIds = await getManagerLeadScopeIds(req.user._id);
-      accessFilter = {
-        $or: [
-          { assignedTo: req.user._id },
-          { assignedTo: { $in: teamIds } },
-          { sourceLeadId: { $in: managerLeadIds } },
-        ],
-      };
-    }
+    const accessFilter = await buildRoleScopedDealFilter(req.user);
 
     if (Object.keys(accessFilter).length > 0) {
       baseConditions.push(accessFilter);
@@ -1057,7 +1123,7 @@ router.delete("/views/:id", verifyToken, async (req, res) => {
 
 router.get("/", verifyToken, permitDealAccess(), async (req, res) => {
   try {
-    const filter = getUserDealsFilter(req.user);
+    const filter = await buildRoleScopedDealFilter(req.user);
     const requestedStatus = String(req.query.status || "").trim();
 
     if (requestedStatus) {
@@ -1067,14 +1133,6 @@ router.get("/", verifyToken, permitDealAccess(), async (req, res) => {
       filter.status = requestedStatus;
     }
 
-    // For managers, extend filter to include team
-    if (req.user.role.toUpperCase() === 'MANAGER') {
-      const teamIds = await getTeamMembers(req.user._id);
-      const managerLeadIds = await getManagerLeadScopeIds(req.user._id);
-      filter.$or.push({ assignedTo: { $in: teamIds } });
-      filter.$or.push({ sourceLeadId: { $in: managerLeadIds } });
-    }
-    
     const deals = await Deal.find(filter)
       .populate({
         path: "assignedTo",
@@ -1096,6 +1154,30 @@ router.get("/", verifyToken, permitDealAccess(), async (req, res) => {
       .populate("product", "name sku category price type status stock serviceType billingCycle")
       .sort({ createdAt: -1 });
     res.json(deals);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+router.get("/proposal-history", verifyToken, async (req, res) => {
+  try {
+    const requestedLimit = Number(req.query.limit);
+    const limit = Number.isFinite(requestedLimit)
+      ? Math.max(1, Math.min(50, Math.trunc(requestedLimit)))
+      : 20;
+    const accessFilter = await buildRoleScopedDealFilter(req.user);
+    const proposalFilter = buildCreatedProposalFilter();
+    const finalFilter = Object.keys(accessFilter).length
+      ? { $and: [accessFilter, proposalFilter] }
+      : proposalFilter;
+
+    const history = await Deal.find(finalFilter)
+      .select("name company contact amount stage status updatedAt createdAt")
+      .sort({ updatedAt: -1, createdAt: -1 })
+      .limit(limit)
+      .lean();
+
+    res.json(history);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -2006,7 +2088,7 @@ router.get("/:id/proposal-workspace", verifyToken, permitDealAccess(), async (re
     const deal = await Deal.findById(req.params.id)
       .populate("assignedTo", "name username role reportsTo")
       .populate("customerId", "name company email phone state gstin")
-      .populate("product", "name sku category price type status stock serviceType billingCycle gst_percent hsn_sac")
+      .populate("product", "name sku category price cost type status stock serviceType billingCycle gst_percent hsn_sac")
       .populate("proposalDraft.approvedBy", "name username")
       .lean();
 
@@ -2020,11 +2102,19 @@ router.get("/:id/proposal-workspace", verifyToken, permitDealAccess(), async (re
       ...(deal.contact ? [{ contact: deal.contact }] : []),
     ];
 
+    const accessFilter = await buildRoleScopedDealFilter(req.user);
+    const historyFilter = {
+      _id: { $ne: deal._id },
+      $or: historyCriteria,
+    };
+
+    const proposalFilter = buildCreatedProposalFilter();
+    const historyQuery = Object.keys(accessFilter).length
+      ? { $and: [historyFilter, accessFilter, proposalFilter] }
+      : { $and: [historyFilter, proposalFilter] };
+
     const history = historyCriteria.length
-      ? await Deal.find({
-          _id: { $ne: deal._id },
-          $or: historyCriteria,
-        })
+      ? await Deal.find(historyQuery)
           .select("name company contact amount stage status updatedAt createdAt")
           .sort({ updatedAt: -1 })
           .limit(8)
@@ -2663,6 +2753,120 @@ router.patch("/notifications/:ids/read", verifyToken, async (req, res) => {
     res.json({
       message: `${result.modifiedCount} notifications marked as read`,
       modifiedCount: result.modifiedCount
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+router.get("/notifications/assignees", verifyToken, async (req, res) => {
+  try {
+    const assignableUsers = await getNotificationAssignableUsers(req.user);
+    const cleaned = assignableUsers
+      .filter((user) => String(user?._id || "") !== String(req.user?._id || ""))
+      .map((user) => ({
+        _id: user._id,
+        name: user.name || "",
+        username: user.username || "",
+        email: user.email || "",
+        role: String(user.role || "").toUpperCase(),
+        employee_id: user.employee_id || "",
+      }));
+
+    res.json(cleaned);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+router.delete("/notifications/bulk", verifyToken, async (req, res) => {
+  try {
+    const ids = parseNotificationIds(req.body?.ids || []);
+    if (!ids.length) {
+      return res.status(400).json({ message: "No valid notification IDs provided" });
+    }
+
+    const ownedNotifications = await Notification.find({
+      _id: { $in: ids },
+      recipients: req.user._id,
+    })
+      .select("_id")
+      .lean();
+
+    const ownedIds = ownedNotifications.map((entry) => entry._id);
+    if (!ownedIds.length) {
+      return res.status(404).json({ message: "No matching notifications found for this user" });
+    }
+
+    await Notification.updateMany(
+      { _id: { $in: ownedIds } },
+      { $pull: { recipients: req.user._id } }
+    );
+
+    const hardDelete = await Notification.deleteMany({
+      _id: { $in: ownedIds },
+      recipients: { $size: 0 },
+    });
+
+    res.json({
+      message: `${ownedIds.length} notifications removed from inbox`,
+      removedFromInboxCount: ownedIds.length,
+      permanentlyDeletedCount: hardDelete.deletedCount || 0,
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+router.patch("/notifications/bulk/assign", verifyToken, async (req, res) => {
+  try {
+    const requesterRole = String(req.user?.role || "").toUpperCase();
+    if (!["ADMIN", "MANAGER"].includes(requesterRole)) {
+      return res.status(403).json({ message: "Only admin or manager can assign notifications" });
+    }
+
+    const ids = parseNotificationIds(req.body?.ids || []);
+    const assigneeId = String(req.body?.assigneeId || "").trim();
+
+    if (!ids.length) {
+      return res.status(400).json({ message: "No valid notification IDs provided" });
+    }
+    if (!mongoose.Types.ObjectId.isValid(assigneeId)) {
+      return res.status(400).json({ message: "Valid assignee is required" });
+    }
+    if (String(req.user._id) === assigneeId) {
+      return res.status(400).json({ message: "Select a different assignee" });
+    }
+
+    const assignableUsers = await getNotificationAssignableUsers(req.user);
+    const allowed = assignableUsers.some((user) => String(user?._id || "") === assigneeId);
+    if (!allowed) {
+      return res.status(403).json({ message: "Assignee is outside your allowed scope" });
+    }
+
+    const ownedNotifications = await Notification.find({
+      _id: { $in: ids },
+      recipients: req.user._id,
+    })
+      .select("_id")
+      .lean();
+
+    const ownedIds = ownedNotifications.map((entry) => entry._id);
+    if (!ownedIds.length) {
+      return res.status(404).json({ message: "No matching notifications found for this user" });
+    }
+
+    await Notification.updateMany(
+      { _id: { $in: ownedIds } },
+      {
+        $addToSet: { recipients: assigneeId },
+        $pull: { recipients: req.user._id },
+      }
+    );
+
+    res.json({
+      message: `${ownedIds.length} notifications assigned successfully`,
+      assignedCount: ownedIds.length,
     });
   } catch (err) {
     res.status(500).json({ message: err.message });

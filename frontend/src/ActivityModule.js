@@ -44,7 +44,7 @@ const CALL_REMINDER_OPTIONS = [
 const VIEW_OPTIONS = ["month", "week", "day"];
 const CHART_COLORS = ["#202124", "#efb521", "#46b84d", "#9dc63b"];
 const TASK_BOARD_COLUMNS = ["Not Started", "Deferred", "In Progress", "Completed"];
-const MEETING_BOARD_COLUMNS = ["Scheduled", "Today", "Completed", "Missed", "Cancelled"];
+const MEETING_BOARD_COLUMNS = ["Overdue", "Today", "Upcoming", "Completed"];
 const CALL_BOARD_COLUMNS = ["Scheduled", "Today", "Completed", "Missed"];
 const COMPLETE_OUTCOME_OPTIONS = [
   { value: "interested", label: "Interested" },
@@ -421,6 +421,22 @@ const formatDateTime = (value) => {
   return date.toLocaleString();
 };
 
+const formatMeetingTime = (value) => {
+  if (!value) return "--";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "--";
+  return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+};
+
+const formatMeetingDayTime = (value) => {
+  if (!value) return "--";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "--";
+  return `${date.toLocaleDateString([], { month: "short", day: "numeric" })} ${formatMeetingTime(value)}`;
+};
+
+const cleanMeetingTitle = (value) => String(value || "Meeting").replace(/^meeting\s*:\s*/i, "").trim() || "Meeting";
+
 const startOfDay = (value) => {
   const date = new Date(value);
   date.setHours(0, 0, 0, 0);
@@ -462,27 +478,78 @@ const hasCrossedMissedWindow = (dateValue) => {
 };
 
 const getMeetingBoardStatus = (meeting) => {
-  const normalized = (meeting.status || "").toLowerCase();
-  if (normalized === "completed") return "Completed";
-  if (normalized === "cancelled") return "Cancelled";
-
-  const sourceDateValue = meeting.startDateTime || meeting.createdAt;
+  const normalized = (meeting?.status || "").toLowerCase();
+  const sourceDateValue = meeting?.startDateTime || meeting?.createdAt;
   const sourceDate = new Date(sourceDateValue);
-  if (hasCrossedMissedWindow(sourceDateValue)) {
-    return "Missed";
+  const now = new Date();
+  const endDate = new Date(meeting?.endDateTime || sourceDate.getTime() + (45 * 60 * 1000));
+
+  if (normalized === "completed") return "Completed";
+  if (normalized === "cancelled" || normalized === "missed") return "Overdue";
+
+  if (Number.isNaN(sourceDate.getTime())) {
+    return "Upcoming";
   }
 
-  if (!Number.isNaN(sourceDate.getTime()) && sourceDate.toDateString() === new Date().toDateString()) {
+  if (sourceDate <= now && endDate >= now) {
     return "Today";
   }
 
-  return "Scheduled";
+  if (sourceDate < now) {
+    return "Overdue";
+  }
+
+  if (sourceDate.toDateString() === now.toDateString()) {
+    return "Today";
+  }
+
+  return "Upcoming";
+};
+
+const getMeetingTimingMeta = (meeting, now = new Date()) => {
+  const start = new Date(meeting?.startDateTime || meeting?.createdAt || 0);
+  const end = new Date(meeting?.endDateTime || start.getTime() + (45 * 60 * 1000));
+  const bucket = getMeetingBoardStatus(meeting);
+  const status = String(meeting?.status || "").toLowerCase();
+  const minutesToStart = Number.isNaN(start.getTime())
+    ? null
+    : Math.ceil((start.getTime() - now.getTime()) / 60000);
+  const isLive =
+    !Number.isNaN(start.getTime()) &&
+    !Number.isNaN(end.getTime()) &&
+    start <= now &&
+    end >= now &&
+    status !== "completed";
+
+  let urgencyTone = "normal";
+  if (bucket === "Completed") urgencyTone = "completed";
+  else if (bucket === "Overdue") urgencyTone = "overdue";
+  else if (isLive) urgencyTone = "live";
+  else if (minutesToStart !== null && minutesToStart >= 0 && minutesToStart <= 60) urgencyTone = "soon";
+
+  return {
+    bucket,
+    urgencyTone,
+    isLive,
+    minutesToStart,
+  };
 };
 
 const getCallBoardStatus = (call) => {
   const normalized = (call.status || "").toLowerCase();
+  const callStatus = String(call.call?.callStatus || "").toLowerCase();
+  const providerStatus = String(call.call?.providerStatus || "").toLowerCase();
+
+  if (["missed", "failed", "busy", "no-answer", "no answer", "canceled", "cancelled"].includes(callStatus)) {
+    return "Missed";
+  }
+  if (["failed", "busy", "no-answer", "no answer", "canceled", "cancelled"].includes(providerStatus)) {
+    return "Missed";
+  }
+
   if (normalized === "completed") return "Completed";
   if (normalized === "missed" || normalized === "cancelled") return "Missed";
+  if (callStatus === "completed") return "Completed";
 
   const sourceDateValue = call.startDateTime || call.createdAt;
   const sourceDate = new Date(sourceDateValue);
@@ -537,6 +604,9 @@ function ActivityModule() {
   const [ownerFilter, setOwnerFilter] = useState("all");
   const [priorityFilter, setPriorityFilter] = useState("all");
   const [search, setSearch] = useState("");
+  const [meetingQuickFilter, setMeetingQuickFilter] = useState("all");
+  const [meetingNowTick, setMeetingNowTick] = useState(Date.now());
+  const [draggedMeetingId, setDraggedMeetingId] = useState("");
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [showProposalModal, setShowProposalModal] = useState(false);
@@ -580,10 +650,28 @@ function ActivityModule() {
 
   const apiHeaders = useMemo(() => ({ Authorization: `Bearer ${token}` }), [token]);
 
+  const handleApiError = useCallback(
+    (error, fallbackMessage) => {
+      if (error?.response?.status === 401) {
+        setToast("Session expired. Please login again.");
+        navigate("/login");
+        return;
+      }
+      if (fallbackMessage) {
+        setToast(error?.response?.data?.message || fallbackMessage);
+      }
+    },
+    [navigate]
+  );
+
   const fetchDashboard = useCallback(async () => {
-    const res = await axios.get("http://localhost:5000/api/activities/dashboard", { headers: apiHeaders });
-    setDashboard(res.data);
-  }, [apiHeaders]);
+    try {
+      const res = await axios.get("http://localhost:5000/api/activities/dashboard", { headers: apiHeaders });
+      setDashboard(res.data);
+    } catch (error) {
+      handleApiError(error);
+    }
+  }, [apiHeaders, handleApiError]);
 
   const fetchActivities = useCallback(async () => {
     const params = {
@@ -593,43 +681,59 @@ function ActivityModule() {
       priority: priorityFilter,
       search,
     };
-    const res = await axios.get("http://localhost:5000/api/activities", { headers: apiHeaders, params });
-    setActivities(res.data);
-  }, [activeSidebar, activityType, apiHeaders, currentUserId, filter, isEmployee, ownerFilter, priorityFilter, search]);
+    try {
+      const res = await axios.get("http://localhost:5000/api/activities", { headers: apiHeaders, params });
+      setActivities(res.data);
+    } catch (error) {
+      handleApiError(error);
+    }
+  }, [activeSidebar, activityType, apiHeaders, currentUserId, filter, handleApiError, isEmployee, ownerFilter, priorityFilter, search]);
 
   const fetchReports = useCallback(async () => {
-    const res = await axios.get("http://localhost:5000/api/activities/reports", { headers: apiHeaders });
-    setReports(res.data);
-  }, [apiHeaders]);
+    try {
+      const res = await axios.get("http://localhost:5000/api/activities/reports", { headers: apiHeaders });
+      setReports(res.data);
+    } catch (error) {
+      handleApiError(error);
+    }
+  }, [apiHeaders, handleApiError]);
 
   const fetchNotifications = useCallback(async () => {
-    const res = await axios.get("http://localhost:5000/api/activities/notifications", { headers: apiHeaders });
-    const items = res.data.notifications || [];
-    setNotifications(items);
-  }, [apiHeaders]);
+    try {
+      const res = await axios.get("http://localhost:5000/api/activities/notifications", { headers: apiHeaders });
+      const items = res.data.notifications || [];
+      setNotifications(items);
+    } catch (error) {
+      handleApiError(error);
+    }
+  }, [apiHeaders, handleApiError]);
 
   const fetchRelatedRecords = useCallback(async () => {
-    const leadEndpoint = role === "EMPLOYEE" ? "/api/leads/my" : "/api/leads/all";
-    const requests = [
-      axios.get(`http://localhost:5000${leadEndpoint}`, { headers: apiHeaders }),
-      axios.get("http://localhost:5000/api/contacts", { headers: apiHeaders }),
-      axios.get("http://localhost:5000/api/deals", { headers: apiHeaders }),
-    ];
-    const [leadsRes, contactsRes, dealsRes] = await Promise.all(requests);
-    const options = [
-      ...leadsRes.data.map((item) => ({ id: item._id, name: item.name, type: "Lead" })),
-      ...contactsRes.data.map((item) => ({ id: item._id, name: item.name, type: "Contact" })),
-      ...dealsRes.data.map((item) => ({ id: item._id, name: item.name, type: "Deal" })),
-    ];
-    const dealsLookup = (Array.isArray(dealsRes.data) ? dealsRes.data : []).reduce((acc, deal) => {
-      const key = String(deal?._id || "").trim();
-      if (key) acc[key] = deal;
-      return acc;
-    }, {});
-    setRelatedDealsById(dealsLookup);
-    setRelatedOptions(options);
-    setForm((prev) => (prev.relatedId ? prev : createDefaultForm(currentUserId, options)));
-  }, [apiHeaders, currentUserId, role]);
+    try {
+      const leadEndpoint = role === "EMPLOYEE" ? "/api/leads/my" : "/api/leads/all";
+      const requests = [
+        axios.get(`http://localhost:5000${leadEndpoint}`, { headers: apiHeaders }),
+        axios.get("http://localhost:5000/api/contacts", { headers: apiHeaders }),
+        axios.get("http://localhost:5000/api/deals", { headers: apiHeaders }),
+      ];
+      const [leadsRes, contactsRes, dealsRes] = await Promise.all(requests);
+      const options = [
+        ...leadsRes.data.map((item) => ({ id: item._id, name: item.name, type: "Lead" })),
+        ...contactsRes.data.map((item) => ({ id: item._id, name: item.name, type: "Contact" })),
+        ...dealsRes.data.map((item) => ({ id: item._id, name: item.name, type: "Deal" })),
+      ];
+      const dealsLookup = (Array.isArray(dealsRes.data) ? dealsRes.data : []).reduce((acc, deal) => {
+        const key = String(deal?._id || "").trim();
+        if (key) acc[key] = deal;
+        return acc;
+      }, {});
+      setRelatedDealsById(dealsLookup);
+      setRelatedOptions(options);
+      setForm((prev) => (prev.relatedId ? prev : createDefaultForm(currentUserId, options)));
+    } catch (error) {
+      handleApiError(error);
+    }
+  }, [apiHeaders, currentUserId, handleApiError, role]);
 
   const fetchUsers = useCallback(async () => {
     try {
@@ -667,18 +771,25 @@ function ActivityModule() {
   }, [fetchActivities, fetchDashboard, fetchNotifications, fetchReports]);
 
   useEffect(() => {
-    fetchUsers();
-    fetchRelatedRecords();
+    fetchUsers().catch(() => {});
+    fetchRelatedRecords().catch(() => {});
   }, [fetchRelatedRecords, fetchUsers]);
 
   useEffect(() => {
-    fetchNotifications();
-    const interval = setInterval(fetchNotifications, 30000);
+    fetchNotifications().catch(() => {});
+    const interval = setInterval(() => {
+      fetchNotifications().catch(() => {});
+    }, 30000);
     return () => clearInterval(interval);
   }, [fetchNotifications]);
 
   useEffect(() => {
-    refreshAll();
+    const interval = setInterval(() => setMeetingNowTick(Date.now()), 30000);
+    return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    refreshAll().catch(() => {});
   }, [refreshAll]);
 
   useEffect(() => {
@@ -942,12 +1053,31 @@ function ActivityModule() {
     return columns;
   }, [activities]);
   const meetingBoardColumns = useMemo(() => {
+    const now = new Date(meetingNowTick);
     const columns = MEETING_BOARD_COLUMNS.reduce((acc, label) => ({ ...acc, [label]: [] }), {});
     activities.forEach((activity) => {
-      columns[getMeetingBoardStatus(activity)].push(activity);
+      const bucket = getMeetingBoardStatus(activity);
+      const timing = getMeetingTimingMeta(activity, now);
+      columns[bucket].push({ ...activity, _timing: timing });
     });
+
+    Object.keys(columns).forEach((column) => {
+      columns[column].sort((a, b) => {
+        const left = new Date(a?.startDateTime || a?.createdAt || 0).getTime();
+        const right = new Date(b?.startDateTime || b?.createdAt || 0).getTime();
+        return left - right;
+      });
+    });
+
     return columns;
-  }, [activities]);
+  }, [activities, meetingNowTick]);
+  const visibleMeetingColumns = useMemo(() => {
+    if (meetingQuickFilter !== "all") {
+      return [meetingQuickFilter];
+    }
+
+    return MEETING_BOARD_COLUMNS.filter((column) => (meetingBoardColumns[column] || []).length > 0 || column === "Today");
+  }, [meetingBoardColumns, meetingQuickFilter]);
   const callBoardColumns = useMemo(() => {
     const columns = CALL_BOARD_COLUMNS.reduce((acc, label) => ({ ...acc, [label]: [] }), {});
     activities.forEach((activity) => {
@@ -1379,6 +1509,9 @@ function ActivityModule() {
       }
       if (needType === "service" && planAndCycleValid) {
         dealPayload.billingCycle = billingCycle;
+        if (Number.isFinite(usersOrSeatsValue) && usersOrSeatsValue > 0) {
+          dealPayload.usersOrSeats = usersOrSeatsValue;
+        }
       }
 
       try {
@@ -1741,6 +1874,98 @@ function ActivityModule() {
     await refreshAll();
   };
 
+  const handleSendTeamsLink = async (call) => {
+    const modeInput = window.prompt("Call type? Enter video or voice", call?.call?.teamsMode || "video");
+    if (!modeInput) return;
+    const mode = String(modeInput).trim().toLowerCase() === "voice" ? "voice" : "video";
+
+    const existingEmail = String(call?.relatedTo?.recordEmail || "").trim();
+    const recipientEmail = window.prompt("Recipient email (leave blank to use related record email)", existingEmail);
+
+    try {
+      await axios.post(
+        "http://localhost:5000/api/calls/send-teams-link",
+        {
+          activityId: call._id,
+          mode,
+          recipientEmail: String(recipientEmail || "").trim() || undefined,
+        },
+        { headers: apiHeaders }
+      );
+      setToast("Teams call link emailed successfully.");
+      await refreshAll();
+    } catch (error) {
+      setToast(error.response?.data?.message || "Failed to send Teams link.");
+    }
+  };
+
+  const handleMeetingSnooze = async (meeting, minutes = 15) => {
+    const base = new Date(meeting?.startDateTime || Date.now());
+    if (Number.isNaN(base.getTime())) return;
+    const snoozed = new Date(base.getTime() + (minutes * 60 * 1000));
+    const payload = {
+      startDateTime: snoozed.toISOString(),
+      reminderTime: snoozed.toISOString(),
+    };
+
+    try {
+      await axios.post(`http://localhost:5000/api/activities/${meeting._id}/reschedule`, payload, { headers: apiHeaders });
+      setToast(`Meeting snoozed by ${minutes} minutes.`);
+      await refreshAll();
+    } catch (error) {
+      setToast(error.response?.data?.message || "Failed to snooze meeting.");
+    }
+  };
+
+  const handleMeetingColumnDrop = async (column, meetingId) => {
+    const targetMeeting = activities.find((item) => String(item?._id || "") === String(meetingId || ""));
+    if (!targetMeeting) return;
+
+    try {
+      if (column === "Completed") {
+        openCompleteModal(targetMeeting);
+        return;
+      }
+
+      if (column === "Overdue") {
+        await axios.put(
+          `http://localhost:5000/api/activities/${targetMeeting._id}`,
+          { status: "Missed" },
+          { headers: apiHeaders }
+        );
+        setToast("Meeting moved to overdue.");
+        await refreshAll();
+        return;
+      }
+
+      if (column === "Today" || column === "Upcoming") {
+        const now = new Date();
+        const nextDate = new Date(now);
+        if (column === "Today") {
+          nextDate.setMinutes(now.getMinutes() + 20);
+        } else {
+          nextDate.setDate(now.getDate() + 1);
+          nextDate.setHours(10, 0, 0, 0);
+        }
+
+        await axios.post(
+          `http://localhost:5000/api/activities/${targetMeeting._id}/reschedule`,
+          {
+            startDateTime: nextDate.toISOString(),
+            reminderTime: nextDate.toISOString(),
+          },
+          { headers: apiHeaders }
+        );
+        setToast(column === "Today" ? "Meeting moved to today." : "Meeting moved to upcoming.");
+        await refreshAll();
+      }
+    } catch (error) {
+      setToast(error.response?.data?.message || "Failed to move meeting.");
+    } finally {
+      setDraggedMeetingId("");
+    }
+  };
+
   const renderTaskBoard = () => (
     <div className="task-page">
       <div className="task-page__header">
@@ -1858,15 +2083,38 @@ function ActivityModule() {
               placeholder="Search meetings"
             />
           </div>
-          <button className="task-page__create-btn" onClick={openCreateModal}>Create Meeting</button>
+          <button className="task-page__create-btn meeting-create-btn" onClick={openCreateModal}>Create Meeting</button>
         </div>
       </div>
 
       <div className="task-page__viewbar">
-        <button className="task-page__view-pill active">All Meetings</button>
+        <button
+          className={`task-page__view-pill ${meetingQuickFilter === "all" ? "active" : ""}`}
+          onClick={() => setMeetingQuickFilter("all")}
+        >
+          All
+        </button>
+        <button
+          className={`task-page__view-pill ${meetingQuickFilter === "Today" ? "active" : ""}`}
+          onClick={() => setMeetingQuickFilter("Today")}
+        >
+          Today
+        </button>
+        <button
+          className={`task-page__view-pill ${meetingQuickFilter === "Overdue" ? "active" : ""}`}
+          onClick={() => setMeetingQuickFilter("Overdue")}
+        >
+          Overdue
+        </button>
+        <button
+          className={`task-page__view-pill ${meetingQuickFilter === "Completed" ? "active" : ""}`}
+          onClick={() => setMeetingQuickFilter("Completed")}
+        >
+          Completed
+        </button>
       </div>
 
-      <div className="task-page__toolbar">
+      <div className="task-page__toolbar meeting-toolbar-sticky">
         <div className="task-page__toolbar-right">
           {!isEmployee ? (
             <select value={ownerFilter} onChange={(event) => setOwnerFilter(event.target.value)} className="task-page__select">
@@ -1887,45 +2135,88 @@ function ActivityModule() {
 
       <div className="task-board-layout">
         <div className="task-board-scroll">
-          <section className="task-board">
-            {MEETING_BOARD_COLUMNS.map((column) => (
-              <div key={column} className="task-column">
+          <section className="task-board meeting-smart-board">
+            {visibleMeetingColumns.map((column) => (
+              <div key={column} className="task-column meeting-smart-column">
                 <div className="task-column__header meeting-column__header">
                   <div className="task-column__title">
                     <span>{column}</span>
                     <strong>{meetingBoardColumns[column]?.length || 0}</strong>
                   </div>
                 </div>
-                <div className="task-column__body">
+                <div
+                  className="task-column__body"
+                  onDragOver={(event) => event.preventDefault()}
+                  onDrop={(event) => {
+                    event.preventDefault();
+                    const meetingId = event.dataTransfer.getData("text/plain") || draggedMeetingId;
+                    if (meetingId) {
+                      handleMeetingColumnDrop(column, meetingId);
+                    }
+                  }}
+                >
                   {(meetingBoardColumns[column] || []).length === 0 ? (
-                    <div className="task-column__empty">No Meetings found.</div>
+                    <div className="task-column__empty meeting-empty-state">
+                      <p>{column === "Today" ? "No meetings today" : `No ${column.toLowerCase()} meetings`}</p>
+                      <button type="button" onClick={openCreateModal}>+ Add Meeting</button>
+                    </div>
                   ) : (
                     (meetingBoardColumns[column] || []).map((meeting) => {
                       const relatedClass = getActivityRelatedClass(meeting);
+                      const timing = meeting?._timing || getMeetingTimingMeta(meeting, new Date(meetingNowTick));
+                      const startDate = new Date(meeting.startDateTime || meeting.createdAt || 0);
+                      const validStart = !Number.isNaN(startDate.getTime());
+                      const countdownText =
+                        timing?.isLive
+                          ? "LIVE NOW"
+                          : timing?.minutesToStart !== null && timing?.minutesToStart >= 0 && timing?.minutesToStart <= 180
+                            ? `Starts in ${timing.minutesToStart} min`
+                            : validStart
+                              ? formatMeetingDayTime(startDate)
+                              : "--";
                       return (
-                        <article key={meeting._id} className={`task-card meeting-card ${relatedClass}`}>
-                          <button className="task-card__edit" onClick={() => openEditModal(meeting)} aria-label="Edit meeting">
-                            +
-                          </button>
-                          <h3>{meeting.title}</h3>
-                          <p>{formatDateTime(meeting.startDateTime || meeting.dueDate)}</p>
-                          <p>{meeting.location || "No location"}</p>
-                          <p>{meeting.owner?.name || meeting.owner?.username || "-"}</p>
-                          <p>
-                            <span className={`record-type-pill ${relatedClass}`}>
-                              {meeting.relatedTo?.recordType || "Lead"}
-                            </span>{" "}
-                            <span className={`activity-related-label ${relatedClass}`}>
-                              {meeting.relatedTo?.recordName || "-"}
-                            </span>
-                          </p>
-                          <div className="task-card__actions">
+                        <article
+                          key={meeting._id}
+                          className={`task-card meeting-card meeting-card-compact meeting-tone-${timing.urgencyTone} ${relatedClass}`}
+                          draggable
+                          onDragStart={(event) => {
+                            event.dataTransfer.setData("text/plain", meeting._id);
+                            setDraggedMeetingId(meeting._id);
+                          }}
+                          onDragEnd={() => setDraggedMeetingId("")}
+                        >
+                          <div className="meeting-card-compact__main">
+                            <h3>{cleanMeetingTitle(meeting.title)}</h3>
+                            <p className="meeting-time-inline">{formatMeetingTime(meeting.startDateTime || meeting.createdAt)}</p>
+                            <p className="meeting-row-meta">
+                              <span className="meeting-meta-label">Owner:</span>
+                              {meeting.owner?.name || meeting.owner?.username || "-"}
+                            </p>
+                            <p className="meeting-row-meta">
+                              <span className="meeting-meta-label">Location:</span>
+                              {meeting.location || "Not set"}
+                            </p>
+                            <p className="meeting-row-meta">
+                              <span className={`record-type-pill ${relatedClass}`}>
+                                {meeting.relatedTo?.recordType || "Lead"}
+                              </span>
+                              <span className={`activity-related-label ${relatedClass}`}>
+                                {meeting.relatedTo?.recordName || "-"}
+                              </span>
+                            </p>
+                            <p className={`meeting-live-badge ${timing.isLive ? "active" : ""}`}>
+                              {countdownText}
+                            </p>
+                          </div>
+
+                          <div className="meeting-inline-actions">
                             {meeting.status !== "Completed" ? (
                               <button onClick={() => openCompleteModal(meeting)}>Complete</button>
                             ) : null}
                             {meeting.status !== "Completed" ? (
-                              <button onClick={() => handleReschedule(meeting)}>Reschedule</button>
+                              <button onClick={() => handleMeetingSnooze(meeting, 15)}>Snooze</button>
                             ) : null}
+                            <button onClick={() => openEditModal(meeting)}>Edit</button>
                             <button onClick={() => handleDelete(meeting._id)}>Delete</button>
                           </div>
                         </article>
@@ -2007,6 +2298,8 @@ function ActivityModule() {
                           <h3>{call.title}</h3>
                           <p>{formatDateTime(call.startDateTime || call.dueDate)}</p>
                           <p>{call.call?.callType || "Outbound"}</p>
+                          {call.call?.provider === "teams" && call.call?.teamsMode ? <p>Teams: {String(call.call.teamsMode).toUpperCase()}</p> : null}
+                          {call.call?.providerStatus ? <p>Status: {String(call.call.providerStatus).toUpperCase()}</p> : null}
                           <p>{call.owner?.name || call.owner?.username || "-"}</p>
                           <p>
                             <span className={`record-type-pill ${relatedClass}`}>
@@ -2017,6 +2310,9 @@ function ActivityModule() {
                             </span>
                           </p>
                           <div className="task-card__actions">
+                            {call.status !== "Completed" ? (
+                              <button onClick={() => handleSendTeamsLink(call)}>Send Teams Link</button>
+                            ) : null}
                             {call.status !== "Completed" ? (
                               <button onClick={() => openCompleteModal(call)}>Complete</button>
                             ) : null}
@@ -2987,6 +3283,8 @@ function ActivityModule() {
                             >
                               <option value="">Select billing cycle</option>
                               <option value="monthly">Monthly</option>
+                              <option value="quarterly">Quarterly</option>
+                              <option value="6_months">6 Months</option>
                               <option value="yearly">Yearly</option>
                             </select>
                           </label>
