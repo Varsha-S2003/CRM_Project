@@ -7,8 +7,9 @@ const refreshBillStatus = async (bill) => {
   const payments = await Payment.find({ billId: bill._id }).select("amount paymentDate");
   const paidAmount = payments.reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
   const isFullyPaid = paidAmount >= Number(bill.amount || 0);
+  const isPartiallyPaid = paidAmount > 0 && !isFullyPaid;
   const isOverdue = !isFullyPaid && bill.dueDate && new Date(bill.dueDate).getTime() < Date.now();
-  const nextStatus = isFullyPaid ? "Paid" : isOverdue ? "Overdue" : "Unpaid";
+  const nextStatus = isFullyPaid ? "Paid" : isOverdue ? "Overdue" : isPartiallyPaid ? "Partial" : "Unpaid";
 
   if (bill.status !== nextStatus) {
     bill.status = nextStatus;

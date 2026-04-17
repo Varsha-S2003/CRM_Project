@@ -1,6 +1,7 @@
 const mongoose = require("mongoose");
 const Bill = require("../models/bill");
 const Vendor = require("../models/vendor");
+const Payment = require("../models/payment");
 const { refreshBillStatus } = require("../utils/vendorFinance");
 const { syncBillInventoryIfPaid } = require("../utils/vendorInventorySync");
 const { trackVendorActivity } = require("./vendorController");
@@ -11,14 +12,39 @@ const toDate = (value) => {
   return Number.isNaN(date.getTime()) ? null : date;
 };
 
+const normalizeName = (value) => String(value || "").trim().toLowerCase();
+
+const generateBillNumber = async () => {
+  const now = new Date();
+  const year = now.getFullYear();
+  const yearStart = new Date(year, 0, 1);
+  const yearEnd = new Date(year + 1, 0, 1);
+  const count = await Bill.countDocuments({
+    createdAt: {
+      $gte: yearStart,
+      $lt: yearEnd,
+    },
+  });
+  return `PUR-${year}-${String(count + 1).padStart(3, "0")}`;
+};
+
 const createBill = async (req, res) => {
   try {
     const payload = {
       vendorId: req.body.vendorId,
       billNumber: String(req.body.billNumber || "").trim(),
+      purchaseDate: toDate(req.body.purchaseDate) || new Date(),
       dueDate: toDate(req.body.dueDate),
-      status: String(req.body.status || "Unpaid").trim(),
+      status: "Unpaid",
+      notes: String(req.body.notes || "").trim(),
     };
+
+    if (!payload.billNumber) {
+      payload.billNumber = await generateBillNumber();
+    }
+
+    const paidAmount = Number(req.body.paidAmount || 0);
+    const paymentMode = "Cash";
 
     // Process line items
     const lineItems = Array.isArray(req.body.lineItems) ? req.body.lineItems : [];
@@ -27,13 +53,22 @@ const createBill = async (req, res) => {
     const processedLineItems = lineItems.map((item) => {
       const qty = Number(item.quantity || 0);
       const unitPrice = Number(item.unitPrice || 0);
-      const itemTotal = qty * unitPrice;
+      const gstPercentRaw = Number(item.gstPercent ?? item.gst_percent ?? 0);
+      const gstPercent = Number.isFinite(gstPercentRaw) ? Math.max(0, Math.min(100, gstPercentRaw)) : 0;
+      const subtotal = qty * unitPrice;
+      const taxAmount = (subtotal * gstPercent) / 100;
+      const itemTotal = subtotal + taxAmount;
       totalAmount += itemTotal;
 
       return {
+        itemId: mongoose.isValidObjectId(item.itemId) ? item.itemId : undefined,
+        type: String(item.type || "product").toLowerCase() === "service" ? "service" : "product",
         product: String(item.product || "").trim(),
         quantity: qty,
         unitPrice: unitPrice,
+        subtotal,
+        gstPercent,
+        taxAmount,
         total: itemTotal,
       };
     });
@@ -50,23 +85,74 @@ const createBill = async (req, res) => {
       return res.status(404).json({ message: "Vendor not found" });
     }
 
-    if (!payload.billNumber) {
-      return res.status(400).json({ message: "billNumber is required" });
-    }
-
     if (lineItems.length === 0 || !Number.isFinite(payload.amount) || payload.amount <= 0) {
       return res.status(400).json({ message: "At least one line item with valid quantity and price is required" });
+    }
+
+    const invalidLineItem = processedLineItems.find(
+      (item) => !item.product || !Number.isFinite(item.quantity) || item.quantity <= 0 || !Number.isFinite(item.unitPrice) || item.unitPrice <= 0
+    );
+    if (invalidLineItem) {
+      return res.status(400).json({ message: "Each line item must have product/service name, quantity > 0 and unitPrice > 0" });
     }
 
     if (!payload.dueDate) {
       return res.status(400).json({ message: "dueDate is required" });
     }
 
-    if (!["Paid", "Unpaid", "Overdue"].includes(payload.status)) {
+    const vendorProducts = new Set((vendor.productsProvided || []).map(normalizeName));
+    const vendorServices = new Set((vendor.servicesProvided || []).map(normalizeName));
+    const hasProductRules = vendorProducts.size > 0;
+    const hasServiceRules = vendorServices.size > 0;
+
+    const unauthorizedLineItem = processedLineItems.find((lineItem) => {
+      const key = normalizeName(lineItem.product);
+      if (lineItem.type === "product" && hasProductRules) {
+        return !vendorProducts.has(key);
+      }
+      if (lineItem.type === "service" && hasServiceRules) {
+        return !vendorServices.has(key);
+      }
+      if (lineItem.type === "product" && !hasProductRules) {
+        return true;
+      }
+      if (lineItem.type === "service" && !hasServiceRules) {
+        return true;
+      }
+      return false;
+    });
+
+    if (unauthorizedLineItem) {
+      return res.status(400).json({
+        message: `Selected ${unauthorizedLineItem.type} '${unauthorizedLineItem.product}' is not configured for this vendor`,
+      });
+    }
+
+    if (!Number.isFinite(paidAmount) || paidAmount < 0 || paidAmount > payload.amount) {
+      return res.status(400).json({ message: "paidAmount must be between 0 and total amount" });
+    }
+
+    if (paidAmount <= 0) {
       payload.status = "Unpaid";
+    } else if (paidAmount >= payload.amount) {
+      payload.status = "Paid";
+    } else {
+      payload.status = "Partial";
     }
 
     const bill = await Bill.create(payload);
+    let payment = null;
+
+    if (paidAmount > 0) {
+      payment = await Payment.create({
+        vendorId: payload.vendorId,
+        billId: bill._id,
+        amount: paidAmount,
+        paymentMode,
+        paymentDate: payload.purchaseDate || new Date(),
+      });
+    }
+
     await refreshBillStatus(bill);
     const freshBill = await Bill.findById(bill._id).select("status");
     if (freshBill?.status === "Paid") {
@@ -79,10 +165,27 @@ const createBill = async (req, res) => {
       entityType: "Bill",
       entityId: bill._id,
       message: `Bill ${bill.billNumber} created with ${lineItems.length} item(s) for ${vendor.vendorName}`,
-      metadata: { amount: bill.amount, itemCount: lineItems.length, dueDate: bill.dueDate },
+      metadata: {
+        amount: bill.amount,
+        itemCount: lineItems.length,
+        dueDate: bill.dueDate,
+        purchaseDate: payload.purchaseDate,
+        paidAmount,
+      },
     });
 
-    return res.status(201).json({ message: "Bill created", bill });
+    if (payment) {
+      await trackVendorActivity({
+        vendorId: bill.vendorId,
+        action: "PAYMENT_ADDED",
+        entityType: "Payment",
+        entityId: payment._id,
+        message: `Initial payment of ${payment.amount} recorded for bill ${bill.billNumber}`,
+        metadata: { paymentMode: payment.paymentMode },
+      });
+    }
+
+    return res.status(201).json({ message: "Bill created", bill, payment });
   } catch (error) {
     if (error?.code === 11000) {
       return res.status(409).json({ message: "Bill number already exists for this vendor" });
@@ -103,7 +206,7 @@ const getBills = async (req, res) => {
       filter.vendorId = vendorId;
     }
 
-    if (status && ["Paid", "Unpaid", "Overdue"].includes(status)) {
+    if (status && ["Paid", "Partial", "Unpaid", "Overdue"].includes(status)) {
       filter.status = status;
     }
 
@@ -148,8 +251,8 @@ const updateBillStatus = async (req, res) => {
     }
 
     const status = String(req.body.status || "").trim();
-    if (!status || !["Paid", "Unpaid", "Overdue"].includes(status)) {
-      return res.status(400).json({ message: "status must be Paid, Unpaid, or Overdue" });
+    if (!status || !["Paid", "Partial", "Unpaid", "Overdue"].includes(status)) {
+      return res.status(400).json({ message: "status must be Paid, Partial, Unpaid, or Overdue" });
     }
 
     const bill = await Bill.findById(id);

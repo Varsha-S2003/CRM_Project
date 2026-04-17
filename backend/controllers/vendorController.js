@@ -8,6 +8,19 @@ const { computeVendorFinancials, refreshBillStatus } = require("../utils/vendorF
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const GST_REGEX = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[A-Z0-9]{1}Z[A-Z0-9]{1}$/;
 
+const normalizeListField = (value) => {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => String(item || "").trim())
+      .filter(Boolean);
+  }
+
+  return String(value || "")
+    .split(/[\n,;]+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+};
+
 const sanitizeVendorPayload = (body = {}) => {
   const payload = {
     vendorName: String(body.vendorName || "").trim(),
@@ -18,6 +31,8 @@ const sanitizeVendorPayload = (body = {}) => {
     address: String(body.address || "").trim(),
     city: String(body.city || "").trim(),
     state: String(body.state || "").trim(),
+    productsProvided: normalizeListField(body.productsProvided ?? body.products),
+    servicesProvided: normalizeListField(body.servicesProvided ?? body.services),
     status: String(body.status || "Active").trim(),
   };
 
@@ -162,6 +177,8 @@ const getVendors = async (req, res) => {
         { email: { $regex: search, $options: "i" } },
         { phone: { $regex: search, $options: "i" } },
         { gstNumber: { $regex: search, $options: "i" } },
+        { productsProvided: { $regex: search, $options: "i" } },
+        { servicesProvided: { $regex: search, $options: "i" } },
       ];
     }
 
@@ -342,6 +359,8 @@ const exportVendorsCsv = async (_req, res) => {
       "address",
       "city",
       "state",
+      "productsProvided",
+      "servicesProvided",
       "status",
     ];
 
@@ -355,7 +374,14 @@ const exportVendorsCsv = async (_req, res) => {
 
     const lines = [headers.join(",")];
     vendors.forEach((vendor) => {
-      lines.push(headers.map((key) => escapeCell(vendor[key] || "")).join(","));
+      lines.push(
+        headers
+          .map((key) => {
+            const value = Array.isArray(vendor[key]) ? vendor[key].join("; ") : vendor[key];
+            return escapeCell(value || "");
+          })
+          .join(",")
+      );
     });
 
     res.setHeader("Content-Type", "text/csv");

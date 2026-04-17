@@ -47,6 +47,11 @@ const generateProductSku = async ({ name, category }) => {
 };
 
 const syncLineItemToInventory = async ({ lineItem, vendorName }) => {
+  const lineType = String(lineItem?.type || "product").toLowerCase();
+  if (lineType === "service") {
+    return { skipped: true, reason: "service_line_item" };
+  }
+
   const name = normalizeName(lineItem?.product);
   const quantity = Number(lineItem?.quantity || 0);
   const unitPrice = Number(lineItem?.unitPrice || 0);

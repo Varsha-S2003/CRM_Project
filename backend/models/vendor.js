@@ -30,6 +30,8 @@ const vendorSchema = new mongoose.Schema(
     address: { type: String, trim: true, default: "" },
     city: { type: String, trim: true, default: "" },
     state: { type: String, trim: true, default: "" },
+    productsProvided: { type: [{ type: String, trim: true }], default: [] },
+    servicesProvided: { type: [{ type: String, trim: true }], default: [] },
     status: {
       type: String,
       enum: ["Active", "Inactive"],

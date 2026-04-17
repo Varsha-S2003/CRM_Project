@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import Sidebar from "../Sidebar";
 import api from "../services/api";
 import VendorModal from "../components/vendors/VendorModal";
+import BillModal from "../components/vendors/BillModal";
 import StatusBadge from "../components/vendors/StatusBadge";
 import "../Vendors.css";
 
@@ -22,8 +23,12 @@ export default function VendorsPage() {
   const [limit] = useState(10);
   const [pagination, setPagination] = useState({ totalPages: 1, total: 0 });
   const [showModal, setShowModal] = useState(false);
+  const [showPurchaseModal, setShowPurchaseModal] = useState(false);
   const [editingVendor, setEditingVendor] = useState(null);
   const [submitting, setSubmitting] = useState(false);
+  const [purchaseSubmitting, setPurchaseSubmitting] = useState(false);
+  const [selectedPurchaseVendorId, setSelectedPurchaseVendorId] = useState("");
+  const [purchaseVendors, setPurchaseVendors] = useState([]);
   const [error, setError] = useState("");
   const [overdue, setOverdue] = useState([]);
 
@@ -76,6 +81,23 @@ export default function VendorsPage() {
     setShowModal(true);
   };
 
+  const fetchPurchaseVendors = useCallback(async () => {
+    try {
+      const res = await api.get("/vendors", {
+        params: { page: 1, limit: 100, status: "all" },
+      });
+      setPurchaseVendors(res.data?.data || []);
+    } catch (_error) {
+      setPurchaseVendors(vendors);
+    }
+  }, [vendors]);
+
+  const openPurchase = async (vendorId = "") => {
+    setSelectedPurchaseVendorId(vendorId || "");
+    await fetchPurchaseVendors();
+    setShowPurchaseModal(true);
+  };
+
   const onSubmitVendor = async (payload) => {
     try {
       setSubmitting(true);
@@ -103,6 +125,21 @@ export default function VendorsPage() {
       fetchVendors();
     } catch (err) {
       setError(err.response?.data?.message || "Failed to delete vendor");
+    }
+  };
+
+  const onSubmitPurchase = async (payload) => {
+    try {
+      setPurchaseSubmitting(true);
+      await api.post("/bills", payload);
+      setShowPurchaseModal(false);
+      setSelectedPurchaseVendorId("");
+      await Promise.all([fetchVendors(), fetchOverdue()]);
+      setError("");
+    } catch (err) {
+      setError(err.response?.data?.message || "Failed to save purchase");
+    } finally {
+      setPurchaseSubmitting(false);
     }
   };
 
@@ -209,6 +246,9 @@ export default function VendorsPage() {
               <button className="btn-primary" onClick={openCreate}>
                 + Add Vendor
               </button>
+              <button className="btn-secondary" onClick={() => openPurchase("")}>
+                + Add Bill
+              </button>
               <button className="btn-secondary" onClick={onExportCsv}>
                 Export CSV
               </button>
@@ -231,6 +271,8 @@ export default function VendorsPage() {
                       <th>Vendor Name</th>
                       <th>Company</th>
                       <th>Phone</th>
+                      <th>Products</th>
+                      <th>Services</th>
                       <th>GST</th>
                       <th>Payable</th>
                       <th>Status</th>
@@ -240,11 +282,11 @@ export default function VendorsPage() {
                   <tbody>
                     {loading ? (
                       <tr>
-                        <td colSpan={7} style={{ textAlign: "center", padding: "24px" }}>Loading vendors...</td>
+                        <td colSpan={9} style={{ textAlign: "center", padding: "24px" }}>Loading vendors...</td>
                       </tr>
                     ) : vendors.length === 0 ? (
                       <tr>
-                        <td colSpan={7} style={{ textAlign: "center", padding: "24px" }}>No vendors found.</td>
+                        <td colSpan={9} style={{ textAlign: "center", padding: "24px" }}>No vendors found.</td>
                       </tr>
                     ) : (
                       vendors.map((vendor) => (
@@ -252,6 +294,20 @@ export default function VendorsPage() {
                           <td>{vendor.vendorName}</td>
                           <td>{vendor.companyName || "-"}</td>
                           <td>{vendor.phone || "-"}</td>
+                          <td>
+                            <div className="vendor-offering-cell">
+                              {(vendor.productsProvided || []).length
+                                ? (vendor.productsProvided || []).join(", ")
+                                : "-"}
+                            </div>
+                          </td>
+                          <td>
+                            <div className="vendor-offering-cell">
+                              {(vendor.servicesProvided || []).length
+                                ? (vendor.servicesProvided || []).join(", ")
+                                : "-"}
+                            </div>
+                          </td>
                           <td>{vendor.gstNumber || "-"}</td>
                           <td style={{ fontWeight: "600", color: "#ef4444" }}>{money(vendor.payable)}</td>
                           <td><StatusBadge value={vendor.status} /></td>
@@ -259,6 +315,7 @@ export default function VendorsPage() {
                             <div className="vendors-row-actions">
                               <Link to={`/vendors/${vendor._id}`} className="btn-action">View</Link>
                               <button className="btn-action" onClick={() => openEdit(vendor)}>Edit</button>
+                              <button className="btn-action" onClick={() => openPurchase(vendor._id)}>Purchase</button>
                               <button className="btn-action danger" onClick={() => onDeleteVendor(vendor._id)}>Deactivate</button>
                             </div>
                           </td>
@@ -291,6 +348,19 @@ export default function VendorsPage() {
         onSubmit={onSubmitVendor}
         editingVendor={editingVendor}
         submitting={submitting}
+      />
+
+      <BillModal
+        open={showPurchaseModal}
+        onClose={() => {
+          setShowPurchaseModal(false);
+          setSelectedPurchaseVendorId("");
+        }}
+        onSubmit={onSubmitPurchase}
+        submitting={purchaseSubmitting}
+        vendors={purchaseVendors}
+        defaultVendorId={selectedPurchaseVendorId}
+        lockVendor={Boolean(selectedPurchaseVendorId)}
       />
     </div>
   );

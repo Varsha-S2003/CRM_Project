@@ -169,6 +169,7 @@ export default function VendorDetailPage() {
                       >
                         <option value="all">All Status</option>
                         <option value="Paid">Paid</option>
+                        <option value="Partial">Partial</option>
                         <option value="Unpaid">Unpaid</option>
                         <option value="Overdue">Overdue</option>
                       </select>
@@ -210,6 +211,17 @@ export default function VendorDetailPage() {
                       <div className="vendor-detail-field" style={{ marginTop: "8px" }}>
                         <span className="vendor-detail-label">State</span>
                         <span className="vendor-detail-value">{vendor?.state || "-"}</span>
+                      </div>
+                    </div>
+                    <div>
+                      <h3 style={{ fontSize: "14px", fontWeight: "600", marginBottom: "12px", color: "#1a1a2e" }}>Offerings</h3>
+                      <div className="vendor-detail-field">
+                        <span className="vendor-detail-label">Products</span>
+                        <span className="vendor-detail-value">{(vendor?.productsProvided || []).join(", ") || "-"}</span>
+                      </div>
+                      <div className="vendor-detail-field" style={{ marginTop: "8px" }}>
+                        <span className="vendor-detail-label">Services</span>
+                        <span className="vendor-detail-value">{(vendor?.servicesProvided || []).join(", ") || "-"}</span>
                       </div>
                     </div>
                   </div>
@@ -355,7 +367,15 @@ export default function VendorDetailPage() {
         </div>
       </div>
 
-      <BillModal open={showBillModal} onClose={() => setShowBillModal(false)} onSubmit={addBill} submitting={submitting} />
+      <BillModal
+        open={showBillModal}
+        onClose={() => setShowBillModal(false)}
+        onSubmit={addBill}
+        submitting={submitting}
+        vendors={vendor ? [vendor] : []}
+        defaultVendorId={id}
+        lockVendor
+      />
       <PaymentModal
         open={showPaymentModal}
         onClose={() => setShowPaymentModal(false)}
