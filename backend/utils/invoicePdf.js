@@ -358,10 +358,13 @@ const buildProfessionalPdf = (invoice) => {
   const fontBoldDict =
     "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>";
 
+  const pageObject =
+    `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R /F1-Bold 5 0 R >> >> /Contents 6 0 R >>`;
+
   const objects = [
     "<< /Type /Catalog /Pages 2 0 R >>",
     "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
-    `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R /F1-Bold 5 0 R >> >> /Contents 6 0 R >>`,
+    pageObject,
     fontDict,
     fontBoldDict,
     `<< /Length ${Buffer.byteLength(streamContent, "utf8")} >>\nstream\n${streamContent}\nendstream`,

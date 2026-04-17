@@ -85,7 +85,7 @@ const addPayment = async (req, res) => {
 
 const getPayments = async (req, res) => {
   try {
-    const { vendorId, billId, fromDate, toDate } = req.query;
+    const { vendorId, billId, fromDate, toDate, source } = req.query;
     const filter = {};
 
     if (vendorId) {
@@ -102,6 +102,10 @@ const getPayments = async (req, res) => {
       filter.billId = billId;
     }
 
+    if (source && ["VENDOR_BILL", "CLIENT_INVOICE"].includes(String(source))) {
+      filter.paymentSource = String(source);
+    }
+
     const fromDateValue = fromDate ? new Date(fromDate) : null;
     const toDateValue = toDate ? new Date(toDate) : null;
 
@@ -116,9 +120,33 @@ const getPayments = async (req, res) => {
     const payments = await Payment.find(filter)
       .populate("vendorId", "vendorName companyName email")
       .populate("billId", "billNumber amount status dueDate")
+      .populate("invoiceId", "invoiceNumber customerName company email phone totalAmount dueDate status")
       .sort({ paymentDate: -1 });
 
-    return res.json(payments);
+    const enriched = payments.map((paymentDoc) => {
+      const payment = paymentDoc.toObject();
+      const invoice = payment.invoiceId || null;
+
+      return {
+        ...payment,
+        transactionId: payment.transactionId || "",
+        referenceNumber:
+          payment.paymentSource === "CLIENT_INVOICE"
+            ? String(invoice?.invoiceNumber || "")
+            : String(payment?.billId?.billNumber || ""),
+        client:
+          payment.paymentSource === "CLIENT_INVOICE"
+            ? {
+                name: String(invoice?.customerName || "").trim(),
+                company: String(invoice?.company || "").trim(),
+                email: String(invoice?.email || "").trim(),
+                phone: String(invoice?.phone || "").trim(),
+              }
+            : null,
+      };
+    });
+
+    return res.json(enriched);
   } catch (error) {
     return res.status(500).json({ message: error.message || "Failed to fetch payments" });
   }

@@ -1,9 +1,13 @@
 const express = require("express");
 const mongoose = require("mongoose");
+const crypto = require("crypto");
+const os = require("os");
 const { verifyToken } = require("../middleware/authMiddleware");
 const Deal = require("../models/deal");
 const Invoice = require("../models/invoice");
 const Item = require("../models/item");
+const Payment = require("../models/payment");
+const InvoicePaymentToken = require("../models/invoicePaymentToken");
 const { generateInvoicePdfBuffer } = require("../utils/invoicePdf");
 const { sendInvoiceEmailToClient } = require("../utils/mailer");
 
@@ -23,6 +27,270 @@ const buildInvoiceNumber = () => {
   const suffix = Math.floor(Math.random() * 900 + 100);
   return `INV-${stamp}-${suffix}`;
 };
+
+const normalizeBaseUrl = (raw) => String(raw || "").trim().replace(/\/+$/, "");
+
+const getLocalNetworkIp = () => {
+  const interfaces = os.networkInterfaces();
+  for (const iface of Object.values(interfaces)) {
+    if (!Array.isArray(iface)) continue;
+    for (const addr of iface) {
+      if (addr && addr.family === "IPv4" && !addr.internal && addr.address) {
+        return addr.address;
+      }
+    }
+  }
+  return "";
+};
+
+const getClientBaseUrl = (req) => {
+  const configured = normalizeBaseUrl(
+    process.env.CLIENT_APP_URL ||
+      process.env.FRONTEND_URL ||
+      process.env.FRONTEND_BASE_URL ||
+      process.env.PUBLIC_WEB_URL
+  );
+
+  if (configured) {
+    try {
+      const parsed = new URL(configured);
+      const isLocalHost = /^(localhost|127\.0\.0\.1)$/i.test(parsed.hostname);
+      if (isLocalHost) {
+        const frontendPort = String(process.env.CLIENT_APP_PORT || parsed.port || "3000");
+        const lanIp = getLocalNetworkIp();
+        if (lanIp) {
+          return `${parsed.protocol}//${lanIp}:${frontendPort}`;
+        }
+      }
+      return configured;
+    } catch (_err) {
+      return configured;
+    }
+  }
+
+  const origin = normalizeBaseUrl(req?.get?.("origin"));
+  if (/^https?:\/\//i.test(origin)) return origin;
+
+  const forwardedProto = String(req?.headers?.["x-forwarded-proto"] || "").split(",")[0].trim();
+  const protocol = forwardedProto || req?.protocol || "http";
+  const forwardedHost = String(req?.headers?.["x-forwarded-host"] || "").split(",")[0].trim();
+  const host = forwardedHost || req?.get?.("host") || "";
+
+  if (host) {
+    const backendPort = String(process.env.PORT || "5000");
+    const frontendPort = String(process.env.CLIENT_APP_PORT || "3000");
+    let adjustedHost = host.endsWith(`:${backendPort}`)
+      ? `${host.slice(0, -backendPort.length)}${frontendPort}`
+      : host;
+
+    if (/^(localhost|127\.0\.0\.1)(:\d+)?$/i.test(adjustedHost)) {
+      const lanIp = getLocalNetworkIp();
+      if (lanIp) {
+        adjustedHost = `${lanIp}:${frontendPort}`;
+      }
+    }
+
+    return `${protocol}://${adjustedHost}`;
+  }
+
+  const lanIp = getLocalNetworkIp();
+  if (lanIp) {
+    return `http://${lanIp}:${String(process.env.CLIENT_APP_PORT || "3000")}`;
+  }
+
+  return "http://localhost:3000";
+};
+
+const buildPaymentUrl = (token, req) => `${getClientBaseUrl(req)}/pay-invoice?token=${encodeURIComponent(token)}`;
+
+const getTokenExpiryDate = () => {
+  const expiry = new Date();
+  expiry.setDate(expiry.getDate() + 30);
+  return expiry;
+};
+
+const generateTokenValue = () => crypto.randomBytes(32).toString("hex");
+
+const generateTransactionId = async () => {
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    const seed = Date.now().toString().slice(-8);
+    const randomPart = crypto.randomInt(100000, 999999).toString();
+    const transactionId = `${seed}${randomPart}`;
+    // Ensure transaction ID uniqueness across both token and payment stores.
+    const [inToken, inPayments] = await Promise.all([
+      InvoicePaymentToken.exists({ transactionId }),
+      Payment.exists({ transactionId }),
+    ]);
+    if (!inToken && !inPayments) return transactionId;
+  }
+
+  return `${Date.now()}${crypto.randomInt(100000, 999999)}`;
+};
+
+const createInvoicePaymentToken = async (invoice) => {
+  await InvoicePaymentToken.updateMany(
+    { invoiceId: invoice._id, status: "unpaid" },
+    { $set: { status: "expired", expiresAt: new Date() } }
+  );
+
+  const amount = roundMoney(invoice?.totalAmount || 0);
+  const token = generateTokenValue();
+  const transactionId = await generateTransactionId();
+
+  const tokenDoc = await InvoicePaymentToken.create({
+    token,
+    transactionId,
+    invoiceId: invoice._id,
+    amount,
+    status: "unpaid",
+    expiresAt: getTokenExpiryDate(),
+  });
+
+  return tokenDoc;
+};
+
+router.get("/pay/:token", async (req, res) => {
+  try {
+    const token = String(req.params.token || "").trim();
+    if (!token) {
+      return res.status(400).json({ message: "Invalid payment token." });
+    }
+
+    const tokenDoc = await InvoicePaymentToken.findOne({ token })
+      .populate("invoiceId", "invoiceNumber customerName company dueDate totalAmount status currency")
+      .populate("paymentId", "amount paymentMode paymentDate transactionId")
+      .lean();
+
+    if (!tokenDoc) {
+      return res.status(404).json({ message: "Payment link is invalid." });
+    }
+
+    const isExpired = tokenDoc.expiresAt && new Date(tokenDoc.expiresAt) < new Date();
+    const normalizedStatus = isExpired && tokenDoc.status === "unpaid" ? "expired" : tokenDoc.status;
+
+    if (normalizedStatus === "expired") {
+      return res.status(410).json({
+        message: "Payment link has expired.",
+        status: "expired",
+        transactionId: tokenDoc.transactionId,
+      });
+    }
+
+    return res.json({
+      token: tokenDoc.token,
+      status: normalizedStatus,
+      transactionId: tokenDoc.transactionId,
+      amount: tokenDoc.amount,
+      invoice: tokenDoc.invoiceId || null,
+      payment: tokenDoc.paymentId || null,
+    });
+  } catch (err) {
+    return res.status(500).json({ message: err.message || "Failed to fetch payment details" });
+  }
+});
+
+router.post("/pay/:token/complete", async (req, res) => {
+  try {
+    const token = String(req.params.token || "").trim();
+    if (!token) {
+      return res.status(400).json({ message: "Invalid payment token." });
+    }
+
+    const tokenDoc = await InvoicePaymentToken.findOne({ token });
+    if (!tokenDoc) {
+      return res.status(404).json({ message: "Payment link is invalid." });
+    }
+
+    if (tokenDoc.expiresAt && tokenDoc.expiresAt < new Date() && tokenDoc.status === "unpaid") {
+      tokenDoc.status = "expired";
+      await tokenDoc.save();
+      return res.status(410).json({ message: "Payment link has expired.", status: "expired" });
+    }
+
+    if (tokenDoc.status === "paid") {
+      const existingPayment = tokenDoc.paymentId ? await Payment.findById(tokenDoc.paymentId).lean() : null;
+      return res.json({
+        message: "Payment already completed.",
+        status: "paid",
+        transactionId: tokenDoc.transactionId,
+        payment: existingPayment,
+      });
+    }
+
+    const invoice = await Invoice.findById(tokenDoc.invoiceId);
+    if (!invoice) {
+      return res.status(404).json({ message: "Invoice not found for this payment link." });
+    }
+
+    const existingInvoicePayment = await Payment.findOne({
+      paymentSource: "CLIENT_INVOICE",
+      invoiceId: invoice._id,
+    });
+
+    if (existingInvoicePayment) {
+      invoice.status = "Paid";
+      await invoice.save();
+
+      tokenDoc.status = "paid";
+      tokenDoc.paidAt = tokenDoc.paidAt || new Date();
+      tokenDoc.paymentId = existingInvoicePayment._id;
+      await tokenDoc.save();
+
+      return res.json({
+        message: "Payment already exists for this invoice.",
+        status: "paid",
+        transactionId: existingInvoicePayment.transactionId || tokenDoc.transactionId,
+        payment: existingInvoicePayment,
+        invoiceStatus: invoice.status,
+      });
+    }
+
+    const paymentMode = ["UPI", "Bank", "Cash"].includes(String(req.body?.paymentMode || ""))
+      ? String(req.body.paymentMode)
+      : "UPI";
+
+    let payment = await Payment.findOne({ transactionId: tokenDoc.transactionId });
+    if (!payment) {
+      try {
+        payment = await Payment.create({
+          paymentSource: "CLIENT_INVOICE",
+          invoiceId: invoice._id,
+          amount: tokenDoc.amount,
+          paymentMode,
+          paymentDate: new Date(),
+          transactionId: tokenDoc.transactionId,
+        });
+      } catch (createErr) {
+        if (createErr?.code === 11000) {
+          payment = await Payment.findOne({
+            paymentSource: "CLIENT_INVOICE",
+            invoiceId: invoice._id,
+          });
+        } else {
+          throw createErr;
+        }
+      }
+    }
+
+    invoice.status = "Paid";
+    await invoice.save();
+
+    tokenDoc.status = "paid";
+    tokenDoc.paidAt = new Date();
+    tokenDoc.paymentId = payment._id;
+    await tokenDoc.save();
+
+    return res.json({
+      message: "Payment completed successfully.",
+      status: "paid",
+      transactionId: tokenDoc.transactionId,
+      payment,
+      invoiceStatus: invoice.status,
+    });
+  } catch (err) {
+    return res.status(500).json({ message: err.message || "Failed to complete payment" });
+  }
+});
 
 const getDealInvoiceBreakdown = async (deal) => {
   const quantity = Math.max(1, Number(deal?.quantity || 1));
@@ -235,13 +503,21 @@ router.post("/:id/send-client", verifyToken, async (req, res) => {
       return res.status(400).json({ message: "Client email is missing on invoice." });
     }
 
-    const pdfBuffer = await generateInvoicePdfBuffer(invoice.toObject());
+    const tokenDoc = await createInvoicePaymentToken(invoice);
+    const paymentUrl = buildPaymentUrl(tokenDoc.token, req);
+    const pdfBuffer = await generateInvoicePdfBuffer({
+      ...invoice.toObject(),
+      paymentUrl,
+      paymentTransactionId: tokenDoc.transactionId,
+    });
     const { preview } = await sendInvoiceEmailToClient({
       to: toEmail,
       customerName: invoice.customerName,
       company: invoice.company,
       invoice,
       pdfBuffer,
+      paymentUrl,
+      transactionId: tokenDoc.transactionId,
     });
 
     invoice.status = invoice.status === "Paid" ? "Paid" : "Sent";
@@ -250,6 +526,8 @@ router.post("/:id/send-client", verifyToken, async (req, res) => {
     return res.json({
       message: "Invoice sent to client successfully.",
       status: invoice.status,
+      transactionId: tokenDoc.transactionId,
+      paymentUrl,
       preview: preview || null,
     });
   } catch (err) {

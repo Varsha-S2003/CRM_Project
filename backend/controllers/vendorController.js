@@ -236,7 +236,7 @@ const getVendorById = async (req, res) => {
     const toDate = req.query.toDate ? new Date(req.query.toDate) : null;
 
     const billFilter = { vendorId: id };
-    const paymentFilter = { vendorId: id };
+    const paymentFilter = { vendorId: id, paymentSource: "VENDOR_BILL" };
 
     if (fromDate && !Number.isNaN(fromDate.getTime())) {
       billFilter.createdAt = { ...(billFilter.createdAt || {}), $gte: fromDate };

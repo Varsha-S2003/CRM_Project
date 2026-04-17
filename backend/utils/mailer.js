@@ -419,6 +419,8 @@ async function sendInvoiceEmailToClient({
   company,
   invoice,
   pdfBuffer,
+  paymentUrl,
+  transactionId,
 }) {
   const mailer = await getTransporter();
   const appName = "Elogixa CRM";
@@ -431,6 +433,9 @@ async function sendInvoiceEmailToClient({
   const amount = Number(invoice?.totalAmount || 0);
   const dueDate = invoice?.dueDate ? new Date(invoice.dueDate) : null;
   const dueDateLabel = dueDate && !Number.isNaN(dueDate.getTime()) ? dueDate.toLocaleDateString("en-IN") : "-";
+  const safePaymentUrl = String(paymentUrl || "").trim();
+  const hasPaymentUrl = /^https?:\/\//i.test(safePaymentUrl);
+  const paymentCtaText = "Pay";
 
   const subject = `${appName} Invoice ${invoiceNumber}`;
   const greetingLine = safeCompany
@@ -447,10 +452,12 @@ async function sendInvoiceEmailToClient({
       `Please find attached invoice ${invoiceNumber}.`,
       `Invoice Amount: INR ${amount.toFixed(2)}`,
       `Due Date: ${dueDateLabel}`,
+      transactionId ? `Transaction ID: ${transactionId}` : "",
+      hasPaymentUrl ? `Payment link: ${safePaymentUrl}` : "",
       "",
       "Regards,",
       appName,
-    ].join("\n"),
+    ].filter(Boolean).join("\n"),
     html: `
       <div style="font-family: Arial, sans-serif; max-width: 620px; margin: 0 auto; border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden;">
         <div style="background: #14532d; padding: 16px 20px; color: #ffffff;">
@@ -461,6 +468,19 @@ async function sendInvoiceEmailToClient({
           <p style="margin: 0 0 12px;">Please find attached invoice <strong>${invoiceNumber}</strong>.</p>
           <p style="margin: 0 0 8px;"><strong>Amount:</strong> INR ${amount.toFixed(2)}</p>
           <p style="margin: 0 0 16px;"><strong>Due Date:</strong> ${dueDateLabel}</p>
+          ${transactionId ? `<p style="margin: 0 0 12px;"><strong>Transaction ID:</strong> ${transactionId}</p>` : ""}
+          ${hasPaymentUrl ? `
+            <div style="margin: 0 0 18px; padding: 12px; border: 1px solid #d1e5d6; border-radius: 10px; background: #f6fbf7;">
+              <p style="margin: 0 0 10px; color: #166534; font-size: 13px; font-weight: 700;">Complete payment online</p>
+              <table role="presentation" cellspacing="0" cellpadding="0" border="0">
+                <tr>
+                  <td style="border-radius: 8px; background: #14532d;">
+                    <a href="${safePaymentUrl}" style="display: inline-block; padding: 11px 18px; color: #ffffff; text-decoration: none; font-weight: 700; font-size: 16px;">${paymentCtaText}</a>
+                  </td>
+                </tr>
+              </table>
+            </div>
+          ` : ""}
           <p style="margin: 0; color: #6b7280;">This is a system generated invoice email.</p>
         </div>
       </div>

@@ -19,6 +19,8 @@ import UsecaseModule from "./UsecaseModule";
 import DocumentsModule from "./DocumentsModule";
 import QuotationsModule from "./QuotationsModule";
 import InvoicesModule from "./InvoicesModule";
+import PaymentsPage from "./PaymentsPage";
+import PayInvoicePage from "./PayInvoicePage";
 
 import Products from "./Products";
 import Inventory from "./Inventory";
@@ -351,6 +353,8 @@ function App() {
         <Route path="/documents" element={<DocumentsModule />} />
         <Route path="/quotations" element={<QuotationsModule />} />
         <Route path="/invoices" element={<InvoicesModule />} />
+        <Route path="/payments" element={<PaymentsPage />} />
+        <Route path="/pay-invoice" element={<PayInvoicePage />} />
         <Route path="/products" element={<Products />} />
         <Route path="/inventory" element={<Inventory />} />
         <Route path="/notifications" element={<NotificationsPage />} />

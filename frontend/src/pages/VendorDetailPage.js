@@ -296,23 +296,32 @@ export default function VendorDetailPage() {
                     <table className="vendors-table">
                       <thead>
                         <tr>
-                          <th>Bill #</th>
+                          <th>Reference #</th>
+                          <th>Client</th>
                           <th>Amount</th>
                           <th>Mode</th>
+                          <th>Transaction ID</th>
                           <th>Date</th>
                         </tr>
                       </thead>
                       <tbody>
                         {payments.length === 0 ? (
                           <tr>
-                            <td colSpan={4} style={{ textAlign: "center", padding: "16px" }}>No payments found.</td>
+                            <td colSpan={6} style={{ textAlign: "center", padding: "16px" }}>No payments found.</td>
                           </tr>
                         ) : (
                           payments.map((payment) => (
                             <tr key={payment._id} className="vendors-row">
-                              <td>{payment.billId?.billNumber || "-"}</td>
+                              <td>{payment.referenceNumber || payment.billId?.billNumber || payment.invoiceId?.invoiceNumber || "-"}</td>
+                              <td>
+                                {payment.client?.name || payment.invoiceId?.customerName || "-"}
+                                {payment.client?.company || payment.invoiceId?.company
+                                  ? ` (${payment.client?.company || payment.invoiceId?.company})`
+                                  : ""}
+                              </td>
                               <td style={{ fontWeight: "600", color: "#10b981" }}>{money(payment.amount)}</td>
                               <td>{payment.paymentMode}</td>
+                              <td>{payment.transactionId || "-"}</td>
                               <td>{new Date(payment.paymentDate).toLocaleDateString()}</td>
                             </tr>
                           ))
