@@ -112,7 +112,7 @@ function Leads() {
   const [editLeadForm, setEditLeadForm] = useState(null);
   const [editLeadErrors, setEditLeadErrors] = useState({});
   const [exportView, setExportView] = useState("all");
-  const [exportFieldScope, setExportFieldScope] = useState("custom");
+  const [exportFieldScope, setExportFieldScope] = useState("all");
   const [exportType, setExportType] = useState("csv");
   const [exportCharset, setExportCharset] = useState("utf-8");
   const createMenuRef = useRef(null);
@@ -546,9 +546,44 @@ function Leads() {
   const exportFieldPresets = {
     custom: ["name", "email", "phone", "company", "source", "status"],
     basic: ["name", "title", "email", "company", "score", "rating", "status"],
-    all: ["name", "title", "email", "secondaryEmail", "phone", "mobile", "company", "website", "industry", "annualRevenue", "employeeCount", "source", "score", "rating", "status", "city", "state", "country", "assignedTo", "createdAt"],
+    all: [
+      "salutation",
+      "firstName",
+      "lastName",
+      "name",
+      "title",
+      "email",
+      "secondaryEmail",
+      "phone",
+      "mobile",
+      "company",
+      "website",
+      "itemType",
+      "itemName",
+      "industry",
+      "gstin",
+      "annualRevenue",
+      "employeeCount",
+      "source",
+      "score",
+      "rating",
+      "status",
+      "notes",
+      "street",
+      "city",
+      "state",
+      "postalCode",
+      "country",
+      "assignedTo",
+      "lastActivityDate",
+      "createdAt",
+      "updatedAt"
+    ],
   };
   const exportFields = [
+    { key: "salutation", label: "Salutation", getValue: (lead) => lead.salutation || "-" },
+    { key: "firstName", label: "First Name", getValue: (lead) => lead.firstName || "-" },
+    { key: "lastName", label: "Last Name", getValue: (lead) => lead.lastName || "-" },
     { key: "name", label: "Lead Name", getValue: (lead) => lead.name || "-" },
     { key: "title", label: "Title", getValue: (lead) => lead.title || "-" },
     { key: "email", label: "Email", getValue: (lead) => lead.email || "-" },
@@ -557,15 +592,21 @@ function Leads() {
     { key: "mobile", label: "Mobile", getValue: (lead) => lead.mobile || "-" },
     { key: "company", label: "Company", getValue: (lead) => lead.company || "-" },
     { key: "website", label: "Website", getValue: (lead) => lead.website || "-" },
+    { key: "itemType", label: "Item Type", getValue: (lead) => lead.itemType || "-" },
+    { key: "itemName", label: "Item Name", getValue: (lead) => getLeadItemName(lead) || "-" },
     { key: "industry", label: "Industry", getValue: (lead) => lead.industry || "-" },
+    { key: "gstin", label: "GSTIN", getValue: (lead) => lead.gstin || "-" },
     { key: "annualRevenue", label: "Annual Revenue", getValue: (lead) => lead.annualRevenue || "-" },
     { key: "employeeCount", label: "Employee Count", getValue: (lead) => lead.employeeCount || "-" },
     { key: "source", label: "Source", getValue: (lead) => lead.source || "-" },
     { key: "score", label: "Score", getValue: (lead) => Number(lead.score) || 0 },
     { key: "rating", label: "Rating", getValue: (lead) => lead.rating || "-" },
     { key: "status", label: "Status", getValue: (lead) => lead.status || "-" },
+    { key: "notes", label: "Notes", getValue: (lead) => lead.notes || "-" },
+    { key: "street", label: "Street", getValue: (lead) => lead.address?.street || "-" },
     { key: "city", label: "City", getValue: (lead) => lead.address?.city || "-" },
     { key: "state", label: "State", getValue: (lead) => lead.address?.state || "-" },
+    { key: "postalCode", label: "Postal Code", getValue: (lead) => lead.address?.postalCode || "-" },
     { key: "country", label: "Country", getValue: (lead) => lead.address?.country || "-" },
     {
       key: "assignedTo",
@@ -574,7 +615,9 @@ function Leads() {
         return getAssignedUserLabel(lead.assignedTo) || "Unassigned";
       },
     },
+    { key: "lastActivityDate", label: "Last Activity", getValue: (lead) => formatAddedDate(lead.lastActivityDate || lead.lastActivityAt) },
     { key: "createdAt", label: "Added On", getValue: (lead) => formatAddedDate(lead.createdAt) },
+    { key: "updatedAt", label: "Updated On", getValue: (lead) => formatAddedDate(lead.updatedAt) },
   ];
 
   const fetchStats = useCallback(async () => {
@@ -814,7 +857,7 @@ function Leads() {
 
   const handleOpenExportModal = () => {
     setExportView("all");
-    setExportFieldScope("custom");
+    setExportFieldScope("all");
     setExportType("csv");
     setExportCharset("utf-8");
     setShowExportModal(true);
