@@ -3,6 +3,7 @@ const mongoose = require("mongoose");
 const cors = require("cors");
 const bcrypt = require("bcryptjs");
 const path = require("path");
+const dns = require("dns");
 require("dotenv").config({ path: path.resolve(__dirname, ".env") });
 
 const app = express();
@@ -71,9 +72,40 @@ app.use("/api/invoices", invoiceRoutes);
 const paymentRoutes = require("./routes/paymentRoutes");
 app.use("/api/payments", paymentRoutes);
 
-// MongoDB Atlas connection
-mongoose.connect(process.env.MONGO_URI)
-.then(async () => {
+// MongoDB Atlas connection with DNS/SRV fallback handling
+async function initializeDatabase() {
+  const primaryUri = process.env.MONGO_URI;
+  const fallbackUri = process.env.MONGO_URI_FALLBACK;
+
+  if (!primaryUri) {
+    throw new Error("MONGO_URI is missing in environment.");
+  }
+
+  // Optional: override DNS resolvers on restrictive networks.
+  if (process.env.MONGO_DNS_SERVERS) {
+    const dnsServers = process.env.MONGO_DNS_SERVERS
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (dnsServers.length > 0) {
+      dns.setServers(dnsServers);
+      console.log(`Using custom DNS servers for MongoDB lookup: ${dnsServers.join(", ")}`);
+    }
+  }
+
+  try {
+    await mongoose.connect(primaryUri);
+  } catch (err) {
+    const isSrvLookupError = err && (err.code === "ECONNREFUSED" || err.code === "ENOTFOUND") && err.syscall === "querySrv";
+
+    if (isSrvLookupError && fallbackUri) {
+      console.warn("Primary SRV connection failed. Retrying with MONGO_URI_FALLBACK...");
+      await mongoose.connect(fallbackUri);
+    } else {
+      throw err;
+    }
+  }
+
   console.log("MongoDB Atlas Connected");
   try {
     const { dedupeItems } = require("./utils/dedupeItems");
@@ -95,8 +127,9 @@ mongoose.connect(process.env.MONGO_URI)
   } catch (e) {
     console.error("Failed to initialize app settings:", e.message);
   }
-})
-.catch(err => console.log(err));
+}
+
+initializeDatabase().catch((err) => console.log(err));
 
 // test route
 app.get("/", (req, res) => {
