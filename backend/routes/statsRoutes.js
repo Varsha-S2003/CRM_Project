@@ -47,7 +47,7 @@ router.get("/", verifyToken, isAdmin, async (req, res) => {
       User.countDocuments({ role: "MANAGER" }),
       User.countDocuments({ role: "EMPLOYEE" }),
       Product.countDocuments(),
-      Item.find({}).select("type stock lowStockThreshold serviceType totalStorage usedStorage nextBillingDate endDate expiryDate"),
+      Item.find({}).select("type stock reservedStock soldStock lowStockThreshold serviceType totalStorage usedStorage nextBillingDate endDate expiryDate"),
       Deal.find({})
         .select("stage amount value assignedTo createdAt updatedAt")
         .populate("assignedTo", "name username email"),
@@ -60,7 +60,18 @@ router.get("/", verifyToken, isAdmin, async (req, res) => {
 
     const productItems = allItems.filter((item) => String(item.type || "product").toLowerCase() !== "service");
     const serviceItems = allItems.filter((item) => String(item.type || "").toLowerCase() === "service");
-    const totalStock = productItems.reduce((sum, item) => sum + toNumber(item.stock), 0);
+    const totalAvailableStock = productItems.reduce((sum, item) => sum + toNumber(item.stock), 0);
+    const totalReservedStock = productItems.reduce((sum, item) => sum + toNumber(item.reservedStock), 0);
+    const totalSoldStock = productItems.reduce((sum, item) => sum + toNumber(item.soldStock), 0);
+    const totalPhysicalStock = totalAvailableStock + totalReservedStock + totalSoldStock;
+    const inventoryRiskBuffer = productItems.reduce((sum, item) => sum + toNumber(item.lowStockThreshold || 0), 0);
+    const netFreeStock = Math.max(0, totalAvailableStock - inventoryRiskBuffer);
+    const stockConversionRate = totalReservedStock > 0
+      ? Math.round((totalSoldStock / totalReservedStock) * 100)
+      : 0;
+    const pipelinePressureRate = totalPhysicalStock > 0
+      ? Math.round((totalReservedStock / totalPhysicalStock) * 100)
+      : 0;
     const lowStockItems = productItems.filter((item) => toNumber(item.stock) < toNumber(item.lowStockThreshold || 5)).length;
 
     const now = new Date();
@@ -165,7 +176,17 @@ router.get("/", verifyToken, isAdmin, async (req, res) => {
       overdueBills,
       // Product stats
       totalProducts,
-      totalStock,
+      totalStock: totalAvailableStock,
+      availableStock: totalAvailableStock,
+      sellableStock: totalAvailableStock,
+      reservedStock: totalReservedStock,
+      committedStock: totalReservedStock,
+      soldStock: totalSoldStock,
+      physicalStock: totalPhysicalStock,
+      netFreeStock,
+      inventoryRiskBuffer,
+      stockConversionRate,
+      pipelinePressureRate,
       lowStockItems,
       serviceAlerts,
       // additional fields for charts

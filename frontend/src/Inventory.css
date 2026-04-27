@@ -47,18 +47,18 @@
 /* Inventory Stats Cards - Horizontal Layout */
 .inventory-stats {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 16px;
-  margin: 0 auto;
+  grid-template-columns: repeat(5, minmax(120px, 1fr));
+  gap: 12px;
+  margin: 0 0 20px;
 }
 
 .inventory-stats .stat-card {
   background: var(--theme-surface-solid);
-  padding: 16px 24px;
-  border-radius: 16px;
+  padding: 14px 16px;
+  border-radius: 8px;
   border: 1px solid var(--theme-border);
   box-shadow: var(--theme-shadow-sm);
-  text-align: center;
+  text-align: left;
   min-width: 140px;
 }
 
@@ -68,7 +68,7 @@
   font-weight: 600;
   color: var(--theme-text-muted);
   text-transform: uppercase;
-  letter-spacing: 0.5px;
+  letter-spacing: 0;
   margin-bottom: 6px;
 }
 
@@ -272,6 +272,10 @@
 
 /* Responsive */
 @media (max-width: 1200px) {
+  .inventory-stats {
+    grid-template-columns: repeat(3, minmax(120px, 1fr));
+  }
+
   .inventory-table-container {
     overflow-x: auto;
   }
@@ -289,7 +293,7 @@
   }
   
   .inventory-stats {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     width: 100%;
   }
   

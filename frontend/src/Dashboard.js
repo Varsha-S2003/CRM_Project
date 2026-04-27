@@ -139,7 +139,18 @@ function Dashboard() {
       const productItems = items.filter((item) => String(item.type || "product").toLowerCase() !== "service");
       const serviceItems = items.filter((item) => String(item.type || "").toLowerCase() === "service");
 
-      const totalStock = productItems.reduce((sum, item) => sum + toNumber(item.stock), 0);
+      const totalAvailableStock = productItems.reduce((sum, item) => sum + toNumber(item.stock), 0);
+      const totalReservedStock = productItems.reduce((sum, item) => sum + toNumber(item.reservedStock), 0);
+      const totalSoldStock = productItems.reduce((sum, item) => sum + toNumber(item.soldStock), 0);
+      const totalPhysicalStock = totalAvailableStock + totalReservedStock + totalSoldStock;
+      const inventoryRiskBuffer = productItems.reduce((sum, item) => sum + toNumber(item.lowStockThreshold || 0), 0);
+      const netFreeStock = Math.max(0, totalAvailableStock - inventoryRiskBuffer);
+      const stockConversionRate = totalReservedStock > 0
+        ? Math.round((totalSoldStock / totalReservedStock) * 100)
+        : 0;
+      const pipelinePressureRate = totalPhysicalStock > 0
+        ? Math.round((totalReservedStock / totalPhysicalStock) * 100)
+        : 0;
       const lowStockItems = productItems.filter(
         (item) => toNumber(item.stock) < toNumber(item.lowStockThreshold || 5)
       ).length;
@@ -262,7 +273,17 @@ function Dashboard() {
 
       setStats({
         totalProducts: items.length,
-        totalStock,
+        totalStock: totalAvailableStock,
+        availableStock: totalAvailableStock,
+        sellableStock: totalAvailableStock,
+        reservedStock: totalReservedStock,
+        committedStock: totalReservedStock,
+        soldStock: totalSoldStock,
+        physicalStock: totalPhysicalStock,
+        netFreeStock,
+        inventoryRiskBuffer,
+        stockConversionRate,
+        pipelinePressureRate,
         lowStockItems,
         serviceAlerts,
         totalRevenue,
@@ -716,8 +737,38 @@ function Dashboard() {
             </div>
 
             <div className="stat-card">
-              <h4>Total Stock</h4>
-              <h2>{stats?.totalStock || "0"}</h2>
+              <h4>Available Stock</h4>
+              <h2>{stats?.sellableStock ?? stats?.availableStock ?? stats?.totalStock ?? "0"}</h2>
+            </div>
+
+            <div className="stat-card">
+              <h4>Committed Stock</h4>
+              <h2>{stats?.committedStock ?? stats?.reservedStock ?? "0"}</h2>
+            </div>
+
+            <div className="stat-card">
+              <h4>Sold Stock</h4>
+              <h2>{stats?.soldStock || "0"}</h2>
+            </div>
+
+            <div className="stat-card">
+              <h4>Physical Stock</h4>
+              <h2>{stats?.physicalStock ?? ((stats?.availableStock || 0) + (stats?.reservedStock || 0) + (stats?.soldStock || 0))}</h2>
+            </div>
+
+            <div className="stat-card">
+              <h4>Net Free Stock</h4>
+              <h2>{stats?.netFreeStock ?? "0"}</h2>
+            </div>
+
+            <div className="stat-card">
+              <h4>Stock Conversion</h4>
+              <h2>{stats?.stockConversionRate ?? 0}%</h2>
+            </div>
+
+            <div className="stat-card">
+              <h4>Pipeline Pressure</h4>
+              <h2>{stats?.pipelinePressureRate ?? 0}%</h2>
             </div>
 
             <div className="stat-card">

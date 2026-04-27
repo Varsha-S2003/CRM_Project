@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import "./Inventory.css";
@@ -49,6 +49,23 @@ const formatInventoryInfo = (item) => {
   return "-";
 };
 
+const getProductQuantity = (item, field) => {
+  if ((item.type || "product") !== "product") return "-";
+  const numeric = Number(item?.[field] ?? 0);
+  return Number.isFinite(numeric) ? numeric : 0;
+};
+
+const getPhysicalStock = (item) => {
+  if ((item.type || "product") !== "product") return "-";
+  const available = Number(item.stock ?? item.quantity ?? 0);
+  const reserved = Number(item.reservedStock ?? 0);
+  const sold = Number(item.soldStock ?? 0);
+  return [available, reserved, sold].reduce(
+    (sum, value) => sum + (Number.isFinite(value) ? value : 0),
+    0
+  );
+};
+
 const formatCurrency = (value) => {
   if (value === undefined || value === null || value === "") return "-";
 
@@ -73,11 +90,33 @@ function Inventory() {
   const isAdmin = role === "ADMIN";
   const isManager = role === "MANAGER";
   const canEdit = isAdmin || isManager;
-  const visibleCategories = typeFilter === "product"
-    ? PRODUCT_CATEGORIES
-    : typeFilter === "service"
-      ? SERVICE_CATEGORIES
-      : [...PRODUCT_CATEGORIES, ...SERVICE_CATEGORIES];
+  const visibleCategories = useMemo(() => {
+    if (typeFilter === "product") return PRODUCT_CATEGORIES;
+    if (typeFilter === "service") return SERVICE_CATEGORIES;
+    return [...PRODUCT_CATEGORIES, ...SERVICE_CATEGORIES];
+  }, [typeFilter]);
+  const inventorySummary = items.reduce(
+    (summary, item) => {
+      if ((item.type || "product") !== "product") return summary;
+
+      const available = Number(item.stock ?? item.quantity ?? 0);
+      const reserved = Number(item.reservedStock ?? 0);
+      const sold = Number(item.soldStock ?? 0);
+      const riskBuffer = Number(item.lowStockThreshold ?? 0);
+
+      summary.available += Number.isFinite(available) ? available : 0;
+      summary.reserved += Number.isFinite(reserved) ? reserved : 0;
+      summary.sold += Number.isFinite(sold) ? sold : 0;
+      summary.riskBuffer += Number.isFinite(riskBuffer) ? riskBuffer : 0;
+      return summary;
+    },
+    { available: 0, reserved: 0, sold: 0, riskBuffer: 0 }
+  );
+  inventorySummary.physical = inventorySummary.available + inventorySummary.reserved + inventorySummary.sold;
+  inventorySummary.netFree = Math.max(0, inventorySummary.available - inventorySummary.riskBuffer);
+  inventorySummary.conversionRate = inventorySummary.reserved > 0
+    ? Math.round((inventorySummary.sold / inventorySummary.reserved) * 100)
+    : 0;
 
   const fetchItems = useCallback(async () => {
     try {
@@ -268,6 +307,29 @@ function Inventory() {
               <option value="service">Service</option>
             </select>
           </div>
+
+          <div className="inventory-stats">
+            <div className="stat-card">
+              <span className="stat-label">Sellable</span>
+              <span className="stat-value">{inventorySummary.available}</span>
+            </div>
+            <div className="stat-card">
+              <span className="stat-label">Committed</span>
+              <span className="stat-value">{inventorySummary.reserved}</span>
+            </div>
+            <div className="stat-card">
+              <span className="stat-label">Physical</span>
+              <span className="stat-value">{inventorySummary.physical}</span>
+            </div>
+            <div className="stat-card">
+              <span className="stat-label">Net Free</span>
+              <span className="stat-value">{inventorySummary.netFree}</span>
+            </div>
+            <div className="stat-card">
+              <span className="stat-label">Stock Conversion</span>
+              <span className="stat-value">{inventorySummary.conversionRate}%</span>
+            </div>
+          </div>
         </div>
 
         <div className="inventory-scroll-content">
@@ -280,7 +342,10 @@ function Inventory() {
                   <th>Type</th>
                   <th>SKU</th>
                   <th>Category</th>
-                  <th>Quantity</th>
+                  <th>Available</th>
+                  <th>Reserved</th>
+                  <th>Sold</th>
+                  <th>Physical Total</th>
                   <th>Price</th>
                   <th>GST %</th>
                   <th>HSN/SAC</th>
@@ -291,7 +356,7 @@ function Inventory() {
               <tbody>
                 {items.length === 0 ? (
                   <tr>
-                    <td colSpan={canEdit ? 11 : 10} className="no-data">
+                    <td colSpan={canEdit ? 14 : 13} className="no-data">
                       No items found. {canEdit ? "Add your first item here." : ""}
                     </td>
                   </tr>
@@ -307,6 +372,9 @@ function Inventory() {
                         <td><span className="sku-badge">{item.sku || "-"}</span></td>
                         <td>{item.category || "-"}</td>
                         <td className="quantity-in">{formatInventoryInfo(item)}</td>
+                        <td>{getProductQuantity(item, "reservedStock")}</td>
+                        <td>{getProductQuantity(item, "soldStock")}</td>
+                        <td>{getPhysicalStock(item)}</td>
                         <td className="quantity-in">
                           {(item.type || "product") === "service"
                             ? formatCurrency(item.cost)
