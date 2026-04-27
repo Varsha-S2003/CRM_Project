@@ -466,6 +466,12 @@
   color: var(--theme-danger);
 }
 
+.documents-message.warning {
+  background: var(--theme-warning-soft);
+  border-color: rgba(217, 119, 6, 0.24);
+  color: var(--theme-warning);
+}
+
 .documents-modal {
   position: fixed;
   inset: 0;

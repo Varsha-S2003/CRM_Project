@@ -53,6 +53,8 @@ const formatPercent = (value) => {
   return `${numeric.toFixed(2)}%`;
 };
 
+const PRODUCT_GST_PERCENT_VALUES = [5, 12, 18, 28];
+
 const emitDealRefresh = () => {
   window.dispatchEvent(new Event("deal-updated"));
 };
@@ -402,6 +404,9 @@ function DocumentsModule() {
   }, 0);
   const grandTotal = displayLineItems.reduce((sum, item) => sum + Number(item.totalAmount || 0), 0);
   const primaryLineItem = displayLineItems[0] || null;
+  const taxWarnings = Array.isArray(workspace?.warnings)
+    ? workspace.warnings.filter((warning) => String(warning || "").trim())
+    : [];
   const resolvedProductName =
     (typeof deal?.product === "object" ? deal?.product?.name : "") ||
     searchParams.get("product") ||
@@ -416,13 +421,17 @@ function DocumentsModule() {
     deal?.product?.price ??
     0
   ) || 0;
+  const rawProductGst = Number(deal?.product?.gst_percent);
+  const strictProductGst = PRODUCT_GST_PERCENT_VALUES.includes(rawProductGst) ? rawProductGst : 18;
   const fetchedGstPercentRaw =
-    deal?.product?.gst_percent ??
-    deal?.gstPercent ??
-    primaryLineItem?.gstPercent ??
     taxSummary?.gstPercent ??
-    (String(deal?.product?.type || "").trim().toLowerCase() === "service" ? 18 : 0);
-  const resolvedGstPercent = Number(fetchedGstPercentRaw || 0);
+    (isServicePricing
+      ? (deal?.product?.gst_percent ?? deal?.gstPercent ?? primaryLineItem?.gstPercent ?? 18)
+      : strictProductGst);
+  const parsedGstPercent = Number(fetchedGstPercentRaw);
+  const resolvedGstPercent = Number.isFinite(parsedGstPercent) && parsedGstPercent >= 0
+    ? parsedGstPercent
+    : 18;
   const billingCycleKey = String(
     proposalCalc.billingCycle || deal?.billingCycle || deal?.product?.billingCycle || "monthly"
   )
@@ -446,7 +455,7 @@ function DocumentsModule() {
   const fallbackTaxableAmount = Number(primaryLineItem?.taxableAmount || taxSummary?.taxableAmount || 0);
   const resolvedTaxableAmount = isServicePricing
     ? (amountFromServiceFormula > 0 ? amountFromServiceFormula : fallbackTaxableAmount)
-    : (amountFromProduct > 0 ? amountFromProduct : (baseAmountFromDeal > 0 ? baseAmountFromDeal : fallbackTaxableAmount));
+    : (baseAmountFromDeal > 0 ? baseAmountFromDeal : (amountFromProduct > 0 ? amountFromProduct : fallbackTaxableAmount));
   const resolvedGstAmount = Number(((resolvedTaxableAmount * resolvedGstPercent) / 100).toFixed(2));
   const resolvedGrandTotal = Number((resolvedTaxableAmount + resolvedGstAmount).toFixed(2));
   const calculatedDealValue = resolvedGrandTotal;
@@ -522,6 +531,11 @@ function DocumentsModule() {
 
               {error ? <div className="documents-message error">{error}</div> : null}
               {message ? <div className={`documents-message ${/failed|required/i.test(message) ? "error" : "success"}`}>{message}</div> : null}
+              {taxWarnings.map((warning, index) => (
+                <div className="documents-message warning" key={`proposal-warning-${index}`}>
+                  {warning}
+                </div>
+              ))}
 
               {loading ? (
                 <div className="documents-empty">Loading proposal form...</div>
@@ -684,6 +698,11 @@ function DocumentsModule() {
 
         {error ? <div className="documents-message error">{error}</div> : null}
         {message ? <div className={`documents-message ${/failed|required/i.test(message) ? "error" : "success"}`}>{message}</div> : null}
+        {taxWarnings.map((warning, index) => (
+          <div className="documents-message warning" key={`workspace-warning-${index}`}>
+            {warning}
+          </div>
+        ))}
 
         {(dealId ? loading : historyLoading) ? (
           <div className="documents-card">{dealId ? "Loading document workspace..." : "Loading client history..."}</div>

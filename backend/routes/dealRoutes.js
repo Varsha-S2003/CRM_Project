@@ -266,7 +266,7 @@ const resolveDealItem = async (itemId) => {
   }
 
   const item = await Item.findById(itemId).select(
-    "_id name type status stock quantity serviceType billingCycle price cost gst_percent hsn_sac"
+    "_id name type status stock reservedStock soldStock quantity serviceType billingCycle price cost gst_percent hsn_sac"
   );
   return item;
 };
@@ -280,6 +280,7 @@ const getSellerTaxProfile = async () => {
 };
 
 const normalizeState = (value) => String(value || "").trim();
+const PRODUCT_GST_PERCENT_VALUES = [5, 12, 18, 28];
 
 const computeTaxSummary = ({ item, quantity, customerState = "", sellerState = "", sellerGstin = "", customerGstin = "" }) => {
   if (!item) return null;
@@ -290,9 +291,24 @@ const computeTaxSummary = ({ item, quantity, customerState = "", sellerState = "
     qty = 1;
   }
   const taxableAmount = Number((unitPrice * qty).toFixed(2));
-  const gstPercent = Number(
-    item.gst_percent ?? (String(item.type || "").toLowerCase() === "service" ? 18 : 0)
-  );
+  const itemType = String(item.type || "").trim().toLowerCase();
+  const rawGstPercent = Number(item.gst_percent);
+  const warnings = [];
+  let gstPercent = 18;
+
+  if (itemType === "product") {
+    if (PRODUCT_GST_PERCENT_VALUES.includes(rawGstPercent)) {
+      gstPercent = rawGstPercent;
+    } else {
+      warnings.push(
+        `Product GST is missing or invalid in item master for ${item.name || "selected item"}. Using default 18% until item GST is corrected to 5, 12, 18, or 28.`
+      );
+    }
+  } else {
+    gstPercent = Number.isFinite(rawGstPercent)
+      ? Math.max(0, Math.min(100, rawGstPercent))
+      : 18;
+  }
   const gstAmount = Number(((taxableAmount * gstPercent) / 100).toFixed(2));
   const sameState =
     normalizeState(customerState).toLowerCase() &&
@@ -325,6 +341,7 @@ const computeTaxSummary = ({ item, quantity, customerState = "", sellerState = "
     customerState: normalizeState(customerState),
     customerGstin: String(customerGstin || "").trim(),
     placeOfSupply: normalizeState(customerState || sellerState),
+    warnings,
   };
 };
 
@@ -787,6 +804,83 @@ const validateWonDealAgainstItem = ({ item, quantity, billingCycle }) => {
   return null;
 };
 
+const reserveProductStockForDeal = async ({ itemId, quantity }) => {
+  const qty = Number(quantity || 0);
+  if (!mongoose.Types.ObjectId.isValid(String(itemId || ""))) {
+    throw new Error("Selected product not found");
+  }
+  if (!Number.isFinite(qty) || qty <= 0) {
+    throw new Error("Quantity is required for selected products");
+  }
+
+  const updated = await Item.findOneAndUpdate(
+    { _id: itemId, stock: { $gte: qty } },
+    { $inc: { stock: -qty, reservedStock: qty } },
+    { new: true }
+  ).select("_id stock reservedStock soldStock");
+
+  if (!updated) {
+    throw new Error("Insufficient stock");
+  }
+
+  return updated;
+};
+
+const releaseReservedProductStockForDeal = async ({ itemId, quantity }) => {
+  const qty = Number(quantity || 0);
+  if (!mongoose.Types.ObjectId.isValid(String(itemId || ""))) {
+    throw new Error("Selected product not found");
+  }
+  if (!Number.isFinite(qty) || qty <= 0) {
+    return null;
+  }
+
+  const updated = await Item.findOneAndUpdate(
+    { _id: itemId, reservedStock: { $gte: qty } },
+    { $inc: { stock: qty, reservedStock: -qty } },
+    { new: true }
+  ).select("_id stock reservedStock soldStock");
+
+  if (!updated) {
+    throw new Error("Reserved stock is insufficient to release");
+  }
+
+  return updated;
+};
+
+const rollbackReservedProductStockForDeal = async ({ itemId, quantity }) => {
+  const qty = Number(quantity || 0);
+  if (!mongoose.Types.ObjectId.isValid(String(itemId || ""))) return;
+  if (!Number.isFinite(qty) || qty <= 0) return;
+
+  await Item.findOneAndUpdate(
+    { _id: itemId, reservedStock: { $gte: qty } },
+    { $inc: { stock: qty, reservedStock: -qty } }
+  );
+};
+
+const rollbackPaidProductSaleToStock = async ({ itemId, quantity }) => {
+  const qty = Number(quantity || 0);
+  if (!mongoose.Types.ObjectId.isValid(String(itemId || ""))) {
+    throw new Error("Selected product not found");
+  }
+  if (!Number.isFinite(qty) || qty <= 0) {
+    return null;
+  }
+
+  const updated = await Item.findOneAndUpdate(
+    { _id: itemId, soldStock: { $gte: qty } },
+    { $inc: { stock: qty, soldStock: -qty } },
+    { new: true }
+  ).select("_id stock reservedStock soldStock");
+
+  if (!updated) {
+    throw new Error("Sold stock is insufficient to rollback");
+  }
+
+  return updated;
+};
+
 const getInactiveServiceLossReason = () => "Service is inactive";
 const getOutOfStockLossReason = () => "Out of stock";
 const getLowStockLossReason = () => "Low stock";
@@ -1185,7 +1279,7 @@ router.get("/proposal-history", verifyToken, async (req, res) => {
 
 router.post("/", verifyToken, async (req, res) => {
   let createdDeal = null;
-  let createdDealStockRollback = null;
+  let reservedOnCreate = null;
   try {
     const {
       sourceLeadId,
@@ -1314,6 +1408,7 @@ router.post("/", verifyToken, async (req, res) => {
       billingCycle: resolvedItem?.type === "service" ? normalizeBillingCycle(billingCycle) : "",
       stage: effectiveStage,
       status: derived.status,
+      paymentStatus: normalizeDealStage(effectiveStage) === "won" ? "pending" : "not_required",
       reason: derived.reason,
       assignedTo: effectiveAssignedTo,
       customerState: String(address?.state || "").trim(),
@@ -1345,10 +1440,6 @@ router.post("/", verifyToken, async (req, res) => {
       if (wonValidationError) {
         return res.status(400).json({ message: wonValidationError });
       }
-      const lifecycle = computeServiceLifecycle(normalizedDealPayload.billingCycle || resolvedItem.billingCycle || "monthly");
-      normalizedDealPayload.startDate = lifecycle.startDate;
-      normalizedDealPayload.expiryDate = lifecycle.expiryDate;
-      normalizedDealPayload.nextBillingDate = lifecycle.nextBillingDate;
     }
 
     deal = await Deal.create(normalizedDealPayload);
@@ -1379,19 +1470,18 @@ router.post("/", verifyToken, async (req, res) => {
         billingCycle: normalizedDealPayload.billingCycle,
       });
       if (wonValidationError) {
-        await Deal.findByIdAndDelete(deal._id);
         return res.status(400).json({ message: wonValidationError });
       }
 
-      try {
-        const quantityValue = Number(normalizedDealPayload.quantity) || 0;
-        await Item.findByIdAndUpdate(resolvedItem._id, {
-          $inc: { stock: -quantityValue },
+      if ((Number(normalizedDealPayload.quantity) || 0) > 0) {
+        await reserveProductStockForDeal({
+          itemId: resolvedItem._id,
+          quantity: normalizedDealPayload.quantity,
         });
-        createdDealStockRollback = { itemId: resolvedItem._id, quantity: quantityValue };
-      } catch (stockErr) {
-        await Deal.findByIdAndDelete(deal._id);
-        throw stockErr;
+        reservedOnCreate = {
+          itemId: resolvedItem._id,
+          quantity: Number(normalizedDealPayload.quantity) || 0,
+        };
       }
     }
 
@@ -1421,13 +1511,15 @@ router.post("/", verifyToken, async (req, res) => {
 
     res.status(201).json(responseDeal);
   } catch (err) {
-    if (createdDealStockRollback?.itemId && createdDealStockRollback.quantity > 0) {
+    const knownInventoryError = String(err?.message || "");
+    if (/insufficient stock|quantity is required|selected product not found|reserved stock is insufficient/i.test(knownInventoryError)) {
+      return res.status(400).json({ message: knownInventoryError });
+    }
+    if (reservedOnCreate?.itemId && reservedOnCreate.quantity > 0) {
       try {
-        await Item.findByIdAndUpdate(createdDealStockRollback.itemId, {
-          $inc: { stock: createdDealStockRollback.quantity },
-        });
+        await rollbackReservedProductStockForDeal(reservedOnCreate);
       } catch (rollbackErr) {
-        console.error("Failed to rollback inventory after deal create error:", rollbackErr);
+        console.error("Failed to rollback reserved stock after deal create error:", rollbackErr);
       }
     }
     if (createdDeal?._id) {
@@ -1514,7 +1606,7 @@ router.post("/bulk", verifyToken, async (req, res) => {
 });
 
 const updateDealHandler = async (req, res) => {
-  let stockRollback = null;
+  let reservedOnUpdate = null;
   try {
     const { authorizeDealAccess } = require("../middleware/dealAuth");
     
@@ -1702,7 +1794,6 @@ const updateDealHandler = async (req, res) => {
     updates.status = derived.status;
     updates.reason = derived.reason;
 
-    let lifecycleUpdates = {};
     const itemIdForWonValidation = Object.prototype.hasOwnProperty.call(req.body, "product")
       ? req.body.product
       : req.deal.product;
@@ -1720,58 +1811,50 @@ const updateDealHandler = async (req, res) => {
         return res.status(400).json({ message: wonValidationError });
       }
 
-      lifecycleUpdates = await applyWonDealEffects({
-        deal: {
-          ...req.deal.toObject(),
-          ...updates,
-          quantity: Object.prototype.hasOwnProperty.call(updates, "quantity") ? updates.quantity : req.deal.quantity,
-          billingCycle: Object.prototype.hasOwnProperty.call(updates, "billingCycle")
-            ? updates.billingCycle
-            : req.deal.billingCycle,
-        },
-        item,
-      });
-
-      if (item.type !== "service") {
-        stockRollback = {
-          itemId: item._id,
-          quantity: Number(
-            Object.prototype.hasOwnProperty.call(updates, "quantity") ? updates.quantity : req.deal.quantity
-          ) || 0,
-        };
+      if (normalizeDealStage(req.deal.stage) !== "won" && item?.type !== "service") {
+        const qtyToReserve = Number(
+          Object.prototype.hasOwnProperty.call(updates, "quantity") ? updates.quantity : req.deal.quantity
+        ) || 0;
+        if (qtyToReserve > 0) {
+          await reserveProductStockForDeal({
+            itemId: item._id,
+            quantity: qtyToReserve,
+          });
+          reservedOnUpdate = {
+            itemId: item._id,
+            quantity: qtyToReserve,
+          };
+        }
       }
 
-      Object.assign(updates, lifecycleUpdates);
+      updates.paymentStatus = "pending";
+    } else if (Object.prototype.hasOwnProperty.call(req.body, "stage") && normalizeDealStage(nextStage) !== "won") {
+      updates.paymentStatus = "not_required";
     }
 
     let updatedDeal;
-    try {
-      updatedDeal = await Deal.findByIdAndUpdate(req.params.id, updates, {
-        new: true,
-        runValidators: true,
+    updatedDeal = await Deal.findByIdAndUpdate(req.params.id, updates, {
+      new: true,
+      runValidators: true,
+    })
+      .populate({
+        path: "assignedTo",
+        select: "name username role employee_id reportsTo",
+        populate: {
+          path: "reportsTo",
+          select: "name username role employee_id",
+        },
       })
-        .populate({
-          path: "assignedTo",
-          select: "name username role employee_id reportsTo",
-          populate: {
-            path: "reportsTo",
-            select: "name username role employee_id",
-          },
-        })
-        .populate("product", "name sku category price type status stock serviceType billingCycle");
-    } catch (error) {
-      if (stockRollback?.itemId && stockRollback.quantity > 0) {
-        await Item.findByIdAndUpdate(stockRollback.itemId, { $inc: { stock: stockRollback.quantity } });
-      }
-      throw error;
-    }
+      .populate("product", "name sku category price type status stock serviceType billingCycle");
 
     if (!updatedDeal) {
-      if (stockRollback?.itemId && stockRollback.quantity > 0) {
-        await Item.findByIdAndUpdate(stockRollback.itemId, { $inc: { stock: stockRollback.quantity } });
+      if (reservedOnUpdate?.itemId && reservedOnUpdate.quantity > 0) {
+        await rollbackReservedProductStockForDeal(reservedOnUpdate);
       }
       return res.status(404).json({ message: "Deal not found" });
     }
+
+    reservedOnUpdate = null;
 
     // **STAGE CHANGE LOGIC**
     if (stageChanged) {
@@ -1843,12 +1926,16 @@ const updateDealHandler = async (req, res) => {
     res.json(responseDeal);
   } catch (err) {
     console.error('Deal update error:', err);
-    if (stockRollback?.itemId && stockRollback.quantity > 0) {
+    const knownInventoryError = String(err?.message || "");
+    if (reservedOnUpdate?.itemId && reservedOnUpdate.quantity > 0) {
       try {
-        await Item.findByIdAndUpdate(stockRollback.itemId, { $inc: { stock: stockRollback.quantity } });
+        await rollbackReservedProductStockForDeal(reservedOnUpdate);
       } catch (rollbackErr) {
-        console.error("Failed to rollback inventory after deal update error:", rollbackErr);
+        console.error("Failed to rollback reserved stock after deal update error:", rollbackErr);
       }
+    }
+    if (/insufficient stock|quantity is required|selected product not found|reserved stock is insufficient/i.test(knownInventoryError)) {
+      return res.status(400).json({ message: knownInventoryError });
     }
     res.status(500).json({ message: err.message });
   }
@@ -1982,6 +2069,16 @@ router.get("/stock-response", async (req, res) => {
     }
 
     const previousStage = deal.stage;
+    const normalizedPreviousStage = normalizeDealStage(previousStage);
+    if (normalizedPreviousStage === "won" && String(deal.paymentStatus || "").trim().toLowerCase() === "pending") {
+      const item = await resolveDealItem(deal.product);
+      if (item && item.type !== "service") {
+        await releaseReservedProductStockForDeal({
+          itemId: item._id,
+          quantity: Number(deal.quantity) || 0,
+        });
+      }
+    }
     if (String(deal.stage || "").toLowerCase() !== "lost") {
       await Deal.findByIdAndUpdate(
         deal._id,
@@ -1989,6 +2086,7 @@ router.get("/stock-response", async (req, res) => {
           $set: {
             stage: "lost",
             status: "Inactive",
+            paymentStatus: "not_required",
             reason: "Customer declined to wait for inventory restock",
           },
           $push: {
@@ -2039,7 +2137,7 @@ router.get("/stock-response", async (req, res) => {
 });
 
 router.delete("/:id", verifyToken, permitDealAccess(), async (req, res) => {
-  let restockRollback = null;
+  let inventoryRollback = null;
   try {
     const { authorizeDealAccess } = require("../middleware/dealAuth");
     
@@ -2048,23 +2146,38 @@ router.delete("/:id", verifyToken, permitDealAccess(), async (req, res) => {
       return res.status(403).json({ message: "Forbidden - insufficient permissions for this deal" });
     }
 
-    if (normalizeDealStage(req.deal.stage) === "won") {
+    if (
+      normalizeDealStage(req.deal.stage) === "won" &&
+      ["pending", "paid", ""].includes(String(req.deal.paymentStatus || "").trim().toLowerCase())
+    ) {
       const item = await resolveDealItem(req.deal.product);
       if (item && item.type !== "service") {
         const quantity = Number(req.deal.quantity || 0);
         if (quantity > 0) {
-          await Item.findByIdAndUpdate(item._id, {
-            $inc: { stock: quantity },
-          });
-          restockRollback = { itemId: item._id, quantity };
+          const paymentStatus = String(req.deal.paymentStatus || "").trim().toLowerCase();
+          if (paymentStatus === "pending") {
+            await releaseReservedProductStockForDeal({ itemId: item._id, quantity });
+            inventoryRollback = { mode: "release", itemId: item._id, quantity };
+          } else {
+            await rollbackPaidProductSaleToStock({ itemId: item._id, quantity });
+            inventoryRollback = { mode: "paid", itemId: item._id, quantity };
+          }
         }
       }
     }
 
     const deal = await Deal.findByIdAndDelete(req.params.id);
     if (!deal) {
-      if (restockRollback?.itemId && restockRollback.quantity > 0) {
-        await Item.findByIdAndUpdate(restockRollback.itemId, { $inc: { stock: -restockRollback.quantity } });
+      if (inventoryRollback?.itemId && inventoryRollback.quantity > 0) {
+        if (inventoryRollback.mode === "release") {
+          await Item.findByIdAndUpdate(inventoryRollback.itemId, {
+            $inc: { stock: -inventoryRollback.quantity, reservedStock: inventoryRollback.quantity },
+          });
+        } else {
+          await Item.findByIdAndUpdate(inventoryRollback.itemId, {
+            $inc: { stock: -inventoryRollback.quantity, soldStock: inventoryRollback.quantity },
+          });
+        }
       }
       return res.status(404).json({ message: "Deal not found" });
     }
@@ -2072,9 +2185,17 @@ router.delete("/:id", verifyToken, permitDealAccess(), async (req, res) => {
     await syncCustomerStatusFromLatestDeal(deal.customerId);
     res.json({ message: "Deal deleted successfully" });
   } catch (err) {
-    if (restockRollback?.itemId && restockRollback.quantity > 0) {
+    if (inventoryRollback?.itemId && inventoryRollback.quantity > 0) {
       try {
-        await Item.findByIdAndUpdate(restockRollback.itemId, { $inc: { stock: -restockRollback.quantity } });
+        if (inventoryRollback.mode === "release") {
+          await Item.findByIdAndUpdate(inventoryRollback.itemId, {
+            $inc: { stock: -inventoryRollback.quantity, reservedStock: inventoryRollback.quantity },
+          });
+        } else {
+          await Item.findByIdAndUpdate(inventoryRollback.itemId, {
+            $inc: { stock: -inventoryRollback.quantity, soldStock: inventoryRollback.quantity },
+          });
+        }
       } catch (rollbackErr) {
         console.error("Failed to rollback inventory after deal delete error:", rollbackErr);
       }
@@ -2163,6 +2284,7 @@ router.get("/:id/proposal-workspace", verifyToken, permitDealAccess(), async (re
       notifications,
       taxSummary,
       lineItems,
+      warnings: Array.isArray(taxSummary?.warnings) ? taxSummary.warnings : [],
       invoice: {
         sellerState: taxSummary?.sellerState || sellerTaxProfile.sellerState,
         sellerGstin: taxSummary?.sellerGstin || sellerTaxProfile.sellerGstin,
@@ -2478,6 +2600,7 @@ router.post("/:id/won-approval-request", verifyToken, permitDealAccess(), async 
 });
 
 router.post("/:id/won-approval", verifyToken, permitDealAccess(), async (req, res) => {
+  let reservedOnWonApproval = null;
   try {
     const role = String(req.user?.role || "").toUpperCase();
     if (role !== "MANAGER") {
@@ -2509,8 +2632,27 @@ router.post("/:id/won-approval", verifyToken, permitDealAccess(), async (req, re
     }
 
     if (action === "approve" && normalized !== "won") {
+      const item = await resolveDealItem(deal.product);
+      const wonValidationError = validateWonDealAgainstItem({
+        item,
+        quantity: deal.quantity,
+        billingCycle: deal.billingCycle,
+      });
+      if (wonValidationError) {
+        return res.status(400).json({ message: wonValidationError });
+      }
+
+      if (item?.type !== "service") {
+        const qtyToReserve = Number(deal.quantity || 0);
+        if (qtyToReserve > 0) {
+          await reserveProductStockForDeal({ itemId: item._id, quantity: qtyToReserve });
+          reservedOnWonApproval = { itemId: item._id, quantity: qtyToReserve };
+        }
+      }
+
       deal.stage = "won";
       deal.status = "Active";
+      deal.paymentStatus = "pending";
       deal.reason = "";
       deal.timeline = Array.isArray(deal.timeline) ? deal.timeline : [];
       deal.timeline.unshift({
@@ -2524,6 +2666,7 @@ router.post("/:id/won-approval", verifyToken, permitDealAccess(), async (req, re
 
     if (action === "approve") {
       await deal.save();
+      reservedOnWonApproval = null;
     }
 
     if (deal.assignedTo?._id) {
@@ -2554,6 +2697,17 @@ router.post("/:id/won-approval", verifyToken, permitDealAccess(), async (req, re
       stage: deal.stage,
     });
   } catch (err) {
+    const knownInventoryError = String(err?.message || "");
+    if (reservedOnWonApproval?.itemId && reservedOnWonApproval.quantity > 0) {
+      try {
+        await rollbackReservedProductStockForDeal(reservedOnWonApproval);
+      } catch (rollbackErr) {
+        console.error("Failed to rollback reserved stock after won approval error:", rollbackErr);
+      }
+    }
+    if (/insufficient stock|quantity is required|selected product not found|reserved stock is insufficient/i.test(knownInventoryError)) {
+      return res.status(400).json({ message: knownInventoryError });
+    }
     res.status(500).json({ message: err.message });
   }
 });

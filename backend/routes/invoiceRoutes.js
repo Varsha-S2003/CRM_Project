@@ -15,6 +15,132 @@ const router = express.Router();
 
 const roundMoney = (value) => Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
 
+const normalizeDealStage = (stage) => {
+  const value = String(stage || "").trim().toLowerCase().replace(/\s+/g, "_");
+  const map = {
+    closed_won: "won",
+    closed_lost: "lost",
+    proposal: "proposal_price_quote",
+    negotiation: "negotiate",
+  };
+
+  return map[value] || value;
+};
+
+const normalizeBillingCycle = (value) => String(value || "").trim().toLowerCase();
+
+const addMonths = (date, months) => {
+  const next = new Date(date);
+  next.setMonth(next.getMonth() + months);
+  return next;
+};
+
+const computeServiceLifecycle = (billingCycle, startDate = new Date()) => {
+  const normalizedBillingCycle = normalizeBillingCycle(billingCycle);
+  const durations = {
+    monthly: 1,
+    quarterly: 3,
+    "6_months": 6,
+    yearly: 12,
+  };
+  const durationMonths = durations[normalizedBillingCycle] || 1;
+  const expiryDate = addMonths(startDate, durationMonths);
+  return {
+    startDate,
+    expiryDate,
+    nextBillingDate: expiryDate,
+  };
+};
+
+const parseOptionalNumber = (value) => {
+  if (value === undefined || value === null || value === "") {
+    return null;
+  }
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : NaN;
+};
+
+const validateWonDealAgainstItem = ({ item, quantity, billingCycle }) => {
+  if (!item) {
+    return "Selected product not found";
+  }
+
+  const itemType = item.type === "service" ? "service" : "product";
+  if (itemType === "product") {
+    const requestedQuantity = parseOptionalNumber(quantity);
+    const reservedQuantity = Number(item.reservedStock ?? 0);
+    if (requestedQuantity === null || requestedQuantity <= 0) {
+      return "Quantity is required for selected products";
+    }
+    if (requestedQuantity > reservedQuantity) {
+      return "Reserved stock is insufficient";
+    }
+    return null;
+  }
+
+  if (String(item.status || "").trim() === "Inactive") {
+    return "Service is inactive";
+  }
+
+  if (!normalizeBillingCycle(billingCycle)) {
+    return "Plan / Billing Cycle is required for selected services";
+  }
+
+  return null;
+};
+
+const confirmReservedStockToSold = async ({ itemId, quantity }) => {
+  const qty = Number(quantity || 0);
+  if (!mongoose.Types.ObjectId.isValid(String(itemId || ""))) {
+    throw new Error("Selected product not found");
+  }
+  if (!Number.isFinite(qty) || qty <= 0) {
+    throw new Error("Quantity is required for selected products");
+  }
+
+  const updated = await Item.findOneAndUpdate(
+    { _id: itemId, reservedStock: { $gte: qty } },
+    { $inc: { reservedStock: -qty, soldStock: qty } },
+    { new: true }
+  ).select("_id stock reservedStock soldStock");
+
+  if (!updated) {
+    throw new Error("Reserved stock is insufficient");
+  }
+
+  return updated;
+};
+
+const rollbackReservedStockConfirm = async ({ itemId, quantity }) => {
+  const qty = Number(quantity || 0);
+  if (!mongoose.Types.ObjectId.isValid(String(itemId || ""))) return;
+  if (!Number.isFinite(qty) || qty <= 0) return;
+
+  await Item.findOneAndUpdate(
+    { _id: itemId, soldStock: { $gte: qty } },
+    { $inc: { reservedStock: qty, soldStock: -qty } }
+  );
+};
+
+const applyWonDealEffects = async ({ deal, item }) => {
+  const itemType = item.type === "service" ? "service" : "product";
+
+  if (itemType === "product") {
+    await confirmReservedStockToSold({
+      itemId: item._id,
+      quantity: Number(deal.quantity ?? 0),
+    });
+    return {
+      startDate: null,
+      expiryDate: null,
+      nextBillingDate: null,
+    };
+  }
+
+  const lifecycle = computeServiceLifecycle(deal.billingCycle || item.billingCycle || "monthly");
+  return lifecycle;
+};
+
 const nextDueDate = () => {
   const date = new Date();
   date.setDate(date.getDate() + 15);
@@ -190,6 +316,8 @@ router.get("/pay/:token", async (req, res) => {
 });
 
 router.post("/pay/:token/complete", async (req, res) => {
+  let stockRollback = null;
+  let createdPaymentId = null;
   try {
     const token = String(req.params.token || "").trim();
     if (!token) {
@@ -222,14 +350,75 @@ router.post("/pay/:token/complete", async (req, res) => {
       return res.status(404).json({ message: "Invoice not found for this payment link." });
     }
 
+    const deal = await Deal.findById(invoice.dealId).populate("product", "name type status stock reservedStock soldStock quantity billingCycle");
+    if (!deal) {
+      return res.status(404).json({ message: "Deal not found for this invoice." });
+    }
+
+    if (normalizeDealStage(deal.stage) !== "won") {
+      return res.status(400).json({ message: "Deal must be in Won stage before payment can be completed." });
+    }
+
+    const item = deal?.product?._id ? await Item.findById(deal.product._id) : null;
+
     const existingInvoicePayment = await Payment.findOne({
       paymentSource: "CLIENT_INVOICE",
       invoiceId: invoice._id,
     });
 
-    if (existingInvoicePayment) {
+    const normalizedPaymentStatus = String(deal.paymentStatus || "").trim().toLowerCase();
+    if (existingInvoicePayment && normalizedPaymentStatus === "paid") {
       invoice.status = "Paid";
       await invoice.save();
+
+      tokenDoc.status = "paid";
+      tokenDoc.paidAt = tokenDoc.paidAt || new Date();
+      tokenDoc.paymentId = existingInvoicePayment._id;
+      await tokenDoc.save();
+
+      return res.json({
+        message: "Payment already exists for this invoice.",
+        status: "paid",
+        transactionId: existingInvoicePayment.transactionId || tokenDoc.transactionId,
+        payment: existingInvoicePayment,
+        invoiceStatus: invoice.status,
+      });
+    }
+
+    const wonValidationError = validateWonDealAgainstItem({
+      item,
+      quantity: deal.quantity,
+      billingCycle: deal.billingCycle,
+    });
+    if (wonValidationError) {
+      return res.status(400).json({ message: wonValidationError });
+    }
+
+    if (existingInvoicePayment) {
+      if (String(deal.paymentStatus || "") !== "paid") {
+        if (item) {
+          const lifecycleUpdates = await applyWonDealEffects({
+            deal: deal.toObject(),
+            item,
+          });
+          if (item.type !== "service") {
+            stockRollback = {
+              itemId: item._id,
+              quantity: Number(deal.quantity) || 0,
+            };
+          }
+          deal.startDate = lifecycleUpdates.startDate ?? null;
+          deal.expiryDate = lifecycleUpdates.expiryDate ?? null;
+          deal.nextBillingDate = lifecycleUpdates.nextBillingDate ?? null;
+        }
+        deal.paymentStatus = "paid";
+        await deal.save();
+      }
+
+      invoice.status = "Paid";
+      await invoice.save();
+
+      stockRollback = null;
 
       tokenDoc.status = "paid";
       tokenDoc.paidAt = tokenDoc.paidAt || new Date();
@@ -260,6 +449,7 @@ router.post("/pay/:token/complete", async (req, res) => {
           paymentDate: new Date(),
           transactionId: tokenDoc.transactionId,
         });
+        createdPaymentId = payment._id;
       } catch (createErr) {
         if (createErr?.code === 11000) {
           payment = await Payment.findOne({
@@ -272,8 +462,29 @@ router.post("/pay/:token/complete", async (req, res) => {
       }
     }
 
+    if (item) {
+      const lifecycleUpdates = await applyWonDealEffects({
+        deal: deal.toObject(),
+        item,
+      });
+      if (item.type !== "service") {
+        stockRollback = {
+          itemId: item._id,
+          quantity: Number(deal.quantity) || 0,
+        };
+      }
+      deal.startDate = lifecycleUpdates.startDate ?? null;
+      deal.expiryDate = lifecycleUpdates.expiryDate ?? null;
+      deal.nextBillingDate = lifecycleUpdates.nextBillingDate ?? null;
+    }
+
+    deal.paymentStatus = "paid";
+    await deal.save();
+
     invoice.status = "Paid";
     await invoice.save();
+
+    stockRollback = null;
 
     tokenDoc.status = "paid";
     tokenDoc.paidAt = new Date();
@@ -288,6 +499,26 @@ router.post("/pay/:token/complete", async (req, res) => {
       invoiceStatus: invoice.status,
     });
   } catch (err) {
+    if (stockRollback?.itemId && stockRollback.quantity > 0) {
+      try {
+        await rollbackReservedStockConfirm(stockRollback);
+      } catch (rollbackErr) {
+        console.error("Failed to rollback stock after payment completion error:", rollbackErr);
+      }
+    }
+
+    if (createdPaymentId) {
+      try {
+        await Payment.findByIdAndDelete(createdPaymentId);
+      } catch (paymentRollbackErr) {
+        console.error("Failed to rollback payment after payment completion error:", paymentRollbackErr);
+      }
+    }
+
+    if (/insufficient stock|quantity is required|selected product not found|reserved stock is insufficient/i.test(String(err?.message || ""))) {
+      return res.status(400).json({ message: err.message });
+    }
+
     return res.status(500).json({ message: err.message || "Failed to complete payment" });
   }
 });

@@ -94,6 +94,16 @@ const itemSchema = new mongoose.Schema(
       default: 0,
       min: 0
     },
+    reservedStock: {
+      type: Number,
+      default: 0,
+      min: 0
+    },
+    soldStock: {
+      type: Number,
+      default: 0,
+      min: 0
+    },
     lowStockThreshold: {
       type: Number,
       default: 5,
@@ -284,6 +294,8 @@ itemSchema.pre("validate", function validateByType() {
   }
 
     this.stock = 0;
+    this.reservedStock = 0;
+    this.soldStock = 0;
     this.lowStockThreshold = 0;
     this.price = null;
     if (this.gst_percent === undefined || this.gst_percent === null || Number.isNaN(Number(this.gst_percent))) {

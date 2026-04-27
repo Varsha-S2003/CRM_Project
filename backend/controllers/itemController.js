@@ -349,8 +349,18 @@ const createItem = async (req, res) => {
         const [primaryProduct, ...duplicateProducts] = matchingProducts;
         const mergedStock =
           matchingProducts.reduce((sum, product) => sum + (product.stock || 0), 0) + (payload.stock || 0);
+        const mergedReservedStock = matchingProducts.reduce(
+          (sum, product) => sum + Number(product.reservedStock || 0),
+          0
+        );
+        const mergedSoldStock = matchingProducts.reduce(
+          (sum, product) => sum + Number(product.soldStock || 0),
+          0
+        );
 
         primaryProduct.stock = mergedStock;
+        primaryProduct.reservedStock = mergedReservedStock;
+        primaryProduct.soldStock = mergedSoldStock;
         applyCommonItemFields(primaryProduct, payload);
 
         await primaryProduct.save();

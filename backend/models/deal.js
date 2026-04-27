@@ -180,6 +180,12 @@ const dealSchema = new mongoose.Schema(
       default: "Active",
       index: true,
     },
+    paymentStatus: {
+      type: String,
+      enum: ["not_required", "pending", "paid"],
+      default: "not_required",
+      index: true,
+    },
     reason: {
       type: String,
       trim: true,
