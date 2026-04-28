@@ -46,6 +46,9 @@ const isProposalEmployeeResponse = (item) => {
 };
 
 const isDealInNegotiateStage = (item) => String(item?.dealId?.stage || "").toLowerCase() === "negotiate";
+const canApproveFromNotification = (item) => {
+  return isManagerReviewRequest(item);
+};
 
 const formatStageLabel = (value = "") =>
   String(value || "")
@@ -552,16 +555,12 @@ export default function NotificationsPage() {
       return;
     }
 
-    if (!isDealInNegotiateStage(notification)) {
-      window.alert("Proposal review is enabled only in Negotiate stage.");
-      return;
-    }
-
     try {
       setActionLoadingId(`${notification._id}:${action}`);
       const notificationId = String(notification?._id || "").trim();
       const comment = String(proposalReviewComments[notificationId] || "").trim();
       const isWonReview = isWonApprovalRequest(notification);
+      const isProposalReview = isProposalApprovalRequest(notification);
       const isReviewRequest = isManagerReviewRequest(notification);
       const normalizeDraft = (draft) => ({
         title: String(draft?.title || "").trim(),
@@ -584,7 +583,12 @@ export default function NotificationsPage() {
         return;
       }
 
-      const endpoint = isWonReview ? `/deals/${dealId}/won-approval` : `/deals/${dealId}/proposal-approval`;
+      const directWonApproval = action === "approve" && isManagerReviewRequest(notification);
+      const endpoint = isWonReview || directWonApproval
+        ? `/deals/${dealId}/won-approval`
+        : isProposalReview
+          ? `/deals/${dealId}/proposal-approval`
+          : `/deals/${dealId}/won-approval`;
       await api.post(endpoint, {
         action,
         comment,
@@ -962,7 +966,7 @@ export default function NotificationsPage() {
                 const activityType = item?.source === "activity";
                 const proposalType = !activityType && isProposalNotification(item);
                 const proposalResponseForEmployee = proposalType && isProposalEmployeeResponse(item);
-                const negotiateStage = isDealInNegotiateStage(item);
+                const canApprove = canApproveFromNotification(item);
                 const details = refillType ? parseRefillDetails(item?.message || "") : null;
                 const priorityMeta = getPriorityMeta(item);
                 const relativeTime = formatRelativeTime(item?.createdAt);
@@ -1043,7 +1047,7 @@ export default function NotificationsPage() {
                           className="notifications-btn compact"
                           onClick={() => openProposalDetailsDialog(item)}
                         >
-                          {isManagerReviewRequest(item) && negotiateStage ? "Approve" : "View"}
+                          {isManagerReviewRequest(item) && canApprove ? "Approve" : "View"}
                         </button>
                       ) : null}
                       {isEmployee && proposalResponseForEmployee ? (
@@ -1312,7 +1316,7 @@ export default function NotificationsPage() {
                         disabled={
                           proposalDialogLoading ||
                           !proposalDialogData ||
-                          !isDealInNegotiateStage(selectedProposalNotification) ||
+                          !canApproveFromNotification(selectedProposalNotification) ||
                           actionLoadingId === `${selectedProposalNotification._id}:approve`
                         }
                       >

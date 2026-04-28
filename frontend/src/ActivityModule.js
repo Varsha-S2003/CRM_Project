@@ -44,8 +44,8 @@ const CALL_REMINDER_OPTIONS = [
 const VIEW_OPTIONS = ["month", "week", "day"];
 const CHART_COLORS = ["#202124", "#efb521", "#46b84d", "#9dc63b"];
 const TASK_BOARD_COLUMNS = ["Not Started", "Deferred", "In Progress", "Completed"];
-const MEETING_BOARD_COLUMNS = ["Overdue", "Today", "Upcoming", "Completed"];
-const CALL_BOARD_COLUMNS = ["Scheduled", "Today", "Completed", "Missed"];
+const MEETING_BOARD_COLUMNS = ["Overdue", "Today", "Scheduled", "Upcoming", "Completed"];
+const CALL_BOARD_COLUMNS = ["Scheduled", "Today", "Completed", "Overdue"];
 const COMPLETE_OUTCOME_OPTIONS = [
   { value: "interested", label: "Interested" },
   { value: "not_interested", label: "Not Interested" },
@@ -358,6 +358,10 @@ const validateActivityForm = (draft) => {
       errors.endTime = "End time must be after start time.";
     }
 
+    if (String(draft.status || "").toLowerCase() === "completed" && meetingEnd && now < meetingEnd) {
+      errors.status = "Meeting can be marked completed only after the estimated end time.";
+    }
+
     if (String(draft.reminderOffset || "").trim() && meetingStart) {
       const reminderDate = buildReminderDateTime(meetingStart, draft.reminderOffset);
       if (!reminderDate) {
@@ -385,6 +389,12 @@ const validateActivityForm = (draft) => {
     }
     if (!Number.isFinite(parsedDuration) || parsedDuration <= 0 || parsedDuration > 1440) {
       errors.callDuration = "Duration must be between 1 and 1440 minutes.";
+    }
+
+    const safeDurationMinutes = Number.isFinite(parsedDuration) && parsedDuration > 0 ? parsedDuration : 30;
+    const callEnd = callStart ? new Date(callStart.getTime() + safeDurationMinutes * 60 * 1000) : null;
+    if (String(draft.status || "").toLowerCase() === "completed" && callEnd && now < callEnd) {
+      errors.status = "Call can be marked completed only after the estimated end time.";
     }
 
     if (draft.reminderTime && callStart) {
@@ -503,6 +513,10 @@ const getMeetingBoardStatus = (meeting) => {
     return "Today";
   }
 
+  if (normalized === "scheduled") {
+    return "Scheduled";
+  }
+
   return "Upcoming";
 };
 
@@ -541,20 +555,20 @@ const getCallBoardStatus = (call) => {
   const providerStatus = String(call.call?.providerStatus || "").toLowerCase();
 
   if (["missed", "failed", "busy", "no-answer", "no answer", "canceled", "cancelled"].includes(callStatus)) {
-    return "Missed";
+    return "Overdue";
   }
   if (["failed", "busy", "no-answer", "no answer", "canceled", "cancelled"].includes(providerStatus)) {
-    return "Missed";
+    return "Overdue";
   }
 
   if (normalized === "completed") return "Completed";
-  if (normalized === "missed" || normalized === "cancelled") return "Missed";
+  if (normalized === "missed" || normalized === "cancelled") return "Overdue";
   if (callStatus === "completed") return "Completed";
 
   const sourceDateValue = call.startDateTime || call.createdAt;
   const sourceDate = new Date(sourceDateValue);
   if (hasCrossedMissedWindow(sourceDateValue)) {
-    return "Missed";
+    return "Overdue";
   }
 
   if (!Number.isNaN(sourceDate.getTime()) && sourceDate.toDateString() === new Date().toDateString()) {
@@ -562,6 +576,46 @@ const getCallBoardStatus = (call) => {
   }
 
   return "Scheduled";
+};
+
+const getEstimatedEndDateTime = (activity) => {
+  const start = parseDateValue(activity?.startDateTime || activity?.dueDate);
+  if (!start) return null;
+
+  const explicitEnd = parseDateValue(activity?.endDateTime);
+  if (explicitEnd) return explicitEnd;
+
+  const activityType = String(activity?.activityType || "").toLowerCase();
+  if (activityType === "meeting") {
+    return new Date(start.getTime() + (45 * 60 * 1000));
+  }
+
+  if (activityType === "call") {
+    const durationMinutes = Number(activity?.call?.callDuration);
+    const safeDurationMinutes = Number.isFinite(durationMinutes) && durationMinutes > 0 ? durationMinutes : 30;
+    return new Date(start.getTime() + (safeDurationMinutes * 60 * 1000));
+  }
+
+  return null;
+};
+
+const getCompletionLockMeta = (activity, now = new Date()) => {
+  const activityType = String(activity?.activityType || "").toLowerCase();
+  const status = String(activity?.status || "").toLowerCase();
+
+  if (!["meeting", "call"].includes(activityType) || status !== "scheduled") {
+    return { isLocked: false, estimatedEnd: null };
+  }
+
+  const estimatedEnd = getEstimatedEndDateTime(activity);
+  if (!estimatedEnd) {
+    return { isLocked: false, estimatedEnd: null };
+  }
+
+  return {
+    isLocked: now.getTime() < estimatedEnd.getTime(),
+    estimatedEnd,
+  };
 };
 
 const getMonthGrid = (baseDate) => {
@@ -1076,7 +1130,12 @@ function ActivityModule() {
       return [meetingQuickFilter];
     }
 
-    return MEETING_BOARD_COLUMNS.filter((column) => (meetingBoardColumns[column] || []).length > 0 || column === "Today");
+    return MEETING_BOARD_COLUMNS.filter(
+      (column) =>
+        (meetingBoardColumns[column] || []).length > 0 ||
+        column === "Today" ||
+        column === "Scheduled"
+    );
   }, [meetingBoardColumns, meetingQuickFilter]);
   const callBoardColumns = useMemo(() => {
     const columns = CALL_BOARD_COLUMNS.reduce((acc, label) => ({ ...acc, [label]: [] }), {});
@@ -1251,6 +1310,13 @@ function ActivityModule() {
   };
 
   const openCompleteModal = (activity) => {
+    const completionLock = getCompletionLockMeta(activity);
+    if (completionLock.isLocked) {
+      const activityLabel = String(activity?.activityType || "activity");
+      setToast(`This ${activityLabel} can be completed after ${formatDateTime(completionLock.estimatedEnd)}.`);
+      return;
+    }
+
     const relatedType = String(activity?.relatedTo?.recordType || "").toLowerCase();
     const relatedDealId = String(activity?.relatedTo?.recordId?._id || activity?.relatedTo?.recordId || "").trim();
     const relatedLead =
@@ -1938,7 +2004,7 @@ function ActivityModule() {
         return;
       }
 
-      if (column === "Today" || column === "Upcoming") {
+      if (column === "Today" || column === "Upcoming" || column === "Scheduled") {
         const now = new Date();
         const nextDate = new Date(now);
         if (column === "Today") {
@@ -1956,7 +2022,13 @@ function ActivityModule() {
           },
           { headers: apiHeaders }
         );
-        setToast(column === "Today" ? "Meeting moved to today." : "Meeting moved to upcoming.");
+        setToast(
+          column === "Today"
+            ? "Meeting moved to today."
+            : column === "Scheduled"
+              ? "Meeting moved to scheduled."
+              : "Meeting moved to upcoming."
+        );
         await refreshAll();
       }
     } catch (error) {
@@ -1988,7 +2060,7 @@ function ActivityModule() {
         <button className="task-page__view-pill active">All Tasks</button>
       </div>
 
-      <div className="task-page__toolbar">
+      <div className="task-page__toolbar meeting-toolbar-sticky">
         <div className="task-page__toolbar-right">
           <select value={filter} onChange={(event) => setFilter(event.target.value)} className="task-page__select">
             <option value="all">Tasks by Status</option>
@@ -2101,6 +2173,12 @@ function ActivityModule() {
           Today
         </button>
         <button
+          className={`task-page__view-pill ${meetingQuickFilter === "Scheduled" ? "active" : ""}`}
+          onClick={() => setMeetingQuickFilter("Scheduled")}
+        >
+          Scheduled
+        </button>
+        <button
           className={`task-page__view-pill ${meetingQuickFilter === "Overdue" ? "active" : ""}`}
           onClick={() => setMeetingQuickFilter("Overdue")}
         >
@@ -2163,6 +2241,8 @@ function ActivityModule() {
                   ) : (
                     (meetingBoardColumns[column] || []).map((meeting) => {
                       const relatedClass = getActivityRelatedClass(meeting);
+                      const completionLock = getCompletionLockMeta(meeting, new Date(meetingNowTick));
+                      const completeDisabled = completionLock.isLocked;
                       const timing = meeting?._timing || getMeetingTimingMeta(meeting, new Date(meetingNowTick));
                       const startDate = new Date(meeting.startDateTime || meeting.createdAt || 0);
                       const validStart = !Number.isNaN(startDate.getTime());
@@ -2211,7 +2291,13 @@ function ActivityModule() {
 
                           <div className="meeting-inline-actions">
                             {meeting.status !== "Completed" ? (
-                              <button onClick={() => openCompleteModal(meeting)}>Complete</button>
+                              <button
+                                onClick={() => openCompleteModal(meeting)}
+                                disabled={completeDisabled}
+                                title={completeDisabled ? `Available after ${formatDateTime(completionLock.estimatedEnd)}` : ""}
+                              >
+                                Complete
+                              </button>
                             ) : null}
                             {meeting.status !== "Completed" ? (
                               <button onClick={() => handleMeetingSnooze(meeting, 15)}>Snooze</button>
@@ -2233,7 +2319,7 @@ function ActivityModule() {
   );
 
   const renderCallBoard = () => (
-    <div className="task-page call-page">
+    <div className="task-page meeting-page call-page">
       <div className="task-page__header">
         <div>
           <h1>Calls</h1>
@@ -2275,10 +2361,10 @@ function ActivityModule() {
 
       <div className="task-board-layout">
         <div className="task-board-scroll">
-          <section className="task-board">
+          <section className="task-board meeting-smart-board call-smart-board">
             {CALL_BOARD_COLUMNS.map((column) => (
-              <div key={column} className="task-column">
-                <div className="task-column__header call-column__header">
+              <div key={column} className="task-column meeting-smart-column call-smart-column">
+                <div className="task-column__header meeting-column__header">
                   <div className="task-column__title">
                     <span>{column}</span>
                     <strong>{callBoardColumns[column]?.length || 0}</strong>
@@ -2286,39 +2372,61 @@ function ActivityModule() {
                 </div>
                 <div className="task-column__body">
                   {(callBoardColumns[column] || []).length === 0 ? (
-                    <div className="task-column__empty">No Calls found.</div>
+                    <div className="task-column__empty meeting-empty-state">
+                      <p>No calls found.</p>
+                      <button type="button" onClick={openCreateModal}>+ Add Call</button>
+                    </div>
                   ) : (
                     (callBoardColumns[column] || []).map((call) => {
                       const relatedClass = getActivityRelatedClass(call);
+                      const completionLock = getCompletionLockMeta(call);
+                      const completeDisabled = completionLock.isLocked;
                       return (
-                        <article key={call._id} className={`task-card call-card ${relatedClass}`}>
-                          <button className="task-card__edit" onClick={() => openEditModal(call)} aria-label="Edit call">
-                            +
-                          </button>
-                          <h3>{call.title}</h3>
-                          <p>{formatDateTime(call.startDateTime || call.dueDate)}</p>
-                          <p>{call.call?.callType || "Outbound"}</p>
-                          {call.call?.provider === "teams" && call.call?.teamsMode ? <p>Teams: {String(call.call.teamsMode).toUpperCase()}</p> : null}
-                          {call.call?.providerStatus ? <p>Status: {String(call.call.providerStatus).toUpperCase()}</p> : null}
-                          <p>{call.owner?.name || call.owner?.username || "-"}</p>
-                          <p>
-                            <span className={`record-type-pill ${relatedClass}`}>
-                              {call.relatedTo?.recordType || "Lead"}
-                            </span>{" "}
-                            <span className={`activity-related-label ${relatedClass}`}>
-                              {call.relatedTo?.recordName || "-"}
-                            </span>
-                          </p>
-                          <div className="task-card__actions">
-                            {call.status !== "Completed" ? (
-                              <button onClick={() => handleSendTeamsLink(call)}>Send Teams Link</button>
+                        <article key={call._id} className={`task-card meeting-card-compact call-card ${relatedClass}`}>
+                          <div className="meeting-card-compact__main">
+                            <h3>{call.title}</h3>
+                            <p className="meeting-time-inline">{formatDateTime(call.startDateTime || call.dueDate)}</p>
+                            <p className="meeting-row-meta">
+                              <span className="meeting-meta-label">Type:</span>
+                              {call.call?.callType || "Outbound"}
+                            </p>
+                            <p className="meeting-row-meta">
+                              <span className="meeting-meta-label">Owner:</span>
+                              {call.owner?.name || call.owner?.username || "-"}
+                            </p>
+                            <p className="meeting-row-meta">
+                              <span className={`record-type-pill ${relatedClass}`}>
+                                {call.relatedTo?.recordType || "Lead"}
+                              </span>
+                              <span className={`activity-related-label ${relatedClass}`}>
+                                {call.relatedTo?.recordName || "-"}
+                              </span>
+                            </p>
+                            {call.call?.provider === "teams" && call.call?.teamsMode ? (
+                              <p className="meeting-row-meta">
+                                <span className="meeting-meta-label">Teams:</span>
+                                {String(call.call.teamsMode).toUpperCase()}
+                              </p>
                             ) : null}
+                            {call.call?.providerStatus ? (
+                              <p className="meeting-live-badge">Status: {String(call.call.providerStatus).toUpperCase()}</p>
+                            ) : null}
+                          </div>
+
+                          <div className="meeting-inline-actions">
                             {call.status !== "Completed" ? (
-                              <button onClick={() => openCompleteModal(call)}>Complete</button>
+                              <button
+                                onClick={() => openCompleteModal(call)}
+                                disabled={completeDisabled}
+                                title={completeDisabled ? `Available after ${formatDateTime(completionLock.estimatedEnd)}` : ""}
+                              >
+                                Complete
+                              </button>
                             ) : null}
                             {call.status !== "Completed" ? (
                               <button onClick={() => handleReschedule(call)}>Reschedule</button>
                             ) : null}
+                            <button onClick={() => openEditModal(call)}>Edit</button>
                             <button onClick={() => handleDelete(call._id)}>Delete</button>
                           </div>
                         </article>
@@ -2512,6 +2620,8 @@ function ActivityModule() {
                     <tbody>
                       {activities.map((activity) => {
                         const relatedClass = getActivityRelatedClass(activity);
+                        const completionLock = getCompletionLockMeta(activity);
+                        const completeDisabled = completionLock.isLocked;
                         return (
                           <tr key={activity._id}>
                             <td><span className={`activity-pill ${activity.activityType} ${relatedClass}`}>{activity.activityType}</span></td>
@@ -2524,7 +2634,13 @@ function ActivityModule() {
                             <td>
                               <div className="activity-table-actions">
                                 {activity.status !== "Completed" ? (
-                                  <button onClick={() => openCompleteModal(activity)}>Complete</button>
+                                  <button
+                                    onClick={() => openCompleteModal(activity)}
+                                    disabled={completeDisabled}
+                                    title={completeDisabled ? `Available after ${formatDateTime(completionLock.estimatedEnd)}` : ""}
+                                  >
+                                    Complete
+                                  </button>
                                 ) : null}
                                 {activity.status !== "Completed" ? (
                                   <button onClick={() => handleReschedule(activity)}>Reschedule</button>
@@ -2925,6 +3041,7 @@ function ActivityModule() {
                         <option value="Completed">Completed</option>
                         <option value="Cancelled">Cancelled</option>
                       </select>
+                      {formErrors.status ? <span className="activity-form-error">{formErrors.status}</span> : null}
                     </label>
                   </div>
                 ) : null}
@@ -2978,6 +3095,7 @@ function ActivityModule() {
                         <option value="Scheduled">Scheduled</option>
                         <option value="Completed">Completed</option>
                       </select>
+                      {formErrors.status ? <span className="activity-form-error">{formErrors.status}</span> : null}
                     </label>
                     <label>
                       Reminder

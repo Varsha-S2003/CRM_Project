@@ -1631,15 +1631,24 @@
   background: #f3f4f1;
 }
 
+.call-page {
+  background: #f3f4f1;
+}
+
 .meeting-page .task-page__header,
 .meeting-page .task-page__viewbar,
-.meeting-page .task-page__toolbar {
+.meeting-page .task-page__toolbar,
+.call-page .task-page__header,
+.call-page .task-page__viewbar,
+.call-page .task-page__toolbar {
   background: #ffffff;
   border-color: #d6d9d3;
 }
 
 .meeting-page .task-page__search input,
-.meeting-page .task-page__select {
+.meeting-page .task-page__select,
+.call-page .task-page__search input,
+.call-page .task-page__select {
   background: #ffffff;
   border-color: #d1d5db;
   color: #374151;
@@ -1651,13 +1660,30 @@
   color: #374151;
 }
 
+.call-page .task-page__view-pill {
+  background: #ffffff;
+  border-color: #d1d5db;
+  color: #374151;
+}
+
 .meeting-page .task-page__view-pill.active {
   background: #e8dcc0;
   border-color: #d6c7a4;
   color: #4b3a19;
 }
 
+.call-page .task-page__view-pill.active {
+  background: #e8dcc0;
+  border-color: #d6c7a4;
+  color: #4b3a19;
+}
+
 .meeting-page .meeting-toolbar-sticky {
+  background: #f3f4f1;
+  border-color: #d6d9d3;
+}
+
+.call-page .meeting-toolbar-sticky {
   background: #f3f4f1;
   border-color: #d6d9d3;
 }
@@ -1669,7 +1695,18 @@
   gap: 14px;
 }
 
+.call-page .call-smart-board {
+  width: 100%;
+  grid-auto-flow: row;
+  grid-template-columns: repeat(auto-fit, minmax(330px, 1fr));
+  gap: 14px;
+}
+
 .meeting-page .meeting-smart-column {
+  min-width: 0;
+}
+
+.call-page .call-smart-column {
   min-width: 0;
 }
 
@@ -1680,6 +1717,16 @@
 }
 
 .meeting-page .meeting-smart-column .task-column__body {
+  background: #f7f7f4;
+  border: 1px solid #dcded8;
+  min-height: 620px;
+  max-height: 620px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 14px;
+}
+
+.call-page .call-smart-column .task-column__body {
   background: #f7f7f4;
   border: 1px solid #dcded8;
   min-height: 620px;

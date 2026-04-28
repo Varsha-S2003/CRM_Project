@@ -775,7 +775,7 @@ const parseNotificationIds = (input = []) => {
     .filter((id) => mongoose.Types.ObjectId.isValid(id));
 };
 
-const validateWonDealAgainstItem = ({ item, quantity, billingCycle }) => {
+const validateWonDealAgainstItem = ({ item, quantity, billingCycle, reservedQuantity = 0 }) => {
   if (!item) {
     return "Selected product not found";
   }
@@ -783,11 +783,16 @@ const validateWonDealAgainstItem = ({ item, quantity, billingCycle }) => {
   const itemType = item.type === "service" ? "service" : "product";
   if (itemType === "product") {
     const requestedQuantity = parseOptionalNumber(quantity);
+    const reservedForDeal = Number(reservedQuantity || 0);
+    const reservedQuantityGlobal = Number(item.reservedStock ?? 0);
     const availableQuantity = Number(item.stock ?? item.quantity ?? 0);
     if (requestedQuantity === null || requestedQuantity <= 0) {
       return "Quantity is required for selected products";
     }
-    if (requestedQuantity > availableQuantity) {
+    if (reservedForDeal >= requestedQuantity) {
+      return null;
+    }
+    if (requestedQuantity > reservedQuantityGlobal && requestedQuantity > availableQuantity) {
       return "Insufficient stock";
     }
     return null;
@@ -846,6 +851,39 @@ const releaseReservedProductStockForDeal = async ({ itemId, quantity }) => {
   }
 
   return updated;
+};
+
+const confirmReservedStockToSoldForDeal = async ({ itemId, quantity }) => {
+  const qty = Number(quantity || 0);
+  if (!mongoose.Types.ObjectId.isValid(String(itemId || ""))) {
+    throw new Error("Selected product not found");
+  }
+  if (!Number.isFinite(qty) || qty <= 0) {
+    throw new Error("Quantity is required for selected products");
+  }
+
+  const updated = await Item.findOneAndUpdate(
+    { _id: itemId, reservedStock: { $gte: qty } },
+    { $inc: { reservedStock: -qty, soldStock: qty } },
+    { new: true }
+  ).select("_id stock reservedStock soldStock");
+
+  if (!updated) {
+    throw new Error("Reserved stock is insufficient");
+  }
+
+  return updated;
+};
+
+const rollbackReservedStockConfirmForDeal = async ({ itemId, quantity }) => {
+  const qty = Number(quantity || 0);
+  if (!mongoose.Types.ObjectId.isValid(String(itemId || ""))) return;
+  if (!Number.isFinite(qty) || qty <= 0) return;
+
+  await Item.findOneAndUpdate(
+    { _id: itemId, soldStock: { $gte: qty } },
+    { $inc: { reservedStock: qty, soldStock: -qty } }
+  );
 };
 
 const rollbackReservedProductStockForDeal = async ({ itemId, quantity }) => {
@@ -1405,6 +1443,7 @@ router.post("/", verifyToken, async (req, res) => {
       description,
       product: resolvedItem?._id || null,
       quantity: resolvedItem?.type === "product" ? parseOptionalNumber(quantity) : null,
+      reservedQuantity: 0,
       billingCycle: resolvedItem?.type === "service" ? normalizeBillingCycle(billingCycle) : "",
       stage: effectiveStage,
       status: derived.status,
@@ -1463,25 +1502,20 @@ router.post("/", verifyToken, async (req, res) => {
       });
     }
 
-    if (!forceLostOnCreate && derived.status === "Active" && normalizeDealStage(finalStage) === "won" && itemType === "product") {
-      const wonValidationError = validateWonDealAgainstItem({
-        item: resolvedItem,
-        quantity: normalizedDealPayload.quantity,
-        billingCycle: normalizedDealPayload.billingCycle,
-      });
-      if (wonValidationError) {
-        return res.status(400).json({ message: wonValidationError });
-      }
-
-      if ((Number(normalizedDealPayload.quantity) || 0) > 0) {
+    const normalizedFinalStage = normalizeDealStage(finalStage);
+    if (!forceLostOnCreate && derived.status === "Active" && itemType === "product" && normalizedFinalStage === "need_analysis") {
+      const reserveQty = Number(normalizedDealPayload.quantity || 0);
+      if (reserveQty > 0) {
         await reserveProductStockForDeal({
           itemId: resolvedItem._id,
-          quantity: normalizedDealPayload.quantity,
+          quantity: reserveQty,
         });
         reservedOnCreate = {
           itemId: resolvedItem._id,
-          quantity: Number(normalizedDealPayload.quantity) || 0,
+          quantity: reserveQty,
         };
+        deal.reservedQuantity = reserveQty;
+        await deal.save();
       }
     }
 
@@ -1607,6 +1641,8 @@ router.post("/bulk", verifyToken, async (req, res) => {
 
 const updateDealHandler = async (req, res) => {
   let reservedOnUpdate = null;
+  let releasedOnUpdate = null;
+  let confirmedOnUpdate = null;
   try {
     const { authorizeDealAccess } = require("../middleware/dealAuth");
     
@@ -1750,6 +1786,31 @@ const updateDealHandler = async (req, res) => {
         }
         updates.quantity = nextQuantity;
         updates.waitingForRestock = false;
+
+        const previousReserved = Number(req.deal.reservedQuantity || 0);
+        const targetReserved = Number(nextQuantity || 0);
+        if (targetReserved > previousReserved) {
+          const reserveDelta = targetReserved - previousReserved;
+          await reserveProductStockForDeal({
+            itemId: itemForValidation._id,
+            quantity: reserveDelta,
+          });
+          reservedOnUpdate = {
+            itemId: itemForValidation._id,
+            quantity: reserveDelta,
+          };
+        } else if (targetReserved < previousReserved) {
+          const releaseDelta = previousReserved - targetReserved;
+          await releaseReservedProductStockForDeal({
+            itemId: itemForValidation._id,
+            quantity: releaseDelta,
+          });
+          releasedOnUpdate = {
+            itemId: itemForValidation._id,
+            quantity: releaseDelta,
+          };
+        }
+        updates.reservedQuantity = targetReserved;
       } else if (itemType === "service") {
         const nextBillingCycle = Object.prototype.hasOwnProperty.call(updates, "billingCycle")
           ? normalizeBillingCycle(updates.billingCycle)
@@ -1766,6 +1827,40 @@ const updateDealHandler = async (req, res) => {
       } else {
         return res.status(400).json({ message: "Unable to determine item type for this deal" });
       }
+    }
+
+    const isNeedAnalysisQuantityUpdate =
+      normalizeDealStage(nextStage) === "need_analysis" &&
+      String(itemForValidation?.type || "").toLowerCase() === "product" &&
+      Object.prototype.hasOwnProperty.call(updates, "quantity");
+
+    if (isNeedAnalysisQuantityUpdate) {
+      const targetReserved = Number(updates.quantity || 0);
+      const previousReserved = Number(req.deal.reservedQuantity || 0);
+
+      if (targetReserved > previousReserved) {
+        const reserveDelta = targetReserved - previousReserved;
+        await reserveProductStockForDeal({
+          itemId: itemForValidation._id,
+          quantity: reserveDelta,
+        });
+        reservedOnUpdate = {
+          itemId: itemForValidation._id,
+          quantity: reserveDelta,
+        };
+      } else if (targetReserved < previousReserved) {
+        const releaseDelta = previousReserved - targetReserved;
+        await releaseReservedProductStockForDeal({
+          itemId: itemForValidation._id,
+          quantity: releaseDelta,
+        });
+        releasedOnUpdate = {
+          itemId: itemForValidation._id,
+          quantity: releaseDelta,
+        };
+      }
+
+      updates.reservedQuantity = targetReserved;
     }
 
     const amountForForecast = Object.prototype.hasOwnProperty.call(updates, "amount")
@@ -1798,6 +1893,22 @@ const updateDealHandler = async (req, res) => {
       ? req.body.product
       : req.deal.product;
 
+    const normalizedNextStageForInventory = normalizeDealStage(nextStage);
+    if (normalizedNextStageForInventory === "lost" && itemForValidation?.type !== "service") {
+      const toRelease = Number(req.deal.reservedQuantity || 0);
+      if (toRelease > 0) {
+        await releaseReservedProductStockForDeal({
+          itemId: itemForValidation._id,
+          quantity: toRelease,
+        });
+        releasedOnUpdate = {
+          itemId: itemForValidation._id,
+          quantity: toRelease,
+        };
+      }
+      updates.reservedQuantity = 0;
+    }
+
     if (normalizeDealStage(nextStage) === "won") {
       const item = await resolveDealItem(itemIdForWonValidation);
       const wonValidationError = validateWonDealAgainstItem({
@@ -1806,30 +1917,53 @@ const updateDealHandler = async (req, res) => {
         billingCycle: Object.prototype.hasOwnProperty.call(updates, "billingCycle")
           ? updates.billingCycle
           : req.deal.billingCycle,
+        reservedQuantity: Object.prototype.hasOwnProperty.call(updates, "reservedQuantity")
+          ? updates.reservedQuantity
+          : req.deal.reservedQuantity,
       });
       if (wonValidationError) {
         return res.status(400).json({ message: wonValidationError });
       }
 
-      if (normalizeDealStage(req.deal.stage) !== "won" && item?.type !== "service") {
-        const qtyToReserve = Number(
-          Object.prototype.hasOwnProperty.call(updates, "quantity") ? updates.quantity : req.deal.quantity
-        ) || 0;
-        if (qtyToReserve > 0) {
-          await reserveProductStockForDeal({
-            itemId: item._id,
-            quantity: qtyToReserve,
-          });
-          reservedOnUpdate = {
-            itemId: item._id,
-            quantity: qtyToReserve,
-          };
-        }
-      }
-
       updates.paymentStatus = "pending";
     } else if (Object.prototype.hasOwnProperty.call(req.body, "stage") && normalizeDealStage(nextStage) !== "won") {
       updates.paymentStatus = "not_required";
+    }
+
+    const requestedPaymentStatus = String(req.body?.paymentStatus || "").trim().toLowerCase();
+    if (requestedPaymentStatus) {
+      if (!["not_required", "pending", "paid"].includes(requestedPaymentStatus)) {
+        return res.status(400).json({ message: "Invalid payment status" });
+      }
+
+      if (requestedPaymentStatus === "paid") {
+        if (normalizeDealStage(nextStage) !== "won") {
+          return res.status(400).json({ message: "Payment can be marked paid only for Won deals" });
+        }
+
+        if (itemForValidation?.type !== "service") {
+          const qtyToConfirm = Number(
+            Object.prototype.hasOwnProperty.call(updates, "reservedQuantity")
+              ? updates.reservedQuantity
+              : req.deal.reservedQuantity
+          ) || 0;
+          if (qtyToConfirm <= 0) {
+            return res.status(400).json({ message: "No reserved stock found for this deal" });
+          }
+
+          await confirmReservedStockToSoldForDeal({
+            itemId: itemForValidation._id,
+            quantity: qtyToConfirm,
+          });
+          confirmedOnUpdate = {
+            itemId: itemForValidation._id,
+            quantity: qtyToConfirm,
+          };
+          updates.reservedQuantity = 0;
+        }
+
+        updates.paymentStatus = "paid";
+      }
     }
 
     let updatedDeal;
@@ -1927,6 +2061,20 @@ const updateDealHandler = async (req, res) => {
   } catch (err) {
     console.error('Deal update error:', err);
     const knownInventoryError = String(err?.message || "");
+    if (confirmedOnUpdate?.itemId && confirmedOnUpdate.quantity > 0) {
+      try {
+        await rollbackReservedStockConfirmForDeal(confirmedOnUpdate);
+      } catch (rollbackErr) {
+        console.error("Failed to rollback confirmed stock after deal update error:", rollbackErr);
+      }
+    }
+    if (releasedOnUpdate?.itemId && releasedOnUpdate.quantity > 0) {
+      try {
+        await reserveProductStockForDeal(releasedOnUpdate);
+      } catch (rollbackErr) {
+        console.error("Failed to rollback released stock after deal update error:", rollbackErr);
+      }
+    }
     if (reservedOnUpdate?.itemId && reservedOnUpdate.quantity > 0) {
       try {
         await rollbackReservedProductStockForDeal(reservedOnUpdate);
@@ -2075,7 +2223,7 @@ router.get("/stock-response", async (req, res) => {
       if (item && item.type !== "service") {
         await releaseReservedProductStockForDeal({
           itemId: item._id,
-          quantity: Number(deal.quantity) || 0,
+          quantity: Number(deal.reservedQuantity || deal.quantity) || 0,
         });
       }
     }
@@ -2087,6 +2235,7 @@ router.get("/stock-response", async (req, res) => {
             stage: "lost",
             status: "Inactive",
             paymentStatus: "not_required",
+            reservedQuantity: 0,
             reason: "Customer declined to wait for inventory restock",
           },
           $push: {
@@ -2152,7 +2301,7 @@ router.delete("/:id", verifyToken, permitDealAccess(), async (req, res) => {
     ) {
       const item = await resolveDealItem(req.deal.product);
       if (item && item.type !== "service") {
-        const quantity = Number(req.deal.quantity || 0);
+        const quantity = Number(req.deal.reservedQuantity || req.deal.quantity || 0);
         if (quantity > 0) {
           const paymentStatus = String(req.deal.paymentStatus || "").trim().toLowerCase();
           if (paymentStatus === "pending") {
@@ -2620,8 +2769,8 @@ router.post("/:id/won-approval", verifyToken, permitDealAccess(), async (req, re
 
     const previousStage = String(deal.stage || "");
     const normalized = normalizeDealStage(previousStage);
-    if (normalized !== "negotiate" && normalized !== "won") {
-      return res.status(400).json({ message: "Won review is enabled only for Negotiate stage deals." });
+    if (["lost"].includes(normalized)) {
+      return res.status(400).json({ message: "Won approval is not allowed for Closed Lost deals." });
     }
 
     if (action === "approve") {
@@ -2637,17 +2786,10 @@ router.post("/:id/won-approval", verifyToken, permitDealAccess(), async (req, re
         item,
         quantity: deal.quantity,
         billingCycle: deal.billingCycle,
+        reservedQuantity: deal.reservedQuantity,
       });
       if (wonValidationError) {
         return res.status(400).json({ message: wonValidationError });
-      }
-
-      if (item?.type !== "service") {
-        const qtyToReserve = Number(deal.quantity || 0);
-        if (qtyToReserve > 0) {
-          await reserveProductStockForDeal({ itemId: item._id, quantity: qtyToReserve });
-          reservedOnWonApproval = { itemId: item._id, quantity: qtyToReserve };
-        }
       }
 
       deal.stage = "won";
@@ -2667,6 +2809,9 @@ router.post("/:id/won-approval", verifyToken, permitDealAccess(), async (req, re
     if (action === "approve") {
       await deal.save();
       reservedOnWonApproval = null;
+      await syncDealContact(deal);
+      await syncCustomerFromDeal(deal);
+      await syncCustomerStatusFromLatestDeal(deal.customerId);
     }
 
     if (deal.assignedTo?._id) {
