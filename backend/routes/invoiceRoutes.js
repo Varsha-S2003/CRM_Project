@@ -355,9 +355,8 @@ router.post("/pay/:token/complete", async (req, res) => {
       return res.status(404).json({ message: "Deal not found for this invoice." });
     }
 
-    if (normalizeDealStage(deal.stage) !== "won") {
-      return res.status(400).json({ message: "Deal must be in Won stage before payment can be completed." });
-    }
+    // Allow payment even if deal isn't marked Won yet. We will transition
+    // the deal to Closed Won once payment completes successfully.
 
     const item = deal?.product?._id ? await Item.findById(deal.product._id) : null;
 
@@ -411,6 +410,9 @@ router.post("/pay/:token/complete", async (req, res) => {
           deal.expiryDate = lifecycleUpdates.expiryDate ?? null;
           deal.nextBillingDate = lifecycleUpdates.nextBillingDate ?? null;
         }
+        // Mark the deal as Won because payment has been completed
+        deal.stage = deal.stage || "Closed Won";
+        deal.closingDate = deal.closingDate || new Date();
         deal.paymentStatus = "paid";
         await deal.save();
       }
@@ -478,6 +480,9 @@ router.post("/pay/:token/complete", async (req, res) => {
       deal.nextBillingDate = lifecycleUpdates.nextBillingDate ?? null;
     }
 
+    // Mark the deal as Won because payment has been completed
+    deal.stage = deal.stage || "Closed Won";
+    deal.closingDate = deal.closingDate || new Date();
     deal.paymentStatus = "paid";
     await deal.save();
 
