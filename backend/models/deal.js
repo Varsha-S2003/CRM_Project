@@ -84,6 +84,11 @@ const dealSchema = new mongoose.Schema(
       min: 0,
       default: null,
     },
+    reservedQuantity: {
+      type: Number,
+      min: 0,
+      default: 0,
+    },
     usersOrSeats: {
       type: Number,
       min: 0,

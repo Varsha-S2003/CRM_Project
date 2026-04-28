@@ -128,7 +128,7 @@ const applyWonDealEffects = async ({ deal, item }) => {
   if (itemType === "product") {
     await confirmReservedStockToSold({
       itemId: item._id,
-      quantity: Number(deal.quantity ?? 0),
+      quantity: Number(deal.reservedQuantity ?? deal.quantity ?? 0),
     });
     return {
       startDate: null,
@@ -386,7 +386,7 @@ router.post("/pay/:token/complete", async (req, res) => {
 
     const wonValidationError = validateWonDealAgainstItem({
       item,
-      quantity: deal.quantity,
+      quantity: deal.reservedQuantity || deal.quantity,
       billingCycle: deal.billingCycle,
     });
     if (wonValidationError) {
@@ -403,12 +403,13 @@ router.post("/pay/:token/complete", async (req, res) => {
           if (item.type !== "service") {
             stockRollback = {
               itemId: item._id,
-              quantity: Number(deal.quantity) || 0,
+              quantity: Number(deal.reservedQuantity || deal.quantity) || 0,
             };
           }
           deal.startDate = lifecycleUpdates.startDate ?? null;
           deal.expiryDate = lifecycleUpdates.expiryDate ?? null;
           deal.nextBillingDate = lifecycleUpdates.nextBillingDate ?? null;
+          deal.reservedQuantity = 0;
         }
         // Mark the deal as Won because payment has been completed
         deal.stage = deal.stage || "Closed Won";
@@ -472,12 +473,13 @@ router.post("/pay/:token/complete", async (req, res) => {
       if (item.type !== "service") {
         stockRollback = {
           itemId: item._id,
-          quantity: Number(deal.quantity) || 0,
+          quantity: Number(deal.reservedQuantity || deal.quantity) || 0,
         };
       }
       deal.startDate = lifecycleUpdates.startDate ?? null;
       deal.expiryDate = lifecycleUpdates.expiryDate ?? null;
       deal.nextBillingDate = lifecycleUpdates.nextBillingDate ?? null;
+      deal.reservedQuantity = 0;
     }
 
     // Mark the deal as Won because payment has been completed

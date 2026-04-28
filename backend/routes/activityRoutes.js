@@ -149,6 +149,56 @@ const asObjectId = (value) => {
 
 const getActivityDate = (activity) => activity.startDateTime || activity.dueDate || activity.createdAt;
 
+const getEstimatedEndDateTime = (activity) => {
+  if (!activity) return null;
+
+  const type = String(activity.activityType || "").toLowerCase();
+  if (!["meeting", "call"].includes(type)) return null;
+
+  const explicitEnd = activity.endDateTime ? new Date(activity.endDateTime) : null;
+  if (explicitEnd && !Number.isNaN(explicitEnd.getTime())) {
+    return explicitEnd;
+  }
+
+  const start = activity.startDateTime ? new Date(activity.startDateTime) : null;
+  if (!start || Number.isNaN(start.getTime())) return null;
+
+  if (type === "meeting") {
+    return new Date(start.getTime() + (45 * 60 * 1000));
+  }
+
+  const durationMinutes = Number(activity.call?.callDuration);
+  const safeDurationMinutes = Number.isFinite(durationMinutes) && durationMinutes > 0 ? durationMinutes : 30;
+  return new Date(start.getTime() + (safeDurationMinutes * 60 * 1000));
+};
+
+const isScheduledCallOrMeetingLocked = (activity, now = new Date()) => {
+  if (!activity) return false;
+
+  const type = String(activity.activityType || "").toLowerCase();
+  const status = String(activity.status || "").toLowerCase();
+  if (!["meeting", "call"].includes(type) || status !== "scheduled") return false;
+
+  const estimatedEnd = getEstimatedEndDateTime(activity);
+  if (!estimatedEnd) return false;
+
+  return now.getTime() < estimatedEnd.getTime();
+};
+
+const isEarlyCompletionTransition = (activity, nextStatus, now = new Date()) => {
+  const targetStatus = String(nextStatus || "").toLowerCase();
+  if (targetStatus !== "completed") return false;
+
+  const type = String(activity?.activityType || "").toLowerCase();
+  const currentStatus = String(activity?.status || "").toLowerCase();
+  if (!["meeting", "call"].includes(type) || currentStatus !== "scheduled") return false;
+
+  const estimatedEnd = getEstimatedEndDateTime(activity);
+  if (!estimatedEnd) return false;
+
+  return now.getTime() < estimatedEnd.getTime();
+};
+
 const getLinkedLeadIdFromActivity = (activity) => {
   if (!activity) return null;
 
@@ -1081,6 +1131,16 @@ router.put("/:id", verifyToken, async (req, res) => {
       Object.keys(req.body || {}).every((key) => ["status", "notes", "nextFollowUpDate", "outcome", "outcomeReason", "requiresFollowUp", "stage", "followUpType", "followUpInDays"].includes(key));
 
     if (onlyStatusUpdate) {
+      const intendedStatus = req.body.status !== undefined
+        ? toLegacyStatus(req.body.status, existing.status || "Completed")
+        : existing.status;
+      if (isEarlyCompletionTransition(existing, intendedStatus)) {
+        const estimatedEnd = getEstimatedEndDateTime(existing);
+        return res.status(400).json({
+          message: `This ${existing.activityType} can be completed only after ${estimatedEnd ? estimatedEnd.toISOString() : "the estimated end time"}.`,
+        });
+      }
+
       if (req.body.status !== undefined) {
         existing.status = toLegacyStatus(req.body.status, existing.status || "Completed");
       }
@@ -1130,6 +1190,13 @@ router.put("/:id", verifyToken, async (req, res) => {
     }
 
     const payload = await normalizeActivityPayload({ ...existing.toObject(), ...req.body }, req.user._id);
+    if (isEarlyCompletionTransition({ ...existing.toObject(), ...payload }, payload.status)) {
+      const estimatedEnd = getEstimatedEndDateTime({ ...existing.toObject(), ...payload });
+      return res.status(400).json({
+        message: `This ${existing.activityType} can be completed only after ${estimatedEnd ? estimatedEnd.toISOString() : "the estimated end time"}.`,
+      });
+    }
+
     Object.assign(existing, payload);
     if (existing.status === "Completed") {
       existing.completedAt = existing.completedAt || new Date();
@@ -1171,6 +1238,15 @@ router.post("/:id/complete", verifyToken, async (req, res) => {
     const activity = await Activity.findById(req.params.id);
     if (!activity) {
       return res.status(404).json({ message: "Activity not found" });
+    }
+
+    if (isScheduledCallOrMeetingLocked(activity)) {
+      const estimatedEnd = getEstimatedEndDateTime(activity);
+      const activityLabel = String(activity.activityType || "activity");
+      const safeEstimatedText = estimatedEnd ? estimatedEnd.toISOString() : "the estimated end time";
+      return res.status(400).json({
+        message: `This ${activityLabel} can be completed only after ${safeEstimatedText}.`,
+      });
     }
 
     const outcome = normalizeOutcome(req.body?.outcome);
