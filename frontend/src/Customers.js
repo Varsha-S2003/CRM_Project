@@ -18,6 +18,29 @@ const getProductLabel = (productValue) => {
   return String(productValue.name || productValue.sku || "").trim() || "-";
 };
 
+const addMonths = (date, months) => {
+  const next = new Date(date);
+  next.setMonth(next.getMonth() + months);
+  return next;
+};
+
+const getExpiryFromBillingCycle = (billingCycle, baseDate) => {
+  const cycle = String(billingCycle || "").trim().toLowerCase();
+  const durationMonths = {
+    monthly: 1,
+    quarterly: 3,
+    "6_months": 6,
+    yearly: 12,
+  }[cycle];
+
+  if (!durationMonths || !baseDate) return null;
+
+  const baseTimestamp = new Date(baseDate).getTime();
+  if (!Number.isFinite(baseTimestamp)) return null;
+
+  return addMonths(new Date(baseTimestamp), durationMonths);
+};
+
 const normalizePurchase = (purchase, customer) => ({
   id: purchase?.id || purchase?._id || customer?._id,
   product: getProductLabel(purchase?.product || customer?.product),
@@ -26,6 +49,9 @@ const normalizePurchase = (purchase, customer) => ({
   status: normalizeStatusLabel(purchase?.status || customer?.dealStatus || customer?.status),
   reason: String(purchase?.reason || customer?.dealReason || customer?.reason || "").trim(),
   createdAt: purchase?.createdAt || customer?.dealCreatedAt || customer?.createdAt || customer?.created_at || null,
+  expiryDate: purchase?.expiryDate || purchase?.nextBillingDate || customer?.expiryDate || customer?.nextBillingDate || null,
+  billingCycle: purchase?.billingCycle || customer?.billingCycle || "",
+  productType: purchase?.productType || customer?.productType || "",
 });
 
 const toTimestamp = (value) => {
@@ -43,6 +69,23 @@ const formatDateTime = (value) => {
   const timestamp = toTimestamp(value);
   if (!timestamp) return "-";
   return new Date(timestamp).toLocaleString();
+};
+
+const formatDateOnly = (value) => {
+  const timestamp = toTimestamp(value);
+  if (!timestamp) return "-";
+  return new Date(timestamp).toLocaleDateString();
+};
+
+const getPurchaseExpiryDate = (purchase) => {
+  const explicitExpiry = purchase?.expiryDate || purchase?.nextBillingDate || null;
+  if (explicitExpiry) return explicitExpiry;
+
+  const productType = String(purchase?.productType || "").trim().toLowerCase();
+  const billingCycle = String(purchase?.billingCycle || "").trim().toLowerCase();
+  if (productType !== "service" && !billingCycle) return null;
+
+  return getExpiryFromBillingCycle(billingCycle, purchase?.createdAt || purchase?.startDate || null);
 };
 
 const normalizeStatusLabel = (value) => {
@@ -423,18 +466,19 @@ export default function Customers() {
                     <table className="customers-table">
                       <thead>
                         <tr>
-                          <th>Product</th>
+                            <th>Service</th>
                           <th>Source</th>
                           <th>Stage</th>
                           <th>Status</th>
                           <th>Reason</th>
+                          <th>Expiry Date</th>
                           <th>Created At</th>
                         </tr>
                       </thead>
                       <tbody>
                         {(selectedCustomer.purchases || []).length === 0 ? (
                           <tr>
-                            <td colSpan="6">-</td>
+                            <td colSpan="7">-</td>
                           </tr>
                         ) : (
                           selectedCustomer.purchases.map((purchase) => {
@@ -452,6 +496,7 @@ export default function Customers() {
                                 <td data-label="Reason">
                                   {purchaseStatus === "Inactive" ? purchase.reason || "-" : "-"}
                                 </td>
+                                <td data-label="Expiry Date">{formatDateOnly(getPurchaseExpiryDate(purchase))}</td>
                                 <td data-label="Created At">{formatDateTime(purchase.createdAt)}</td>
                               </tr>
                             );

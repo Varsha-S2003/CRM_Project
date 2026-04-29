@@ -111,6 +111,10 @@ const toPurchasePayload = (deal, customer) => ({
   reason: String(deal?.reason || "").trim(),
   source: String(deal?.leadSource || customer?.leadId?.source || "").trim(),
   createdAt: deal?.createdAt || null,
+  expiryDate: deal?.expiryDate || deal?.nextBillingDate || null,
+  nextBillingDate: deal?.nextBillingDate || deal?.expiryDate || null,
+  billingCycle: deal?.billingCycle || deal?.product?.billingCycle || "",
+  productType: deal?.product?.type || "",
 });
 
 router.get("/", verifyToken, async (req, res) => {
