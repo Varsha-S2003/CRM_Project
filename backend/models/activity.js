@@ -115,6 +115,16 @@ const activitySchema = new mongoose.Schema(
     },
     meeting: {
       meetingTitle: String,
+      meetingType: {
+        type: String,
+        enum: ["Call", "Video Meeting"],
+        default: "Video Meeting",
+      },
+      meetingLink: {
+        type: String,
+        default: "",
+        trim: true,
+      },
       reminder: Date,
     },
     call: {

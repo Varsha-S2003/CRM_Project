@@ -115,6 +115,38 @@ const coerceFollowUpDays = (value) => {
 
 const normalizeReasonText = (value) => String(value || "").trim();
 
+const normalizeMeetingType = (value) => {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (normalized === "call") return "Call";
+  return "Video Meeting";
+};
+
+const normalizeJoinLink = (value) => {
+  const link = String(value || "").trim();
+  if (!link) return "";
+  try {
+    const parsed = new URL(link);
+    if (!["http:", "https:"].includes(parsed.protocol)) {
+      throw new Error("Only http and https meeting links are supported");
+    }
+    return parsed.toString();
+  } catch (error) {
+    throw new Error("Meeting link must be a valid URL");
+  }
+};
+
+const getActivityJoinLink = (activity) => String(
+  activity?.meeting?.meetingLink ||
+  activity?.meetingLink ||
+  activity?.call?.teamsLink ||
+  activity?.call?.joinLink ||
+  activity?.teamsLink ||
+  activity?.joinLink ||
+  (typeof activity?.get === "function" ? activity.get("meeting.meetingLink") : "") ||
+  (typeof activity?.get === "function" ? activity.get("call.teamsLink") : "") ||
+  ""
+).trim();
+
 const getStartOfDay = (value = new Date()) => {
   const date = new Date(value);
   date.setHours(0, 0, 0, 0);
@@ -527,6 +559,8 @@ const normalizeActivityPayload = async (payload, userId) => {
       activityType === "meeting"
         ? {
             meetingTitle: payload.meetingTitle || payload.title || "",
+            meetingType: normalizeMeetingType(payload.meetingType || payload.meeting?.meetingType),
+            meetingLink: normalizeJoinLink(payload.meeting?.meetingLink || payload.meetingLink || payload.joinLink),
             reminder: payload.reminder || payload.reminderTime || null,
           }
         : undefined,
@@ -553,6 +587,20 @@ const normalizeActivityPayload = async (payload, userId) => {
 
   if (!base.title) {
     throw new Error("Title is required");
+  }
+
+  if (activityType === "meeting") {
+    const meetingStart = base.startDateTime ? new Date(base.startDateTime) : null;
+    const meetingEnd = base.endDateTime ? new Date(base.endDateTime) : null;
+    if (meetingStart && Number.isNaN(meetingStart.getTime())) {
+      throw new Error("Meeting start time is invalid");
+    }
+    if (meetingEnd && Number.isNaN(meetingEnd.getTime())) {
+      throw new Error("Meeting end time is invalid");
+    }
+    if (meetingStart && meetingEnd && meetingEnd <= meetingStart) {
+      throw new Error("Meeting end time must be after the start time");
+    }
   }
 
   return enforceLeadCallMeetingReminder(base);
@@ -987,7 +1035,10 @@ router.get("/notifications", verifyToken, async (req, res) => {
             to: recipient.email,
             ownerName: activity.owner?.name || activity.owner?.username,
             recipientName: recipient.name,
-            activity,
+            activity: {
+              ...activity.toObject(),
+              joinLink: getActivityJoinLink(activity),
+            },
           });
 
           emailNotifiedActivityIds.push(activity._id);
@@ -996,6 +1047,7 @@ router.get("/notifications", verifyToken, async (req, res) => {
             target: recipient.target,
             to: recipient.email,
             preview: emailResponse?.preview || null,
+            hasJoinLink: Boolean(getActivityJoinLink(activity)),
           });
         } catch (emailErr) {
           emailSendMap.set(activityId, {
@@ -1026,8 +1078,8 @@ router.get("/notifications", verifyToken, async (req, res) => {
       if (emailEnabled) {
         if (emailAttempt?.sent) {
           emailStatus = emailAttempt.preview
-            ? `Email sent to ${emailAttempt.target} (${emailAttempt.to}) (preview available)`
-            : `Email sent to ${emailAttempt.target} (${emailAttempt.to})`;
+            ? `Email sent to ${emailAttempt.target} (${emailAttempt.to})${emailAttempt.hasJoinLink ? " with join link" : " without join link"} (preview available)`
+            : `Email sent to ${emailAttempt.target} (${emailAttempt.to})${emailAttempt.hasJoinLink ? " with join link" : " without join link"}`;
         } else if (emailAttempt?.sent === false) {
           emailStatus = `Email failed: ${emailAttempt.error}`;
         } else if (emailAlreadySent) {
@@ -1049,6 +1101,7 @@ router.get("/notifications", verifyToken, async (req, res) => {
       displayTime: activity.startDateTime || activity.dueDate || getActivityDate(activity) || null,
       owner: activity.owner,
       relatedTo: activity.relatedTo,
+      joinLink: getActivityJoinLink(activity),
       popup: activity.reminderChannels?.popup ?? true,
       email: activity.reminderChannels?.email ?? false,
       emailStatus,
@@ -1189,6 +1242,7 @@ router.put("/:id", verifyToken, async (req, res) => {
       return res.json(savedSimple);
     }
 
+    const previousJoinLink = getActivityJoinLink(existing);
     const payload = await normalizeActivityPayload({ ...existing.toObject(), ...req.body }, req.user._id);
     if (isEarlyCompletionTransition({ ...existing.toObject(), ...payload }, payload.status)) {
       const estimatedEnd = getEstimatedEndDateTime({ ...existing.toObject(), ...payload });
@@ -1207,6 +1261,18 @@ router.put("/:id", verifyToken, async (req, res) => {
       existing.cancelledAt = existing.cancelledAt || new Date();
     } else {
       existing.cancelledAt = null;
+    }
+    const nextJoinLink = getActivityJoinLink(existing);
+    const reminderChanged =
+      req.body.reminderTime !== undefined ||
+      req.body.reminder !== undefined ||
+      req.body.reminderChannels !== undefined ||
+      req.body.emailReminder !== undefined;
+    if (previousJoinLink !== nextJoinLink || reminderChanged) {
+      existing.notificationState = {
+        ...(existing.notificationState?.toObject?.() || existing.notificationState || {}),
+        emailNotifiedAt: null,
+      };
     }
     await existing.save();
     await updateLeadLastActivityAt(existing);
@@ -1389,6 +1455,10 @@ router.post("/:id/reschedule", verifyToken, async (req, res) => {
     if (req.body.endDateTime) activity.endDateTime = new Date(req.body.endDateTime);
     if (req.body.reminderTime) activity.reminderTime = new Date(req.body.reminderTime);
     activity.status = activity.activityType === "task" ? "Pending" : "Scheduled";
+    activity.notificationState = {
+      ...(activity.notificationState?.toObject?.() || activity.notificationState || {}),
+      emailNotifiedAt: null,
+    };
 
     enforceLeadCallMeetingReminder(activity);
 

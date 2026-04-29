@@ -29,7 +29,7 @@ const FILTER_OPTIONS = [
 
 const TYPE_OPTIONS = [
   { value: "all", label: "All Activities" },
-  { value: "task", label: "Tasks" },
+  { value: "schedule", label: "Meetings & Calls" },
   { value: "meeting", label: "Meetings" },
   { value: "call", label: "Calls" },
 ];
@@ -43,7 +43,6 @@ const CALL_REMINDER_OPTIONS = [
 ];
 const VIEW_OPTIONS = ["month", "week", "day"];
 const CHART_COLORS = ["#202124", "#efb521", "#46b84d", "#9dc63b"];
-const TASK_BOARD_COLUMNS = ["Not Started", "Deferred", "In Progress", "Completed"];
 const MEETING_BOARD_COLUMNS = ["Overdue", "Today", "Scheduled", "Upcoming", "Completed"];
 const CALL_BOARD_COLUMNS = ["Scheduled", "Today", "Completed", "Overdue"];
 const COMPLETE_OUTCOME_OPTIONS = [
@@ -83,6 +82,13 @@ const MODULE_CONFIG = {
     addLabel: "Add Activity",
     sectionLabel: "Activities",
     timelineLabel: "customer interactions",
+  },
+  schedule: {
+    title: "Meetings & Calls",
+    description: "View every scheduled meeting and call with live join windows and reminders.",
+    addLabel: "Add Meeting",
+    sectionLabel: "Sessions",
+    timelineLabel: "scheduled sessions",
   },
   task: {
     title: "Tasks",
@@ -126,11 +132,14 @@ const createDefaultForm = (ownerId, relatedOptions) => ({
   startTime: "",
   endTime: "",
   meetingDate: "",
+  meetingType: "Video Meeting",
+  meetingLink: "",
   callType: "Outbound",
   callDuration: 30,
   callNotes: "",
   callDate: "",
   callTime: "",
+  callJoinLink: "",
   callReminderOffset: "",
   outcome: "",
   requiresFollowUp: false,
@@ -308,6 +317,28 @@ const validateActivityForm = (draft) => {
     errors.relatedId = "Related record is required.";
   }
 
+  if (draft.activityType === "meeting" && String(draft.meetingLink || "").trim()) {
+    try {
+      const parsed = new URL(String(draft.meetingLink).trim());
+      if (!["http:", "https:"].includes(parsed.protocol)) {
+        throw new Error("Invalid meeting link");
+      }
+    } catch (error) {
+      errors.meetingLink = "Meeting link must be a valid http or https URL.";
+    }
+  }
+
+  if (draft.activityType === "call" && String(draft.callJoinLink || "").trim()) {
+    try {
+      const parsed = new URL(String(draft.callJoinLink).trim());
+      if (!["http:", "https:"].includes(parsed.protocol)) {
+        throw new Error("Invalid call join link");
+      }
+    } catch (error) {
+      errors.callJoinLink = "Call join link must be a valid http or https URL.";
+    }
+  }
+
   if (reminderEnabled) {
     if (draft.activityType === "call") {
       if (!String(draft.callReminderOffset || "").trim()) {
@@ -471,14 +502,6 @@ const getCurrentDateTimeInputValue = () => {
   return now.toISOString().slice(0, 16);
 };
 
-const getTaskBoardStatus = (status) => {
-  const normalized = (status || "").toLowerCase();
-  if (normalized === "completed") return "Completed";
-  if (normalized === "deferred") return "Deferred";
-  if (normalized === "in progress" || normalized === "inprogress") return "In Progress";
-  return "Not Started";
-};
-
 const hasCrossedMissedWindow = (dateValue) => {
   const sourceDate = new Date(dateValue);
   if (Number.isNaN(sourceDate.getTime())) return false;
@@ -547,6 +570,126 @@ const getMeetingTimingMeta = (meeting, now = new Date()) => {
     isLive,
     minutesToStart,
   };
+};
+
+const JOIN_WINDOW_MINUTES = 5;
+
+const getActivityJoinLink = (activity) => {
+  const link = String(
+    activity?.meeting?.meetingLink ||
+      activity?.meetingLink ||
+      activity?.call?.teamsLink ||
+      activity?.call?.joinLink ||
+      activity?.joinLink ||
+      ""
+  ).trim();
+  return link;
+};
+
+const getActivityJoinMeta = (activity, now = new Date()) => {
+  const activityType = String(activity?.activityType || "").toLowerCase();
+  if (!["meeting", "call"].includes(activityType)) {
+    return {
+      statusLabel: String(activity?.status || "").trim() || "Scheduled",
+      joinEnabled: false,
+      joinLabel: "",
+      joinLink: "",
+      countdownLabel: "",
+      isLive: false,
+      isExpired: false,
+    };
+  }
+
+  const start = parseDateValue(activity?.startDateTime || activity?.dueDate || activity?.createdAt);
+  const end = parseDateValue(activity?.endDateTime) || getEstimatedEndDateTime(activity);
+  const joinLink = getActivityJoinLink(activity);
+  const currentStatus = String(activity?.status || "").toLowerCase();
+
+  if (currentStatus === "completed") {
+    return {
+      statusLabel: "Completed",
+      joinEnabled: false,
+      joinLabel: "Expired",
+      joinLink,
+      countdownLabel: "Completed",
+      isLive: false,
+      isExpired: true,
+    };
+  }
+
+  if (!start || !end) {
+    return {
+      statusLabel: currentStatus === "cancelled" ? "Cancelled" : "Scheduled",
+      joinEnabled: false,
+      joinLabel: "Join disabled",
+      joinLink,
+      countdownLabel: "Schedule missing",
+      isLive: false,
+      isExpired: false,
+    };
+  }
+
+  const isExpired = now.getTime() > end.getTime();
+  const isLive = now.getTime() >= start.getTime() && now.getTime() <= end.getTime();
+  const minutesUntilJoin = Math.ceil((start.getTime() - now.getTime()) / 60000);
+  const countdownMinutes = Math.max(0, Math.floor(minutesUntilJoin));
+  const countdownSeconds = Math.max(0, Math.ceil((start.getTime() - now.getTime()) / 1000));
+  const countdownHours = Math.floor(countdownSeconds / 3600);
+  const countdownMins = Math.floor((countdownSeconds % 3600) / 60);
+  const countdownSecs = countdownSeconds % 60;
+
+  const formatCountdown = () => {
+    if (countdownSeconds <= 0) return "00:00";
+    if (countdownHours > 0) {
+      return `${String(countdownHours).padStart(2, "0")}:${String(countdownMins).padStart(2, "0")}:${String(countdownSecs).padStart(2, "0")}`;
+    }
+    return `${String(countdownMins).padStart(2, "0")}:${String(countdownSecs).padStart(2, "0")}`;
+  };
+
+  if (isExpired) {
+    return {
+      statusLabel: currentStatus === "cancelled" ? "Cancelled" : "Expired",
+      joinEnabled: false,
+      joinLabel: "Expired",
+      joinLink,
+      countdownLabel: "Expired",
+      isLive: false,
+      isExpired: true,
+    };
+  }
+
+  if (isLive) {
+    return {
+      statusLabel: "Ongoing",
+      joinEnabled: Boolean(joinLink),
+      joinLabel: joinLink ? "Join Meeting" : "Link unavailable",
+      joinLink,
+      countdownLabel: "Live now",
+      isLive: true,
+      isExpired: false,
+    };
+  }
+
+  const minutesValue = countdownMinutes > 0 ? countdownMinutes : 0;
+  return {
+    statusLabel: "Scheduled",
+    joinEnabled: false,
+    joinLabel: `Join available in ${formatCountdown()}`,
+    joinLink,
+    countdownLabel: `Join available in ${formatCountdown()}`,
+    isLive: false,
+    isExpired: false,
+    minutesUntilJoin: minutesValue,
+  };
+};
+
+const getMeetingDisplayType = (activity) => {
+  if (String(activity?.activityType || "").toLowerCase() === "call") {
+    return "Call";
+  }
+
+  const meetingType = String(activity?.meeting?.meetingType || "").trim();
+  return meetingType || "Video Meeting";
 };
 
 const getCallBoardStatus = (call) => {
@@ -651,7 +794,7 @@ function ActivityModule() {
   const [relatedOptions, setRelatedOptions] = useState([]);
   const [relatedDealsById, setRelatedDealsById] = useState({});
   const [activeSidebar, setActiveSidebar] = useState(
-    ["task", "meeting", "call"].includes(initialType) ? initialType : "all"
+    ["meeting", "call", "schedule"].includes(initialType) ? initialType : "all"
   );
   const [filter, setFilter] = useState("all");
   const [activityType, setActivityType] = useState("all");
@@ -694,6 +837,7 @@ function ActivityModule() {
   const [redirectAfterProposalSubmit, setRedirectAfterProposalSubmit] = useState("");
   const autoOpenKeyRef = useRef("");
   const autoOpenProposalKeyRef = useRef("");
+  const meetingReminderRef = useRef(new Set());
 
   const token = localStorage.getItem("token");
   const currentUserId = localStorage.getItem("userId") || "";
@@ -730,7 +874,12 @@ function ActivityModule() {
   const fetchActivities = useCallback(async () => {
     const params = {
       filter,
-      activityType: activeSidebar === "all" ? activityType : activeSidebar,
+      activityType:
+        activeSidebar === "all"
+          ? activityType
+          : activeSidebar === "schedule"
+            ? "all"
+            : activeSidebar,
       owner: isEmployee ? currentUserId || "all" : ownerFilter,
       priority: priorityFilter,
       search,
@@ -838,9 +987,44 @@ function ActivityModule() {
   }, [fetchNotifications]);
 
   useEffect(() => {
-    const interval = setInterval(() => setMeetingNowTick(Date.now()), 30000);
+    const interval = setInterval(() => setMeetingNowTick(Date.now()), 1000);
     return () => clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !("Notification" in window)) return undefined;
+    if (Notification.permission === "default") {
+      Notification.requestPermission().catch(() => {});
+    }
+    return undefined;
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !("Notification" in window)) return;
+    if (Notification.permission !== "granted") return;
+
+    const now = new Date(meetingNowTick);
+    activities.forEach((activity) => {
+      const activityType = String(activity?.activityType || "").toLowerCase();
+      if (!["meeting", "call"].includes(activityType)) return;
+      const meta = getActivityJoinMeta(activity, now);
+      if (meta.statusLabel !== "Scheduled") return;
+      if (meta.minutesUntilJoin === undefined || meta.minutesUntilJoin > JOIN_WINDOW_MINUTES || meta.minutesUntilJoin < 0) return;
+
+      const reminderSeed = String(activity.startDateTime || activity.dueDate || activity.createdAt || "").trim();
+      const reminderKey = `${activity._id}:${reminderSeed}`;
+      if (meetingReminderRef.current.has(reminderKey)) return;
+
+      const storageKey = `crm-meeting-reminder:${activity._id}:${reminderSeed}`;
+      if (window.localStorage.getItem(storageKey)) return;
+
+      meetingReminderRef.current.add(reminderKey);
+      window.localStorage.setItem(storageKey, now.toISOString());
+      new Notification(activity.title || "Upcoming meeting", {
+        body: `${meta.countdownLabel || "Join window opening soon"} | ${activity.relatedTo?.recordName || "Client"}`,
+      });
+    });
+  }, [activities, meetingNowTick]);
 
   useEffect(() => {
     refreshAll().catch(() => {});
@@ -848,7 +1032,7 @@ function ActivityModule() {
 
   useEffect(() => {
     const nextType = searchParams.get("type");
-    if (["task", "meeting", "call"].includes(nextType)) {
+    if (["meeting", "call", "schedule"].includes(nextType)) {
       setActiveSidebar(nextType);
       return;
     }
@@ -947,7 +1131,11 @@ function ActivityModule() {
   }, [toast]);
 
   const openCreateModal = () => {
-    const nextDefaultType = ["task", "meeting", "call"].includes(activeSidebar) ? activeSidebar : "task";
+    const nextDefaultType = activeSidebar === "schedule"
+      ? "meeting"
+      : ["task", "meeting", "call"].includes(activeSidebar)
+        ? activeSidebar
+        : "task";
     setEditingActivity(null);
     setFormErrors({});
     setForm({
@@ -955,6 +1143,9 @@ function ActivityModule() {
       activityType: nextDefaultType,
       status: nextDefaultType === "task" ? "Pending" : "Scheduled",
       reminderOffset: "",
+      meetingType: nextDefaultType === "meeting" ? "Video Meeting" : "Video Meeting",
+      meetingLink: "",
+      callJoinLink: "",
       callReminderOffset: nextDefaultType === "call" ? "5" : "",
     });
     setLockRelatedRecordContext(false);
@@ -1099,13 +1290,6 @@ function ActivityModule() {
     }
   };
 
-  const taskBoardColumns = useMemo(() => {
-    const columns = TASK_BOARD_COLUMNS.reduce((acc, label) => ({ ...acc, [label]: [] }), {});
-    activities.forEach((activity) => {
-      columns[getTaskBoardStatus(activity.status)].push(activity);
-    });
-    return columns;
-  }, [activities]);
   const meetingBoardColumns = useMemo(() => {
     const now = new Date(meetingNowTick);
     const columns = MEETING_BOARD_COLUMNS.reduce((acc, label) => ({ ...acc, [label]: [] }), {});
@@ -1144,6 +1328,19 @@ function ActivityModule() {
     });
     return columns;
   }, [activities]);
+  const scheduleEntries = useMemo(() => {
+    return activities
+      .filter((activity) => ["meeting", "call"].includes(String(activity?.activityType || "").toLowerCase()))
+      .map((activity) => ({
+        ...activity,
+        _joinMeta: getActivityJoinMeta(activity, new Date(meetingNowTick)),
+      }))
+      .sort((left, right) => {
+        const leftTime = new Date(left.startDateTime || left.createdAt || 0).getTime();
+        const rightTime = new Date(right.startDateTime || right.createdAt || 0).getTime();
+        return leftTime - rightTime;
+      });
+  }, [activities, meetingNowTick]);
   const filteredDashboardToday = useMemo(
     () => (dashboard?.today || []).filter((item) => activeSidebar === "all" || item.activityType === activeSidebar),
     [activeSidebar, dashboard]
@@ -1168,7 +1365,9 @@ function ActivityModule() {
         : [];
     }
 
-    const selectedActivities = activities.filter((item) => item.activityType === activeSidebar);
+    const selectedActivities = activeSidebar === "schedule"
+      ? activities.filter((item) => ["meeting", "call"].includes(String(item.activityType || "").toLowerCase()))
+      : activities.filter((item) => item.activityType === activeSidebar);
     const upcomingCount = selectedActivities.filter((item) => {
       const sourceDate = new Date(item.startDateTime || item.dueDate || item.createdAt);
       return sourceDate >= startOfDay(new Date()) && item.status !== "Completed";
@@ -1217,11 +1416,14 @@ function ActivityModule() {
       meetingDate: toLocalDateInputValue(activity.startDateTime),
       startTime: toLocalTimeInputValue(activity.startDateTime),
       endTime: toLocalTimeInputValue(activity.endDateTime),
+      meetingType: activity.meeting?.meetingType || "Video Meeting",
+      meetingLink: activity.meeting?.meetingLink || "",
       callType: activity.call?.callType || "Outbound",
       callDuration: activity.call?.callDuration || 30,
       callNotes: activity.call?.callNotes || "",
       callDate: toLocalDateInputValue(activity.startDateTime),
       callTime: toLocalTimeInputValue(activity.startDateTime),
+      callJoinLink: activity.call?.teamsLink || activity.call?.joinLink || "",
       callReminderOffset: getCallReminderOffset(activity.startDateTime, activity.reminderTime),
       outcome: activity.outcome || "",
       requiresFollowUp: Boolean(activity.requiresFollowUp),
@@ -1272,6 +1474,8 @@ function ActivityModule() {
           ? (normalizedMeetingEnd ? normalizedMeetingEnd.toISOString() : null)
           : undefined,
       participants: form.participants,
+      meetingType: form.activityType === "meeting" ? form.meetingType : undefined,
+      meetingLink: form.activityType === "meeting" ? form.meetingLink : undefined,
       outcome: "",
       requiresFollowUp: false,
       stage: "",
@@ -1281,6 +1485,7 @@ function ActivityModule() {
       meetingTitle: form.activityType === "meeting" ? form.title : undefined,
       callSubject: form.activityType === "call" ? form.title : undefined,
       callStatus: form.activityType === "call" ? form.status : undefined,
+      teamsLink: form.activityType === "call" ? form.callJoinLink : undefined,
     };
 
     try {
@@ -1965,6 +2170,20 @@ function ActivityModule() {
     }
   };
 
+  const handleOpenJoinLink = (activity) => {
+    const joinMeta = getActivityJoinMeta(activity, new Date(meetingNowTick));
+    if (!joinMeta.joinLink) {
+      setToast("No join link is stored for this meeting.");
+      return;
+    }
+    if (!joinMeta.joinEnabled) {
+      setToast(joinMeta.countdownLabel || "Join window is not open yet.");
+      return;
+    }
+
+    window.open(joinMeta.joinLink, "_blank", "noopener,noreferrer");
+  };
+
   const handleMeetingSnooze = async (meeting, minutes = 15) => {
     const base = new Date(meeting?.startDateTime || Date.now());
     if (Number.isNaN(base.getTime())) return;
@@ -2037,109 +2256,6 @@ function ActivityModule() {
       setDraggedMeetingId("");
     }
   };
-
-  const renderTaskBoard = () => (
-    <div className="task-page">
-      <div className="task-page__header">
-        <div>
-          <h1>Tasks</h1>
-        </div>
-        <div className="task-page__top-actions">
-          <div className="task-page__search">
-            <input
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search records"
-            />
-          </div>
-          <button className="task-page__create-btn" onClick={openCreateModal}>Create Task</button>
-        </div>
-      </div>
-
-      <div className="task-page__viewbar">
-        <button className="task-page__view-pill active">All Tasks</button>
-      </div>
-
-      <div className="task-page__toolbar meeting-toolbar-sticky">
-        <div className="task-page__toolbar-right">
-          <select value={filter} onChange={(event) => setFilter(event.target.value)} className="task-page__select">
-            <option value="all">Tasks by Status</option>
-            {FILTER_OPTIONS.map((item) => (
-              <option key={item.value} value={item.value}>{item.label}</option>
-            ))}
-          </select>
-          {!isEmployee ? (
-            <select value={ownerFilter} onChange={(event) => setOwnerFilter(event.target.value)} className="task-page__select">
-              <option value="all">All Owners</option>
-              {users.map((user) => (
-                <option key={user._id} value={user._id}>{user.name || user.username}</option>
-              ))}
-            </select>
-          ) : null}
-          <select value={priorityFilter} onChange={(event) => setPriorityFilter(event.target.value)} className="task-page__select">
-            <option value="all">All Priorities</option>
-            {PRIORITY_OPTIONS.map((priority) => (
-              <option key={priority} value={priority}>{priority}</option>
-            ))}
-          </select>
-        </div>
-      </div>
-
-      <div className="task-board-layout">
-        <div className="task-board-scroll">
-          <section className="task-board">
-            {TASK_BOARD_COLUMNS.map((column) => (
-              <div key={column} className="task-column">
-                <div className="task-column__header">
-                  <div className="task-column__title">
-                    <span>{column}</span>
-                    <strong>{taskBoardColumns[column]?.length || 0}</strong>
-                  </div>
-                </div>
-                <div className="task-column__body">
-                  {(taskBoardColumns[column] || []).length === 0 ? (
-                    <div className="task-column__empty">No Tasks found.</div>
-                  ) : (
-                    (taskBoardColumns[column] || []).map((task) => {
-                      const relatedClass = getActivityRelatedClass(task);
-                      return (
-                        <article key={task._id} className={`task-card ${relatedClass}`}>
-                          <button className="task-card__edit" onClick={() => openEditModal(task)} aria-label="Edit task">
-                            +
-                          </button>
-                          <h3>{task.title}</h3>
-                          <p>{formatDate(task.startDateTime || task.dueDate)}</p>
-                          <p>{task.priority}</p>
-                          <p>{task.owner?.name || task.owner?.username || "-"}</p>
-                          <p>
-                            <span className={`record-type-pill ${relatedClass}`}>
-                              {task.relatedTo?.recordType || "Lead"}
-                            </span>{" "}
-                            <span className={`activity-related-label ${relatedClass}`}>
-                              {task.relatedTo?.recordName || "-"}
-                            </span>
-                          </p>
-                          <div className="task-card__actions">
-                            {task.status !== "Completed" ? (
-                              <button onClick={() => openCompleteModal(task)}>Complete</button>
-                            ) : null}
-                            {task.status !== "Completed" ? (
-                              <button onClick={() => handleReschedule(task)}>Reschedule</button>
-                            ) : null}
-                            <button onClick={() => handleDelete(task._id)}>Delete</button>
-                          </div>
-                        </article>
-                      );
-                    })
-                  )}
-                </div>
-              </div>
-            ))}
-          </section>
-        </div>
-      </div>
-    </div>
-  );
 
   const renderMeetingBoard = () => (
     <div className="task-page meeting-page">
@@ -2244,6 +2360,7 @@ function ActivityModule() {
                       const completionLock = getCompletionLockMeta(meeting, new Date(meetingNowTick));
                       const completeDisabled = completionLock.isLocked;
                       const timing = meeting?._timing || getMeetingTimingMeta(meeting, new Date(meetingNowTick));
+                      const joinMeta = getActivityJoinMeta(meeting, new Date(meetingNowTick));
                       const startDate = new Date(meeting.startDateTime || meeting.createdAt || 0);
                       const validStart = !Number.isNaN(startDate.getTime());
                       const countdownText =
@@ -2277,6 +2394,10 @@ function ActivityModule() {
                               {meeting.location || "Not set"}
                             </p>
                             <p className="meeting-row-meta">
+                              <span className="meeting-meta-label">Type:</span>
+                              {getMeetingDisplayType(meeting)}
+                            </p>
+                            <p className="meeting-row-meta">
                               <span className={`record-type-pill ${relatedClass}`}>
                                 {meeting.relatedTo?.recordType || "Lead"}
                               </span>
@@ -2287,6 +2408,15 @@ function ActivityModule() {
                             <p className={`meeting-live-badge ${timing.isLive ? "active" : ""}`}>
                               {countdownText}
                             </p>
+                            <button
+                              type="button"
+                              className={`meeting-join-btn ${joinMeta.joinEnabled ? "enabled" : "disabled"}`}
+                              disabled={!joinMeta.joinEnabled}
+                              onClick={() => handleOpenJoinLink(meeting)}
+                              title={joinMeta.joinEnabled ? "Open stored meeting link" : joinMeta.countdownLabel || "Join unavailable"}
+                            >
+                              {joinMeta.joinLabel || "Join Meeting"}
+                            </button>
                           </div>
 
                           <div className="meeting-inline-actions">
@@ -2381,6 +2511,7 @@ function ActivityModule() {
                       const relatedClass = getActivityRelatedClass(call);
                       const completionLock = getCompletionLockMeta(call);
                       const completeDisabled = completionLock.isLocked;
+                      const joinMeta = getActivityJoinMeta(call, new Date(meetingNowTick));
                       return (
                         <article key={call._id} className={`task-card meeting-card-compact call-card ${relatedClass}`}>
                           <div className="meeting-card-compact__main">
@@ -2393,6 +2524,10 @@ function ActivityModule() {
                             <p className="meeting-row-meta">
                               <span className="meeting-meta-label">Owner:</span>
                               {call.owner?.name || call.owner?.username || "-"}
+                            </p>
+                            <p className="meeting-row-meta">
+                              <span className="meeting-meta-label">Type:</span>
+                              {getMeetingDisplayType(call)}
                             </p>
                             <p className="meeting-row-meta">
                               <span className={`record-type-pill ${relatedClass}`}>
@@ -2411,6 +2546,15 @@ function ActivityModule() {
                             {call.call?.providerStatus ? (
                               <p className="meeting-live-badge">Status: {String(call.call.providerStatus).toUpperCase()}</p>
                             ) : null}
+                            <button
+                              type="button"
+                              className={`meeting-join-btn ${joinMeta.joinEnabled ? "enabled" : "disabled"}`}
+                              disabled={!joinMeta.joinEnabled}
+                              onClick={() => handleOpenJoinLink(call)}
+                              title={joinMeta.joinEnabled ? "Open stored meeting link" : joinMeta.countdownLabel || "Join unavailable"}
+                            >
+                              {joinMeta.joinLabel || "Join Meeting"}
+                            </button>
                           </div>
 
                           <div className="meeting-inline-actions">
@@ -2442,11 +2586,110 @@ function ActivityModule() {
     </div>
   );
 
+  const renderScheduleBoard = () => (
+    <div className="task-page meeting-page schedule-page">
+      <div className="task-page__header">
+        <div>
+          <h1>Meetings & Calls</h1>
+          <p>Live schedule of upcoming and in-progress sessions for employees.</p>
+        </div>
+        <div className="task-page__top-actions">
+          <div className="task-page__search">
+            <input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search scheduled sessions"
+            />
+          </div>
+          <button className="task-page__create-btn meeting-create-btn" onClick={openCreateModal}>Create Meeting</button>
+        </div>
+      </div>
+
+      <div className="task-page__toolbar meeting-toolbar-sticky">
+        <div className="task-page__toolbar-right">
+          {!isEmployee ? (
+            <select value={ownerFilter} onChange={(event) => setOwnerFilter(event.target.value)} className="task-page__select">
+              <option value="all">All Owners</option>
+              {users.map((user) => (
+                <option key={user._id} value={user._id}>{user.name || user.username}</option>
+              ))}
+            </select>
+          ) : null}
+          <select value={priorityFilter} onChange={(event) => setPriorityFilter(event.target.value)} className="task-page__select">
+            <option value="all">All Priorities</option>
+            {PRIORITY_OPTIONS.map((priority) => (
+              <option key={priority} value={priority}>{priority}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      <div className="activity-table-card schedule-table-card">
+        <div className="activity-card-header">
+          <div>
+            <h2>Session Table</h2>
+            <p>Meeting title, date &amp; time, client, status, type, and join action.</p>
+          </div>
+        </div>
+        <div className="activity-table-wrapper">
+          <table className="activity-table schedule-table">
+            <thead>
+              <tr>
+                <th>Meeting Title</th>
+                <th>Date &amp; Time</th>
+                <th>Client Name</th>
+                <th>Status</th>
+                <th>Meeting Type</th>
+                <th>Join Meeting</th>
+              </tr>
+            </thead>
+            <tbody>
+              {scheduleEntries.length === 0 ? (
+                <tr>
+                  <td colSpan="6" className="schedule-table__empty">No scheduled meetings or calls found.</td>
+                </tr>
+              ) : scheduleEntries.map((activity) => {
+                const relatedClass = getActivityRelatedClass(activity);
+                const joinMeta = activity._joinMeta || getActivityJoinMeta(activity, new Date(meetingNowTick));
+                return (
+                  <tr key={activity._id}>
+                    <td>
+                      <strong>{activity.title}</strong>
+                      <div className="schedule-table__subtext">{activity.owner?.name || activity.owner?.username || ""}</div>
+                    </td>
+                    <td>{formatDateTime(activity.startDateTime || activity.dueDate || activity.createdAt)}</td>
+                    <td className={`activity-related-label ${relatedClass}`}>{activity.relatedTo?.recordName || "-"}</td>
+                    <td>
+                      <span className={`activity-status ${String(joinMeta.statusLabel || "").toLowerCase().replace(/\s+/g, "-")}`}>{joinMeta.statusLabel}</span>
+                      <div className="schedule-table__subtext">{joinMeta.countdownLabel}</div>
+                    </td>
+                    <td>{getMeetingDisplayType(activity)}</td>
+                    <td>
+                      <button
+                        type="button"
+                        className={`meeting-join-btn ${joinMeta.joinEnabled ? "enabled" : "disabled"}`}
+                        disabled={!joinMeta.joinEnabled}
+                        onClick={() => handleOpenJoinLink(activity)}
+                        title={joinMeta.joinEnabled ? "Open stored meeting link" : joinMeta.countdownLabel || "Join unavailable"}
+                      >
+                        {joinMeta.joinLabel || "Join Meeting"}
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+
   return (
     <div className="dashboard-layout">
       <Sidebar />
       <div className="main-content activity-module">
-        {activeSidebar === "task" ? renderTaskBoard() : activeSidebar === "meeting" ? renderMeetingBoard() : activeSidebar === "call" ? renderCallBoard() : (
+        {activeSidebar === "meeting" ? renderMeetingBoard() : activeSidebar === "call" ? renderCallBoard() : activeSidebar === "schedule" ? renderScheduleBoard() : (
         <>
         <div className="activity-topbar">
           <div>
@@ -2474,7 +2717,7 @@ function ActivityModule() {
                 className={activeSidebar === item.value ? "active" : ""}
                 onClick={() => {
                   setActiveSidebar(item.value);
-                  if (["task", "meeting", "call"].includes(item.value)) {
+                  if (["meeting", "call", "schedule"].includes(item.value)) {
                     setSearchParams({ type: item.value });
                   } else {
                     setSearchParams({});
@@ -2859,6 +3102,9 @@ function ActivityModule() {
                           ...prev,
                           activityType: nextType,
                           status: nextType === "task" ? "Pending" : "Scheduled",
+                          meetingType: nextType === "meeting" ? "Video Meeting" : prev.meetingType,
+                          meetingLink: nextType === "meeting" ? prev.meetingLink : "",
+                          callJoinLink: nextType === "call" ? prev.callJoinLink || "" : "",
                           callReminderOffset: nextType === "call" ? (prev.callReminderOffset || "5") : "",
                         }));
                       }}
@@ -2981,6 +3227,13 @@ function ActivityModule() {
                 {form.activityType === "meeting" ? (
                   <div className="activity-form-grid">
                     <label>
+                      Meeting Type
+                      <select value={form.meetingType} onChange={(event) => updateField("meetingType", event.target.value)}>
+                        <option value="Video Meeting">Video Meeting</option>
+                        <option value="Call">Call</option>
+                      </select>
+                    </label>
+                    <label>
                       Meeting Date
                       <input
                         type="date"
@@ -3031,8 +3284,13 @@ function ActivityModule() {
                       <input value={form.location} onChange={(event) => updateField("location", event.target.value)} />
                     </label>
                     <label className="span-2">
-                      Participants
-                      <input value={form.participants} onChange={(event) => updateField("participants", event.target.value)} placeholder="Comma separated names or emails" />
+                      Meeting Link
+                      <input
+                        value={form.meetingLink}
+                        onChange={(event) => updateField("meetingLink", event.target.value)}
+                        placeholder="https://meet.google.com/... or Zoom/Teams link"
+                      />
+                      {formErrors.meetingLink ? <span className="activity-form-error">{formErrors.meetingLink}</span> : null}
                     </label>
                     <label>
                       Status
@@ -3108,6 +3366,15 @@ function ActivityModule() {
                         ))}
                       </select>
                       {formErrors.reminderTime ? <span className="activity-form-error">{formErrors.reminderTime}</span> : null}
+                    </label>
+                    <label className="span-2">
+                      Call / Join Link
+                      <input
+                        value={form.callJoinLink}
+                        onChange={(event) => updateField("callJoinLink", event.target.value)}
+                        placeholder="https://teams.microsoft.com/... or meeting link"
+                      />
+                      {formErrors.callJoinLink ? <span className="activity-form-error">{formErrors.callJoinLink}</span> : null}
                     </label>
                   </div>
                 ) : null}

@@ -351,13 +351,6 @@ function Sidebar() {
                 <div className="nav-submenu">
                   <a
                     href="/"
-                    onClick={(e) => handleNav("/activities?type=task", e)}
-                    className={`nav-subitem ${activityType === "task" ? "active" : ""}`}
-                  >
-                    <span>Tasks</span>
-                  </a>
-                  <a
-                    href="/"
                     onClick={(e) => handleNav("/activities?type=meeting", e)}
                     className={`nav-subitem ${activityType === "meeting" ? "active" : ""}`}
                   >

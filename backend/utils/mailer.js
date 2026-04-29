@@ -3,6 +3,15 @@ const AppSettings = require("../models/appSettings");
 
 let transporter;
 
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 function buildEnvEmailConfig() {
   return {
     host: process.env.SMTP_HOST,
@@ -272,12 +281,49 @@ async function sendActivityReminderEmail({
   const title = String(activity.title || "Upcoming activity").trim();
   const relatedName = String(activity.relatedTo?.recordName || "CRM record").trim();
   const relatedType = String(activity.relatedTo?.recordType || "Record").trim();
-  const reminderTime = activity.reminderTime ? new Date(activity.reminderTime) : null;
-  const reminderLabel = reminderTime && !Number.isNaN(reminderTime.getTime())
-    ? reminderTime.toLocaleString()
+  const startTime = activity.startDateTime || activity.dueDate ? new Date(activity.startDateTime || activity.dueDate) : null;
+  const startLabel = startTime && !Number.isNaN(startTime.getTime())
+    ? startTime.toLocaleString()
     : "Soon";
   const description = String(activity.description || activity.notes || "").trim();
   const greetingName = String(recipientName || ownerName || "there").trim() || "there";
+  const activityObject = typeof activity.toObject === "function" ? activity.toObject() : activity;
+  const joinLink = String(
+    activityObject?.meeting?.meetingLink ||
+    activityObject?.meetingLink ||
+    activityObject?.call?.teamsLink ||
+    activityObject?.call?.joinLink ||
+    activityObject?.teamsLink ||
+    activityObject?.joinLink ||
+    (typeof activity.get === "function" ? activity.get("meeting.meetingLink") : "") ||
+    (typeof activity.get === "function" ? activity.get("call.teamsLink") : "") ||
+    ""
+  ).trim();
+  const escapedGreetingName = escapeHtml(greetingName);
+  const escapedActivityType = escapeHtml(activityType);
+  const escapedTitle = escapeHtml(title);
+  const escapedRelatedType = escapeHtml(relatedType);
+  const escapedRelatedName = escapeHtml(relatedName);
+  const escapedStartLabel = escapeHtml(startLabel);
+  const escapedDescription = escapeHtml(description);
+  const escapedJoinLink = escapeHtml(joinLink);
+  const joinLinkHtml = joinLink
+    ? `
+            <tr>
+              <td style="padding: 8px; border: 1px solid #e5e7eb; font-weight: 600;">Join Link</td>
+              <td style="padding: 8px; border: 1px solid #e5e7eb;">
+                <a href="${escapedJoinLink}" style="color: #1d4ed8; word-break: break-all;">${escapedJoinLink}</a>
+              </td>
+            </tr>`
+    : "";
+  const joinButtonHtml = joinLink
+    ? `
+          <p style="margin: 0 0 16px;">
+            <a href="${escapedJoinLink}" style="display: inline-block; padding: 12px 18px; border-radius: 8px; background: #4caf36; color: #123016; text-decoration: none; font-weight: 700;">
+              Join Meeting
+            </a>
+          </p>`
+    : "";
 
   const result = await mailer.sendMail({
     from: `"${appName}" <${sender}>`,
@@ -290,7 +336,8 @@ async function sendActivityReminderEmail({
       `Type: ${activityType}`,
       `Title: ${title}`,
       `Related: ${relatedType} - ${relatedName}`,
-      `Reminder Time: ${reminderLabel}`,
+      `Start Time: ${startLabel}`,
+      joinLink ? `Join Link: ${joinLink}` : null,
       description ? "" : null,
       description ? `Notes: ${description}` : null,
       "",
@@ -303,27 +350,29 @@ async function sendActivityReminderEmail({
           <h2 style="margin: 0; font-size: 20px;">${appName} Activity Reminder</h2>
         </div>
         <div style="padding: 20px; background: #ffffff; color: #111827;">
-          <p style="margin: 0 0 12px;">Hello ${greetingName},</p>
+          <p style="margin: 0 0 12px;">Hello ${escapedGreetingName},</p>
           <p style="margin: 0 0 16px;">This is your upcoming CRM activity reminder.</p>
+          ${joinButtonHtml}
           <table style="width: 100%; border-collapse: collapse; margin-bottom: 16px;">
             <tr>
               <td style="padding: 8px; border: 1px solid #e5e7eb; font-weight: 600; width: 160px;">Type</td>
-              <td style="padding: 8px; border: 1px solid #e5e7eb;">${activityType}</td>
+              <td style="padding: 8px; border: 1px solid #e5e7eb;">${escapedActivityType}</td>
             </tr>
             <tr>
               <td style="padding: 8px; border: 1px solid #e5e7eb; font-weight: 600;">Title</td>
-              <td style="padding: 8px; border: 1px solid #e5e7eb;">${title}</td>
+              <td style="padding: 8px; border: 1px solid #e5e7eb;">${escapedTitle}</td>
             </tr>
             <tr>
               <td style="padding: 8px; border: 1px solid #e5e7eb; font-weight: 600;">Related</td>
-              <td style="padding: 8px; border: 1px solid #e5e7eb;">${relatedType} - ${relatedName}</td>
+              <td style="padding: 8px; border: 1px solid #e5e7eb;">${escapedRelatedType} - ${escapedRelatedName}</td>
             </tr>
             <tr>
-              <td style="padding: 8px; border: 1px solid #e5e7eb; font-weight: 600;">Reminder Time</td>
-              <td style="padding: 8px; border: 1px solid #e5e7eb;">${reminderLabel}</td>
+              <td style="padding: 8px; border: 1px solid #e5e7eb; font-weight: 600;">Start Time</td>
+              <td style="padding: 8px; border: 1px solid #e5e7eb;">${escapedStartLabel}</td>
             </tr>
+            ${joinLinkHtml}
           </table>
-          ${description ? `<p style="margin: 0; white-space: pre-line;"><strong>Notes:</strong><br/>${description}</p>` : ""}
+          ${description ? `<p style="margin: 0; white-space: pre-line;"><strong>Notes:</strong><br/>${escapedDescription}</p>` : ""}
         </div>
       </div>
     `,

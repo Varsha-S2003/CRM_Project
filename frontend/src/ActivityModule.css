@@ -330,6 +330,50 @@
 .activity-status.scheduled { background: #e0f2fe; color: #0369a1; }
 .activity-status.completed { background: #dcfce7; color: #166534; }
 .activity-status.cancelled { background: #fee2e2; color: #b91c1c; }
+.activity-status.ongoing { background: #dbeafe; color: #1d4ed8; }
+.activity-status.expired { background: #f1f5f9; color: #475569; }
+
+.schedule-table-card {
+  margin-top: 18px;
+}
+
+.schedule-table__subtext {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #64748b;
+}
+
+.schedule-table__empty {
+  padding: 24px 12px;
+  text-align: center;
+  color: #64748b;
+}
+
+.meeting-join-btn {
+  border: none;
+  border-radius: 10px;
+  padding: 12px 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.15s ease, opacity 0.15s ease, box-shadow 0.15s ease;
+}
+
+.meeting-join-btn.enabled {
+  background: linear-gradient(135deg, #2563eb, #1d4ed8);
+  color: #fff;
+  box-shadow: none;
+}
+
+.meeting-join-btn.disabled {
+  background: #e2e8f0;
+  color: #64748b;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.meeting-join-btn.enabled:hover {
+  transform: translateY(-1px);
+}
 
 .calendar-grid {
   display: grid;
@@ -1946,6 +1990,25 @@
 .activity-primary-btn,
 .task-page__create-btn {
   background: var(--theme-gradient-brand);
+}
+
+.meeting-join-btn.enabled,
+.meeting-page .meeting-inline-actions .meeting-join-btn.enabled {
+  background: var(--theme-gradient-brand);
+  color: var(--theme-ink-deep);
+  border-color: transparent;
+}
+
+.meeting-join-btn.disabled,
+.meeting-page .meeting-inline-actions .meeting-join-btn.disabled {
+  background: var(--theme-surface-muted);
+  color: var(--theme-text-muted);
+  border-color: var(--theme-border-strong);
+}
+
+.meeting-join-btn.enabled:hover,
+.meeting-page .meeting-inline-actions .meeting-join-btn.enabled:hover {
+  filter: saturate(1.05);
 }
 
 .notification-badge,
