@@ -231,7 +231,37 @@ const computeServiceLifecycle = (billingCycle, startDate = new Date()) => {
 
 const getUserDisplayName = (user) => user?.name || user?.username || "User";
 
-const getProposalApprovalRecipients = async ({ requester, deal }) => {
+const getApprovalRecipientChain = async (startUserId) => {
+  const recipients = [];
+  const seen = new Set();
+  let currentUserId = String(startUserId || "").trim();
+
+  while (currentUserId && !seen.has(currentUserId)) {
+    seen.add(currentUserId);
+
+    const currentUser = await User.findById(currentUserId).select("_id role reportsTo").lean();
+    if (!currentUser?.reportsTo) {
+      break;
+    }
+
+    const parentUser = await User.findById(currentUser.reportsTo).select("_id role reportsTo").lean();
+    if (!parentUser?._id) {
+      break;
+    }
+
+    const parentRole = String(parentUser.role || "").toUpperCase();
+    if (["MANAGER", "ADMIN"].includes(parentRole)) {
+      recipients.push(String(parentUser._id));
+      break;
+    }
+
+    currentUserId = String(parentUser._id);
+  }
+
+  return recipients;
+};
+
+const getProposalApprovalRecipients = async ({ requester, deal, preferRequester = false }) => {
   const recipients = [];
   const seen = new Set();
 
@@ -242,19 +272,22 @@ const getProposalApprovalRecipients = async ({ requester, deal }) => {
     recipients.push(id);
   };
 
-  const assignedManagerId = deal?.assignedTo?.reportsTo;
-  if (assignedManagerId) {
-    const manager = await User.findById(assignedManagerId).select("_id role");
-    if (manager?._id && String(manager.role || "").toUpperCase() === "MANAGER") {
-      pushUser(manager._id);
+  const sourceUsers = preferRequester
+    ? [requester, deal?.assignedTo]
+    : [deal?.assignedTo, requester];
+
+  for (const sourceUser of sourceUsers) {
+    if (recipients.length) {
+      break;
     }
+
+    const chainRecipients = await getApprovalRecipientChain(sourceUser?._id || sourceUser);
+    chainRecipients.forEach(pushUser);
   }
 
-  if (!recipients.length && requester?.reportsTo) {
-    const manager = await User.findById(requester.reportsTo).select("_id role");
-    if (manager?._id && String(manager.role || "").toUpperCase() === "MANAGER") {
-      pushUser(manager._id);
-    }
+  if (!recipients.length) {
+    const admins = await User.find({ role: { $regex: /^admin$/i } }).select("_id").lean();
+    admins.forEach((admin) => pushUser(admin._id));
   }
 
   return recipients;
@@ -2710,10 +2743,11 @@ router.post("/:id/won-approval-request", verifyToken, permitDealAccess(), async 
       return res.status(400).json({ message: "Won approval request is allowed only from Negotiate stage." });
     }
 
-    const recipients =
-      requesterRole === "MANAGER"
-        ? [req.user._id]
-        : await getProposalApprovalRecipients({ requester: req.user, deal });
+    const recipients = await getProposalApprovalRecipients({
+      requester: req.user,
+      deal,
+      preferRequester: requesterRole === "MANAGER",
+    });
     if (!recipients.length) {
       return res.status(400).json({ message: "No assigned manager found for won approval request." });
     }
