@@ -17,5 +17,13 @@ const inventorySchema = new mongoose.Schema({
   }
 }, { timestamps: true });
 
+// Add post-save hook to handle inventory updates
+inventorySchema.post("save", async function (doc) {
+  if (doc.quantity > 0) {
+    const updateOrders = require("../utils/vendorInventorySync").updateOrdersForRestock;
+    await updateOrders(doc.product);
+  }
+});
+
 module.exports = mongoose.model("Inventory", inventorySchema);
 

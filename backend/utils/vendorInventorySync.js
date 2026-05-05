@@ -1,4 +1,3 @@
-
 const Item = require("../models/item");
 const Bill = require("../models/bill");
 
@@ -134,6 +133,36 @@ const syncBillInventoryIfPaid = async ({ billId, vendorName }) => {
   };
 };
 
+// Utility function to update orders, notify roles, and send follow-up emails
+const updateOrdersForRestock = async (productId) => {
+  const Order = require("../models/order"); // Assuming an Order model exists
+  const User = require("../models/user"); // Assuming a User model exists
+  const orders = await Order.find({ product: productId, status: "Waiting for Restock" });
+
+  for (const order of orders) {
+    order.status = "Restocked";
+    await order.save();
+
+    // Notify the role handling the client
+    const clientHandler = await User.findById(order.clientHandlerId); // Assuming clientHandlerId exists in the Order model
+    if (clientHandler) {
+      const sendNotification = require("./mailer").sendNotification;
+      await sendNotification(clientHandler.email, "Item Restocked", {
+        subject: "Item Restocked",
+        body: `The item for order ${order._id} has been restocked. Please follow up with the client.`
+      });
+    }
+
+    // Send follow-up email to the client
+    const sendNotification = require("./mailer").sendNotification;
+    await sendNotification(order.clientEmail, "Your order has been restocked!", {
+      subject: "Order Restocked",
+      body: `Your order for product ${productId} is now restocked and will be processed shortly.`
+    });
+  }
+};
+
 module.exports = {
   syncBillInventoryIfPaid,
+  updateOrdersForRestock,
 };
