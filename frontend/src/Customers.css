@@ -135,6 +135,39 @@
   min-width: 640px;
 }
 
+.billing-cycle-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-start;
+}
+
+.billing-cycle-display {
+  font-weight: 500;
+  color: var(--theme-ink);
+  font-size: 12px;
+}
+
+.billing-cycle-edit {
+  font-size: 12px;
+  padding: 4px 6px;
+  border: 1px solid #d0d5dd;
+  border-radius: 4px;
+  background: white;
+  color: var(--theme-text-muted);
+  cursor: pointer;
+}
+
+.billing-cycle-edit:hover {
+  border-color: #2563eb;
+}
+
+.billing-cycle-edit:focus {
+  outline: none;
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.14);
+}
+
 @media (max-width: 900px) {
   .dashboard-wrapper .dashboard-header {
     flex-direction: column;

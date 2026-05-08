@@ -16,6 +16,7 @@ const DealView = require("../models/dealView");
 const AppSettings = require("../models/appSettings");
 const { sendLowStockCustomerEmail, sendLeadProposalEmail } = require("../utils/mailer");
 const { generateProposalPdfBuffer } = require("../utils/proposalPdf");
+const { getDefaultBillingCycleForProduct } = require("../config/productBillingCycleMap");
 
 // DEBUG: Test notification endpoint
 router.post("/test-notification", async (req, res) => {
@@ -1859,6 +1860,65 @@ const updateDealHandler = async (req, res) => {
         updates.billingCycle = nextBillingCycle;
       } else {
         return res.status(400).json({ message: "Unable to determine item type for this deal" });
+      }
+    }
+
+    // Auto-populate billingCycle and dates when moving into Need Analysis for services
+    if (normalizeDealStage(nextStage) === "need_analysis") {
+      const itemTypeNeed = String(itemForValidation?.type || "").toLowerCase();
+      if (itemTypeNeed === "service") {
+        const hasBillingInUpdates = Object.prototype.hasOwnProperty.call(updates, "billingCycle") && String(updates.billingCycle || "").trim();
+        const existingBillingOnDeal = String(req.deal.billingCycle || "").trim();
+        if (!hasBillingInUpdates && !existingBillingOnDeal) {
+          // Priority order:
+          // 1. Product → Billing Cycle mapping file
+          // 2. Item's configured billingCycle
+          // 3. Customer's last similar deal with billingCycle
+          let defaultCycle = getDefaultBillingCycleForProduct(
+            String(itemForValidation?._id || ""),
+            String(itemForValidation?.name || "")
+          );
+
+          if (!defaultCycle) {
+            defaultCycle = itemForValidation?.billingCycle || null;
+          }
+
+          let prevDeal = null;
+          if (!defaultCycle) {
+            try {
+              prevDeal = await Deal.findOne({
+                customerId: req.deal.customerId,
+                product: itemForValidation._id,
+                billingCycle: { $exists: true, $ne: "" },
+              })
+                .sort({ createdAt: -1 })
+                .select("billingCycle startDate nextBillingDate expiryDate createdAt")
+                .lean();
+              if (prevDeal?.billingCycle) defaultCycle = prevDeal.billingCycle;
+            } catch (e) {
+              defaultCycle = null;
+            }
+          }
+
+          if (defaultCycle) {
+            const normalizedCycle = normalizeBillingCycle(defaultCycle);
+            updates.billingCycle = normalizedCycle;
+
+            // Fetch customer to use customer.createdAt as base date
+            let customer = null;
+            try {
+              customer = await Customer.findById(req.deal.customerId).select("createdAt").lean();
+            } catch (e) {
+              customer = null;
+            }
+
+            const customerCreatedAt = customer?.createdAt || new Date();
+            const lifecycle = computeServiceLifecycle(normalizedCycle, customerCreatedAt);
+            updates.startDate = lifecycle.startDate;
+            updates.nextBillingDate = lifecycle.nextBillingDate;
+            updates.expiryDate = lifecycle.expiryDate;
+          }
+        }
       }
     }
 
