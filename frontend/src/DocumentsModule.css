@@ -685,6 +685,169 @@
   justify-content: flex-end;
 }
 
+:root[data-theme="dark"] .documents-page {
+  --docs-surface: #10190f;
+  --docs-card: #172114;
+  --docs-border: #34452e;
+  --docs-ink: #edf7e8;
+  --docs-muted: #c1d4bb;
+  --docs-accent: #58c345;
+  --docs-accent-deep: #8ed85b;
+  --docs-highlight: #f4b400;
+  background: #11170f;
+  color: var(--docs-ink);
+}
+
+:root[data-theme="dark"] .documents-hero,
+:root[data-theme="dark"] .documents-card,
+:root[data-theme="dark"] .documents-modal__panel {
+  background: #172114;
+  border-color: var(--docs-border);
+  color: var(--docs-ink);
+  box-shadow: var(--theme-shadow-sm);
+}
+
+:root[data-theme="dark"] .documents-hero {
+  background:
+    radial-gradient(760px 260px at 0% -10%, rgba(88, 195, 69, 0.14), transparent 45%),
+    linear-gradient(135deg, #172114 0%, #122010 100%);
+}
+
+:root[data-theme="dark"] .documents-hero::before {
+  background: radial-gradient(circle at center, rgba(244, 180, 0, 0.14), rgba(244, 180, 0, 0));
+}
+
+:root[data-theme="dark"] .documents-hero__copy h1,
+:root[data-theme="dark"] .documents-card__header h2,
+:root[data-theme="dark"] .documents-modal__header h2,
+:root[data-theme="dark"] .documents-pricing-table strong,
+:root[data-theme="dark"] .documents-info-list strong,
+:root[data-theme="dark"] .documents-status-panel strong,
+:root[data-theme="dark"] .documents-stack-item strong,
+:root[data-theme="dark"] .documents-proposal-only__meta strong,
+:root[data-theme="dark"] .documents-proposal-only__calc-grid strong,
+:root[data-theme="dark"] .documents-line-items__row,
+:root[data-theme="dark"] .documents-stack-item p {
+  color: var(--docs-ink);
+}
+
+:root[data-theme="dark"] .documents-hero__copy p,
+:root[data-theme="dark"] .documents-card__header p,
+:root[data-theme="dark"] .documents-modal__header p,
+:root[data-theme="dark"] .documents-empty,
+:root[data-theme="dark"] .documents-footer-hint,
+:root[data-theme="dark"] .documents-pricing-table span,
+:root[data-theme="dark"] .documents-info-list span,
+:root[data-theme="dark"] .documents-status-panel span,
+:root[data-theme="dark"] .documents-stack-item span,
+:root[data-theme="dark"] .documents-proposal-only__meta span,
+:root[data-theme="dark"] .documents-proposal-only__calc-grid span,
+:root[data-theme="dark"] .documents-proposal-only__controls label {
+  color: var(--docs-muted);
+}
+
+:root[data-theme="dark"] .documents-meta-pill,
+:root[data-theme="dark"] .documents-pricing-table > div,
+:root[data-theme="dark"] .documents-tax-summary > div,
+:root[data-theme="dark"] .documents-info-list > div,
+:root[data-theme="dark"] .documents-status-panel > div,
+:root[data-theme="dark"] .documents-stack-item,
+:root[data-theme="dark"] .documents-proposal-only__meta > div,
+:root[data-theme="dark"] .documents-proposal-only__calc-grid > div,
+:root[data-theme="dark"] .documents-footer-hint {
+  background: #1d2a19;
+  border-color: #3c5135;
+  color: var(--docs-ink);
+}
+
+:root[data-theme="dark"] .documents-card:hover,
+:root[data-theme="dark"] .documents-stack-item--clickable:hover:not(:disabled) {
+  background: #1d2a19;
+  border-color: var(--theme-border-strong);
+}
+
+:root[data-theme="dark"] .documents-stack-item--clickable.active {
+  background: rgba(88, 195, 69, 0.16);
+  border-color: rgba(142, 216, 91, 0.42);
+  box-shadow: inset 0 0 0 1px rgba(142, 216, 91, 0.18);
+}
+
+:root[data-theme="dark"] .documents-line-items {
+  background: #172114;
+  border-color: #3c5135;
+}
+
+:root[data-theme="dark"] .documents-line-items__header {
+  background: #1f2b1a;
+  border-color: #3c5135;
+  color: var(--docs-muted);
+}
+
+:root[data-theme="dark"] .documents-line-items__row {
+  border-top-color: #3c5135;
+}
+
+:root[data-theme="dark"] .documents-card textarea,
+:root[data-theme="dark"] .documents-card input,
+:root[data-theme="dark"] .documents-proposal-only__controls select,
+:root[data-theme="dark"] .documents-proposal-only__controls input {
+  background: #10190f;
+  border-color: var(--docs-border);
+  color: var(--docs-ink);
+}
+
+:root[data-theme="dark"] .documents-card textarea:focus,
+:root[data-theme="dark"] .documents-card input:focus,
+:root[data-theme="dark"] .documents-proposal-only__controls select:focus,
+:root[data-theme="dark"] .documents-proposal-only__controls input:focus {
+  background: #10190f;
+  border-color: var(--theme-gold);
+  box-shadow: 0 0 0 3px rgba(244, 180, 0, 0.18);
+}
+
+:root[data-theme="dark"] .documents-secondary-btn,
+:root[data-theme="dark"] .documents-modal__close {
+  background: #172114;
+  border-color: var(--docs-border);
+  color: var(--docs-ink);
+}
+
+:root[data-theme="dark"] .documents-secondary-btn:hover:not(:disabled),
+:root[data-theme="dark"] .documents-modal__close:hover {
+  background: #1d2a19;
+  border-color: var(--theme-border-strong);
+}
+
+:root[data-theme="dark"] .documents-eyebrow,
+:root[data-theme="dark"] .documents-status-pill.draft {
+  background: #403214;
+  border-color: #74613a;
+  color: #fde68a;
+}
+
+:root[data-theme="dark"] .documents-status-pill.approved,
+:root[data-theme="dark"] .documents-status-pill.sent_to_client {
+  background: rgba(74, 222, 128, 0.18);
+  border-color: rgba(74, 222, 128, 0.28);
+  color: #bbf7d0;
+}
+
+:root[data-theme="dark"] .documents-status-pill.pending_approval {
+  background: rgba(250, 204, 21, 0.18);
+  border-color: rgba(250, 204, 21, 0.28);
+  color: #fde68a;
+}
+
+:root[data-theme="dark"] .documents-status-pill.rejected {
+  background: rgba(248, 113, 113, 0.18);
+  border-color: rgba(248, 113, 113, 0.28);
+  color: #fecaca;
+}
+
+:root[data-theme="dark"] .documents-modal__backdrop {
+  background: rgba(4, 9, 4, 0.72);
+}
+
 @media (max-width: 1200px) {
   .documents-layout {
     grid-template-columns: 1fr;

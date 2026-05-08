@@ -127,6 +127,14 @@ async function initializeDatabase() {
   } catch (e) {
     console.error("Failed to initialize app settings:", e.message);
   }
+
+  try {
+    const { startDailyDigestJob } = require("./utils/dailyDigest");
+    startDailyDigestJob();
+    console.log("Daily digest notification job initialized");
+  } catch (e) {
+    console.error("Failed to initialize daily digest job:", e.message);
+  }
 }
 
 initializeDatabase().catch((err) => console.log(err));

@@ -629,6 +629,61 @@ async function sendTeamsCallInviteEmail({
   return { result, preview };
 }
 
+async function sendDailyDigestEmail({ to, recipientName, summary }) {
+  const mailer = await getTransporter();
+  const appName = "Elogixa CRM";
+  const emailConfig = await getEmailConfig();
+  const sender = emailConfig.auth?.user || "";
+  const name = String(recipientName || "there").trim() || "there";
+  const items = {
+    dueActivities: Number(summary?.dueActivities || 0),
+    openLeads: Number(summary?.openLeads || 0),
+    activeDeals: Number(summary?.activeDeals || 0),
+    unreadNotifications: Number(summary?.unreadNotifications || 0),
+  };
+
+  const result = await mailer.sendMail({
+    from: `"${appName}" <${sender}>`,
+    to,
+    subject: `${appName} Daily Digest`,
+    text: [
+      `Hello ${name},`,
+      "",
+      "Here is your CRM daily summary:",
+      `Due activities: ${items.dueActivities}`,
+      `Open leads: ${items.openLeads}`,
+      `Active deals: ${items.activeDeals}`,
+      `Unread notifications: ${items.unreadNotifications}`,
+      "",
+      "Regards,",
+      appName,
+    ].join("\n"),
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 620px; margin: 0 auto; border: 1px solid #d7e4cf; border-radius: 10px; overflow: hidden;">
+        <div style="background: #163219; padding: 16px 20px; color: #ffffff;">
+          <h2 style="margin: 0; font-size: 20px;">${appName} Daily Digest</h2>
+        </div>
+        <div style="padding: 20px; background: #ffffff; color: #111827;">
+          <p style="margin: 0 0 14px;">Hello ${name},</p>
+          <table style="width: 100%; border-collapse: collapse;">
+            <tr><td style="padding: 10px; border: 1px solid #d7e4cf;">Due activities</td><td style="padding: 10px; border: 1px solid #d7e4cf; font-weight: 700;">${items.dueActivities}</td></tr>
+            <tr><td style="padding: 10px; border: 1px solid #d7e4cf;">Open leads</td><td style="padding: 10px; border: 1px solid #d7e4cf; font-weight: 700;">${items.openLeads}</td></tr>
+            <tr><td style="padding: 10px; border: 1px solid #d7e4cf;">Active deals</td><td style="padding: 10px; border: 1px solid #d7e4cf; font-weight: 700;">${items.activeDeals}</td></tr>
+            <tr><td style="padding: 10px; border: 1px solid #d7e4cf;">Unread notifications</td><td style="padding: 10px; border: 1px solid #d7e4cf; font-weight: 700;">${items.unreadNotifications}</td></tr>
+          </table>
+        </div>
+      </div>
+    `,
+  });
+
+  const preview = isEtherealConfig(emailConfig) ? nodemailer.getTestMessageUrl(result) : null;
+  if (preview) {
+    console.log("Ethereal daily digest preview URL:", preview);
+  }
+
+  return { result, preview };
+}
+
 module.exports = {
   sendPasswordResetEmail,
   sendLeadProposalEmail,
@@ -636,4 +691,5 @@ module.exports = {
   sendLowStockCustomerEmail,
   sendInvoiceEmailToClient,
   sendTeamsCallInviteEmail,
+  sendDailyDigestEmail,
 };

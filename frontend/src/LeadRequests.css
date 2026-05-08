@@ -617,6 +617,185 @@
   background: rgba(16, 185, 129, 0.14);
 }
 
+:root[data-theme="dark"] .lead-requests-page {
+  background: var(--theme-surface-solid);
+  border-color: var(--theme-border);
+  box-shadow: var(--theme-shadow-md);
+}
+
+:root[data-theme="dark"] .lead-requests-header h2,
+:root[data-theme="dark"] .lead-requests-kanban-header,
+:root[data-theme="dark"] .lead-requests-card {
+  color: var(--theme-text);
+}
+
+:root[data-theme="dark"] .lead-requests-header p,
+:root[data-theme="dark"] .lead-requests-subtitle,
+:root[data-theme="dark"] .lead-requests-meta-label,
+:root[data-theme="dark"] .assignment-lead-meta,
+:root[data-theme="dark"] .requests-modal-hint {
+  color: #c1d4bb;
+}
+
+:root[data-theme="dark"] .request-type-toggle-btn,
+:root[data-theme="dark"] .lead-requests-status-tab,
+:root[data-theme="dark"] .lead-requests-kanban-column,
+:root[data-theme="dark"] .requests-modal-card,
+:root[data-theme="dark"] .requests-modal-cancel {
+  background: var(--theme-surface-solid);
+  border-color: var(--theme-border);
+  color: var(--theme-text);
+}
+
+:root[data-theme="dark"] .request-type-toggle-btn:hover,
+:root[data-theme="dark"] .lead-requests-status-tab:hover {
+  background: var(--theme-bg-hover);
+  color: var(--theme-green-strong);
+}
+
+:root[data-theme="dark"] .request-type-toggle-btn.active,
+:root[data-theme="dark"] .lead-requests-status-tab.active {
+  background: #403214;
+  border-color: #74613a;
+  color: #b9f18f;
+}
+
+:root[data-theme="dark"] .request-type-toggle-btn span,
+:root[data-theme="dark"] .lead-requests-status-tab span,
+:root[data-theme="dark"] .lead-requests-kanban-header strong {
+  background: rgba(142, 216, 91, 0.18);
+  color: #b9f18f;
+}
+
+:root[data-theme="dark"] .lead-requests-kanban-column {
+  background: #151f13;
+}
+
+:root[data-theme="dark"] .lead-requests-kanban-header {
+  border-bottom-color: var(--theme-border);
+}
+
+:root[data-theme="dark"] .lead-requests-kanban-column.new .lead-requests-kanban-header,
+:root[data-theme="dark"] .lead-requests-kanban-column.qualification .lead-requests-kanban-header {
+  background: rgba(96, 165, 250, 0.16);
+}
+
+:root[data-theme="dark"] .lead-requests-kanban-column.contacted .lead-requests-kanban-header,
+:root[data-theme="dark"] .lead-requests-kanban-column.need_analysis .lead-requests-kanban-header {
+  background: rgba(34, 211, 238, 0.14);
+}
+
+:root[data-theme="dark"] .lead-requests-kanban-column.qualified .lead-requests-kanban-header,
+:root[data-theme="dark"] .lead-requests-kanban-column.converted .lead-requests-kanban-header,
+:root[data-theme="dark"] .lead-requests-kanban-column.won .lead-requests-kanban-header {
+  background: rgba(74, 222, 128, 0.16);
+}
+
+:root[data-theme="dark"] .lead-requests-kanban-column.proposal .lead-requests-kanban-header,
+:root[data-theme="dark"] .lead-requests-kanban-column.negotiate .lead-requests-kanban-header {
+  background: rgba(250, 204, 21, 0.18);
+}
+
+:root[data-theme="dark"] .lead-requests-kanban-column.proposal_sent .lead-requests-kanban-header,
+:root[data-theme="dark"] .lead-requests-kanban-column.proposal_price_quote .lead-requests-kanban-header {
+  background: rgba(45, 212, 191, 0.16);
+}
+
+:root[data-theme="dark"] .lead-requests-kanban-column.value_proposition .lead-requests-kanban-header {
+  background: rgba(165, 180, 252, 0.16);
+}
+
+:root[data-theme="dark"] .lead-requests-kanban-column.lost .lead-requests-kanban-header {
+  background: rgba(248, 113, 113, 0.16);
+}
+
+:root[data-theme="dark"] .lead-requests-card {
+  background: linear-gradient(180deg, #1d2a19 0%, #162116 100%);
+  border-color: #3c5135;
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.28);
+}
+
+:root[data-theme="dark"] .lead-requests-card:hover {
+  border-color: var(--theme-border-strong);
+  box-shadow: var(--theme-shadow-md);
+}
+
+:root[data-theme="dark"] .lead-requests-meta-value {
+  color: #edf7e8;
+}
+
+:root[data-theme="dark"] .lead-requests-assignment {
+  border-top-color: #3c5135;
+}
+
+:root[data-theme="dark"] .lead-requests-kanban-empty,
+:root[data-theme="dark"] .assignment-empty {
+  background: #111a10;
+  border-color: #3c5135;
+  color: #b7cbb0;
+}
+
+:root[data-theme="dark"] .lead-requests-avatar {
+  background: linear-gradient(135deg, #324b73, #20375f);
+  color: #dbeafe;
+}
+
+:root[data-theme="dark"] .lead-status-badge.new,
+:root[data-theme="dark"] .lead-status-badge.qualification,
+:root[data-theme="dark"] .lead-status-badge.need_analysis {
+  background: rgba(96, 165, 250, 0.18);
+  color: #bfdbfe;
+}
+
+:root[data-theme="dark"] .lead-status-badge.contacted,
+:root[data-theme="dark"] .lead-status-badge.proposal_price_quote,
+:root[data-theme="dark"] .lead-status-badge.proposal_sent {
+  background: rgba(45, 212, 191, 0.18);
+  color: #99f6e4;
+}
+
+:root[data-theme="dark"] .lead-status-badge.qualified,
+:root[data-theme="dark"] .lead-status-badge.converted,
+:root[data-theme="dark"] .lead-status-badge.won {
+  background: rgba(74, 222, 128, 0.18);
+  color: #bbf7d0;
+}
+
+:root[data-theme="dark"] .lead-status-badge.proposal,
+:root[data-theme="dark"] .lead-status-badge.negotiate {
+  background: rgba(250, 204, 21, 0.18);
+  color: #fde68a;
+}
+
+:root[data-theme="dark"] .lead-status-badge.lost,
+:root[data-theme="dark"] .lead-assignment-badge.unassigned {
+  background: rgba(248, 113, 113, 0.18);
+  color: #fecaca;
+}
+
+:root[data-theme="dark"] .lead-assignment-badge.assigned {
+  background: rgba(74, 222, 128, 0.18);
+  color: #bbf7d0;
+}
+
+:root[data-theme="dark"] .requests-modal-header,
+:root[data-theme="dark"] .requests-modal-footer {
+  border-color: var(--theme-border);
+}
+
+:root[data-theme="dark"] .requests-modal-header h3,
+:root[data-theme="dark"] .requests-modal-field span {
+  color: var(--theme-text);
+}
+
+:root[data-theme="dark"] .requests-modal-close,
+:root[data-theme="dark"] .requests-modal-field input,
+:root[data-theme="dark"] .requests-modal-field select {
+  background: var(--theme-surface-muted);
+  border-color: var(--theme-border);
+  color: var(--theme-text);
+}
+
 @media (max-width: 768px) {
   .lead-requests-header {
     flex-direction: column;

@@ -4,6 +4,15 @@ import './index.css';
 import App from './App';
 import reportWebVitals from './reportWebVitals';
 
+function applySavedTheme() {
+  const savedTheme = localStorage.getItem("theme") || "light";
+  const systemDark = window.matchMedia?.("(prefers-color-scheme: dark)")?.matches;
+  const resolvedTheme = savedTheme === "system" ? (systemDark ? "dark" : "light") : savedTheme;
+  document.documentElement.dataset.theme = resolvedTheme === "dark" ? "dark" : "light";
+}
+
+applySavedTheme();
+
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(
   <React.StrictMode>

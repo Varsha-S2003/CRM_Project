@@ -10,9 +10,9 @@ const Deal = require("../models/deal");
 const Product = require("../models/product");
 const Activity = require("../models/activity");
 const User = require("../models/user");
-const Notification = require("../models/notification");
 const { applyLeadScoring } = require("../utils/leadScoring");
 const { sendLeadProposalEmail } = require("../utils/mailer");
+const { createNotificationIfAllowed } = require("../utils/notificationPreferences");
 
 const normalizeText = (value) => String(value || "").trim();
 const GSTIN_REGEX = /^[0-9]{2}[A-Z0-9]{13}$/;
@@ -1083,7 +1083,9 @@ router.post("/", verifyToken, async (req, res, next) => {
     if (autoAssignment?.manager?._id) {
       const managerName = autoAssignment.manager.name || autoAssignment.manager.username || "Manager";
       const actorName = req.user.name || req.user.username || "Employee";
-      await Notification.create({
+      await createNotificationIfAllowed({
+        type: "leadAssigned",
+        notification: {
         dealId: null,
         leadId: lead._id,
         message: `New lead "${lead.name}" created by ${actorName} and auto-assigned to ${managerName}.`,
@@ -1093,6 +1095,7 @@ router.post("/", verifyToken, async (req, res, next) => {
         changedByName: actorName,
         recipients: [autoAssignment.manager._id],
         isRead: false,
+        },
       });
     }
 
@@ -1187,7 +1190,9 @@ router.post("/bulk", verifyToken, async (req, res, next) => {
     if (assignment.manager?._id && createdLeads.length > 0) {
       const managerName = assignment.manager.name || assignment.manager.username || "Manager";
       const actorName = req.user.name || req.user.username || "Employee";
-      await Notification.create({
+      await createNotificationIfAllowed({
+        type: "leadAssigned",
+        notification: {
         dealId: null,
         leadId: createdLeads[0]._id,
         message: `${createdLeads.length} new leads were imported by ${actorName} and auto-assigned to ${managerName}.`,
@@ -1197,6 +1202,7 @@ router.post("/bulk", verifyToken, async (req, res, next) => {
         changedByName: actorName,
         recipients: [assignment.manager._id],
         isRead: false,
+        },
       });
     }
 

@@ -15,6 +15,12 @@ const User = require("../models/user");
 const DealView = require("../models/dealView");
 const AppSettings = require("../models/appSettings");
 const { sendLowStockCustomerEmail, sendLeadProposalEmail } = require("../utils/mailer");
+const {
+  createNotificationIfAllowed,
+  getUserNotificationPreferences,
+  insertNotificationsIfAllowed,
+  isAlertTypeEnabled,
+} = require("../utils/notificationPreferences");
 const { generateProposalPdfBuffer } = require("../utils/proposalPdf");
 
 // DEBUG: Test notification endpoint
@@ -31,8 +37,8 @@ router.post("/test-notification", async (req, res) => {
     }
 
     const message = `[DEBUG] Test notification for admins at ${new Date().toLocaleString()}`;
-    await Notification.insertMany(
-      admins.map((admin) => ({
+    await insertNotificationsIfAllowed({
+      notifications: admins.map((admin) => ({
         dealId: firstDeal._id,
         message,
         fromStage: "need_analysis",
@@ -41,8 +47,8 @@ router.post("/test-notification", async (req, res) => {
         changedByName: admin.name || admin.username || "Admin",
         recipients: [admin._id],
         isRead: false,
-      }))
-    );
+      })),
+    });
 
     res.json({ message: `Test notification sent to ${admins.length} admin(s)` });
   } catch (err) {
@@ -494,6 +500,8 @@ const getDealCustomerEmail = async (deal) => {
 };
 
 const notifyLowStockToCustomer = async ({ req, deal, item, availableQuantity, requestedQuantity }) => {
+  if (!(await isAlertTypeEnabled("lowInventory"))) return;
+
   const recipient = await getDealCustomerEmail(deal);
   if (!recipient) return;
 
@@ -546,8 +554,9 @@ const notifyLowStockToAdmins = async ({ deal, item, availableQuantity, requested
     `Customer: ${contactName}. Email: ${emailText}. Phone: ${phoneText}. ` +
     `Updated by employee: ${changedByName}. Current stage: ${stageLabel}. Please refill inventory.`;
 
-  await Notification.insertMany(
-    admins.map((admin) => ({
+  await insertNotificationsIfAllowed({
+    type: "lowInventory",
+    notifications: admins.map((admin) => ({
       dealId: deal._id,
       message,
       fromStage: normalizeDealStage(deal.stage || "need_analysis"),
@@ -556,8 +565,8 @@ const notifyLowStockToAdmins = async ({ deal, item, availableQuantity, requested
       changedByName,
       recipients: [admin._id],
       isRead: false,
-    }))
-  );
+    })),
+  });
   console.log(`Low-stock YES notification sent to ${admins.length} admin(s) for deal ${deal._id}`);
 };
 
@@ -604,8 +613,9 @@ const notifyCustomerWaitingForRestockToAdmins = async ({ deal, item, availableQu
     `Customer: ${customerName}. Company: ${companyName}. Email: ${emailText}. Phone: ${phoneText}. ` +
     `Updated by employee: ${changedByName}. Please refill inventory.`;
 
-  await Notification.insertMany(
-    admins.map((admin) => ({
+  await insertNotificationsIfAllowed({
+    type: "lowInventory",
+    notifications: admins.map((admin) => ({
       dealId: deal._id,
       message,
       fromStage: normalizeDealStage(deal.stage || "need_analysis"),
@@ -614,8 +624,8 @@ const notifyCustomerWaitingForRestockToAdmins = async ({ deal, item, availableQu
       changedByName,
       recipients: [admin._id],
       isRead: false,
-    }))
-  );
+    })),
+  });
 };
 
 const validateCreateDealInput = (payload) => {
@@ -2038,7 +2048,9 @@ const updateDealHandler = async (req, res) => {
       recipients.push(...admins.map(a => a._id));
       
       if (recipients.length > 0) {
-        await Notification.insertMany(recipients.map(recipient => ({
+        await insertNotificationsIfAllowed({
+          type: updates.stage && normalizeDealStage(updates.stage) === "won" ? "dealWon" : null,
+          notifications: recipients.map(recipient => ({
           dealId: updatedDeal._id,
           message: `Deal "${updatedDeal.name}" moved from ${oldStage.replace(/_/g, ' ')} to ${updates.stage.replace(/_/g, ' ')} by ${req.user.name || req.user.username}`,
           fromStage: oldStage,
@@ -2046,7 +2058,8 @@ const updateDealHandler = async (req, res) => {
           changedBy: req.user._id,
           changedByName: req.user.name || req.user.username,
           recipients: [recipient]
-        })));
+          })),
+        });
       }
     }
 
@@ -2418,14 +2431,17 @@ router.get("/:id/proposal-workspace", verifyToken, permitDealAccess(), async (re
         ]
       : [];
 
-    const notifications = await Notification.find({
-      dealId: deal._id,
-      recipients: req.user._id,
-    })
-      .select("message isRead createdAt fromStage toStage changedByName")
-      .sort({ createdAt: -1 })
-      .limit(10)
-      .lean();
+    const preferences = await getUserNotificationPreferences(req.user._id);
+    const notifications = preferences.appNotifications
+      ? await Notification.find({
+          dealId: deal._id,
+          recipients: req.user._id,
+        })
+          .select("message isRead createdAt fromStage toStage changedByName")
+          .sort({ createdAt: -1 })
+          .limit(10)
+          .lean()
+      : [];
 
     res.json({
       deal,
@@ -2552,8 +2568,8 @@ router.post("/:id/proposal-approval-request", verifyToken, permitDealAccess(), a
 
     deal.stage = updatedDeal.stage;
 
-    await Notification.insertMany(
-      recipients.map((recipient) => ({
+    await insertNotificationsIfAllowed({
+      notifications: recipients.map((recipient) => ({
         dealId: deal._id,
         message: autoMovedToNegotiate
           ? `Proposal approval requested for deal "${deal.name}" by ${requesterName}. Deal moved to Negotiate. Please schedule and own the negotiation meeting.`
@@ -2564,8 +2580,8 @@ router.post("/:id/proposal-approval-request", verifyToken, permitDealAccess(), a
         changedByName: requesterName,
         recipients: [recipient],
         isRead: false,
-      }))
-    );
+      })),
+    });
 
     if (autoMovedToNegotiate) {
       const notifyIds = new Set(recipients.map((id) => String(id)));
@@ -2578,8 +2594,8 @@ router.post("/:id/proposal-approval-request", verifyToken, permitDealAccess(), a
       const stageMoveMessage =
         `Deal "${deal.name}" auto-moved to Negotiate after proposal was sent to manager by ${requesterName}.`;
 
-      await Notification.insertMany(
-        Array.from(notifyIds)
+      await insertNotificationsIfAllowed({
+        notifications: Array.from(notifyIds)
           .filter(Boolean)
           .map((recipient) => ({
             dealId: deal._id,
@@ -2590,8 +2606,8 @@ router.post("/:id/proposal-approval-request", verifyToken, permitDealAccess(), a
             changedByName: requesterName,
             recipients: [recipient],
             isRead: false,
-          }))
-      );
+          })),
+      });
     }
 
     const managerOwnerId = recipients[0];
@@ -2675,7 +2691,8 @@ router.post("/:id/proposal-approval", verifyToken, permitDealAccess(), async (re
             ? `Proposal requires edits for deal "${deal.name}" by ${reviewerName}`
             : `Proposal rejected for deal "${deal.name}" by ${reviewerName}`;
 
-      await Notification.create({
+      await createNotificationIfAllowed({
+        notification: {
         dealId: deal._id,
         message,
         fromStage: String(deal.stage || ""),
@@ -2684,6 +2701,7 @@ router.post("/:id/proposal-approval", verifyToken, permitDealAccess(), async (re
         changedByName: reviewerName,
         recipients: [deal.assignedTo._id],
         isRead: false,
+        },
       });
     }
 
@@ -2720,8 +2738,8 @@ router.post("/:id/won-approval-request", verifyToken, permitDealAccess(), async 
 
     const requesterName = getUserDisplayName(req.user);
     const contextNote = String(req.body?.contextNote || "").trim();
-    await Notification.insertMany(
-      recipients.map((recipient) => ({
+    await insertNotificationsIfAllowed({
+      notifications: recipients.map((recipient) => ({
         dealId: deal._id,
         message: contextNote
           ? `Won approval requested for deal "${deal.name}" by ${requesterName}. Context: ${contextNote}`
@@ -2732,8 +2750,8 @@ router.post("/:id/won-approval-request", verifyToken, permitDealAccess(), async 
         changedByName: requesterName,
         recipients: [recipient],
         isRead: false,
-      }))
-    );
+      })),
+    });
 
     res.json({
       message:
@@ -2822,7 +2840,9 @@ router.post("/:id/won-approval", verifyToken, permitDealAccess(), async (req, re
           ? `Deal "${deal.name}" is Won and quotation is received by ${reviewerName}${comment ? `. Note: ${comment}` : ""}`
           : `Won transition requires edits for deal "${deal.name}" by ${reviewerName}${comment ? `. Note: ${comment}` : ""}`;
 
-      await Notification.create({
+      await createNotificationIfAllowed({
+        type: action === "approve" ? "dealWon" : null,
+        notification: {
         dealId: deal._id,
         message,
         fromStage: previousStage,
@@ -2831,6 +2851,7 @@ router.post("/:id/won-approval", verifyToken, permitDealAccess(), async (req, re
         changedByName: reviewerName,
         recipients: [deal.assignedTo._id],
         isRead: false,
+        },
       });
     }
 
@@ -3014,6 +3035,15 @@ router.post("/:id/proposal-send-client", verifyToken, permitDealAccess(), async 
 // Notification APIs
 router.get("/notifications", verifyToken, async (req, res) => {
   try {
+    const preferences = await getUserNotificationPreferences(req.user._id);
+    if (!preferences.appNotifications) {
+      return res.json({
+        notifications: [],
+        unreadCount: 0,
+        hasUnread: false
+      });
+    }
+
     const notifications = await Notification.find({ 
       recipients: req.user._id 
     })

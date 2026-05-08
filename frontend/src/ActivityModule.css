@@ -1129,6 +1129,109 @@
   min-width: min(100%, 320px);
 }
 
+:root[data-theme="dark"] .usecase-page::before {
+  background:
+    radial-gradient(circle at top left, rgba(88, 195, 69, 0.12), transparent 30%),
+    radial-gradient(circle at top right, rgba(244, 180, 0, 0.08), transparent 26%);
+}
+
+:root[data-theme="dark"] .usecase-hero__copy,
+:root[data-theme="dark"] .usecase-stat-card,
+:root[data-theme="dark"] .usecase-board__header,
+:root[data-theme="dark"] .usecase-state-card,
+:root[data-theme="dark"] .usecase-note-card {
+  background: #172114;
+  border-color: #34452e;
+  color: #edf7e8;
+  box-shadow: var(--theme-shadow-sm);
+}
+
+:root[data-theme="dark"] .usecase-hero__copy {
+  background:
+    radial-gradient(660px 240px at 100% 0%, rgba(244, 180, 0, 0.1), transparent 45%),
+    linear-gradient(135deg, #172114 0%, #122010 100%);
+}
+
+:root[data-theme="dark"] .usecase-hero__copy::after {
+  background: radial-gradient(circle, rgba(244, 180, 0, 0.12), transparent 70%);
+}
+
+:root[data-theme="dark"] .usecase-hero__breadcrumbs,
+:root[data-theme="dark"] .usecase-hero__copy p,
+:root[data-theme="dark"] .usecase-stat-card span,
+:root[data-theme="dark"] .usecase-stat-card small,
+:root[data-theme="dark"] .usecase-state-card,
+:root[data-theme="dark"] .usecase-state-card span,
+:root[data-theme="dark"] .usecase-note-card__lead,
+:root[data-theme="dark"] .usecase-note-card__meta {
+  color: #c1d4bb;
+}
+
+:root[data-theme="dark"] .usecase-hero__copy h1,
+:root[data-theme="dark"] .usecase-stat-card strong,
+:root[data-theme="dark"] .usecase-state-card strong,
+:root[data-theme="dark"] .usecase-note-card h3,
+:root[data-theme="dark"] .usecase-note-card__group-title,
+:root[data-theme="dark"] .usecase-note-card__note span,
+:root[data-theme="dark"] .usecase-note-card__note p {
+  color: #edf7e8;
+}
+
+:root[data-theme="dark"] .usecase-hero__eyebrow,
+:root[data-theme="dark"] .usecase-chip,
+:root[data-theme="dark"] .usecase-chip--soft,
+:root[data-theme="dark"] .usecase-chip--accent,
+:root[data-theme="dark"] .usecase-note-card__badge,
+:root[data-theme="dark"] .usecase-note-card__group-title {
+  background: rgba(142, 216, 91, 0.16);
+  border-color: rgba(142, 216, 91, 0.26);
+  color: #b9f18f;
+}
+
+:root[data-theme="dark"] .usecase-table-wrap {
+  background: #172114;
+  border: 1px solid #34452e;
+  border-radius: 18px;
+}
+
+:root[data-theme="dark"] .usecase-table thead th {
+  background: #1f2b1a;
+  border-bottom-color: #34452e;
+  color: #edf7e8;
+}
+
+:root[data-theme="dark"] .usecase-table tbody td {
+  background: #172114;
+  border-bottom-color: #34452e;
+  color: #edf7e8;
+}
+
+:root[data-theme="dark"] .usecase-table tbody tr:nth-child(even) td {
+  background: #1b2718;
+}
+
+:root[data-theme="dark"] .usecase-table tbody tr:hover td {
+  background: #22311d;
+}
+
+:root[data-theme="dark"] .usecase-table tbody td:nth-child(1),
+:root[data-theme="dark"] .usecase-table tbody td:nth-child(2) {
+  color: #edf7e8;
+}
+
+:root[data-theme="dark"] .usecase-table tbody td:nth-child(4) {
+  color: #c1d4bb;
+}
+
+:root[data-theme="dark"] .usecase-note-card__meta,
+:root[data-theme="dark"] .usecase-note-card__note {
+  border-color: #3c5135;
+}
+
+:root[data-theme="dark"] .usecase-note-card__note {
+  background: #1d2a19;
+}
+
 .usecase-board__summary-item {
   padding: 12px 14px;
   border-radius: 16px;

@@ -1,6 +1,10 @@
 const mongoose = require("mongoose");
 const Bill = require("../models/bill");
 const Vendor = require("../models/vendor");
+const {
+  getUserNotificationPreferences,
+  isAlertTypeEnabled,
+} = require("../utils/notificationPreferences");
 const Payment = require("../models/payment");
 const { refreshBillStatus } = require("../utils/vendorFinance");
 const { syncBillInventoryIfPaid } = require("../utils/vendorInventorySync");
@@ -283,8 +287,17 @@ const updateBillStatus = async (req, res) => {
   }
 };
 
-const getOverdueNotifications = async (_req, res) => {
+const getOverdueNotifications = async (req, res) => {
   try {
+    const [preferences, invoiceOverdueEnabled] = await Promise.all([
+      getUserNotificationPreferences(req.user?._id),
+      isAlertTypeEnabled("invoiceOverdue"),
+    ]);
+
+    if (!preferences.appNotifications || !invoiceOverdueEnabled) {
+      return res.json({ count: 0, notifications: [] });
+    }
+
     const overdueBills = await Bill.find({ status: "Overdue" })
       .populate("vendorId", "vendorName companyName email")
       .sort({ dueDate: 1 })

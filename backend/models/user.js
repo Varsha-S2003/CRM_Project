@@ -13,7 +13,12 @@ const userSettingsSchema = new mongoose.Schema(
       language: { type: String, default: "English" },
       timezone: { type: String, default: "Asia/Kolkata" },
       emailNotifications: { type: Boolean, default: true },
-      desktopNotifications: { type: Boolean, default: false }
+      desktopNotifications: { type: Boolean, default: false },
+      smsNotifications: { type: Boolean, default: false },
+      appNotifications: { type: Boolean, default: true },
+      profileVisibleToTeam: { type: Boolean, default: true },
+      activityVisibleToManagers: { type: Boolean, default: true },
+      shareEmailWithTeam: { type: Boolean, default: false }
     },
     managerSettings: {
       leadVisibility: { type: String, default: "team" },

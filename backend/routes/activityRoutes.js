@@ -7,6 +7,7 @@ const Contact = require("../models/contact");
 const Deal = require("../models/deal");
 const { verifyToken } = require("../middleware/authMiddleware");
 const { sendActivityReminderEmail } = require("../utils/mailer");
+const { getUserNotificationPreferences } = require("../utils/notificationPreferences");
 
 const router = express.Router();
 
@@ -978,6 +979,7 @@ router.get("/usecases", verifyToken, async (req, res) => {
 
 router.get("/notifications", verifyToken, async (req, res) => {
   try {
+    const preferences = await getUserNotificationPreferences(req.user._id);
     const mode = String(req.query.mode || "popup").toLowerCase();
     const isDashboardMode = mode === "dashboard";
     const now = new Date();
@@ -1023,7 +1025,7 @@ router.get("/notifications", verifyToken, async (req, res) => {
       const emailEnabled = activity.reminderChannels?.email === true;
       const emailAlreadySent = Boolean(activity.notificationState?.emailNotifiedAt);
       const recipient = getActivityReminderRecipient(activity);
-      return emailEnabled && !emailAlreadySent && Boolean(recipient.email);
+      return preferences.emailNotifications && emailEnabled && !emailAlreadySent && Boolean(recipient.email);
     });
 
     await Promise.all(
@@ -1067,7 +1069,7 @@ router.get("/notifications", verifyToken, async (req, res) => {
       );
     }
 
-    const notifications = activities.map((activity) => {
+    const notifications = preferences.appNotifications ? activities.map((activity) => {
       const activityId = String(activity._id);
       const emailEnabled = activity.reminderChannels?.email === true;
       const emailAlreadySent = Boolean(activity.notificationState?.emailNotifiedAt);
@@ -1084,6 +1086,8 @@ router.get("/notifications", verifyToken, async (req, res) => {
           emailStatus = `Email failed: ${emailAttempt.error}`;
         } else if (emailAlreadySent) {
           emailStatus = "Email already sent";
+        } else if (!preferences.emailNotifications) {
+          emailStatus = "Email skipped: email notifications disabled";
         } else if (!recipient.email) {
           emailStatus = `Email skipped: ${recipient.target} email missing`;
         } else {
@@ -1106,9 +1110,9 @@ router.get("/notifications", verifyToken, async (req, res) => {
       email: activity.reminderChannels?.email ?? false,
       emailStatus,
       };
-    });
+    }) : [];
 
-    if (!isDashboardMode && activities.length > 0) {
+    if (preferences.appNotifications && !isDashboardMode && activities.length > 0) {
       const popupCandidateIds = activities
         .filter((activity) => activity.reminderChannels?.popup !== false)
         .map((activity) => activity._id);

@@ -40,6 +40,395 @@
   --theme-gradient-soft: #f4f9ea;
 }
 
+:root[data-theme="dark"] {
+  --theme-ink: #eef8e8;
+  --theme-ink-soft: #c9dbc1;
+  --theme-ink-deep: #f8fff2;
+  --theme-gold: #f4b400;
+  --theme-gold-soft: #3c3113;
+  --theme-gold-strong: #ffd46a;
+  --theme-green: #58c345;
+  --theme-green-strong: #8ed85b;
+  --theme-lime: #a4e86f;
+  --theme-bg: #11170f;
+  --theme-bg-hover: #1c2618;
+  --theme-bg-soft: #151d13;
+  --theme-surface: rgba(23, 31, 20, 0.96);
+  --theme-surface-solid: #172114;
+  --theme-surface-muted: #1f2b1a;
+  --theme-surface-accent: #342b12;
+  --theme-border: #34452e;
+  --theme-border-strong: #526a48;
+  --theme-text: #edf7e8;
+  --theme-text-muted: #aac0a3;
+  --theme-text-soft: #81947b;
+  --theme-danger: #ff8a8a;
+  --theme-danger-soft: #3c1b1b;
+  --theme-success: #8ed85b;
+  --theme-success-soft: #18331a;
+  --theme-warning: #ffd46a;
+  --theme-warning-soft: #3c2f14;
+  --theme-shadow-sm: 0 8px 22px rgba(0, 0, 0, 0.26);
+  --theme-shadow-md: 0 18px 40px rgba(0, 0, 0, 0.34);
+  --theme-shadow-lg: 0 28px 68px rgba(0, 0, 0, 0.42);
+  --theme-gradient-brand: #3f9f34;
+  --theme-gradient-dark: #1f2b1a;
+  --theme-gradient-gold: #f4b400;
+  --theme-gradient-green: #58c345;
+  --theme-gradient-soft: #1f2b1a;
+}
+
+:root[data-theme="dark"] .sidebar-zoho,
+:root[data-theme="dark"] .create-lead-dropdown,
+:root[data-theme="dark"] .modal-box-zoho,
+:root[data-theme="dark"] .dashboard-notification-dropdown,
+:root[data-theme="dark"] .dashboard-assigned-panel {
+  background: var(--theme-surface-solid);
+  border-color: var(--theme-border);
+}
+
+:root[data-theme="dark"] .sidebar-user,
+:root[data-theme="dark"] .assignment-summary-card,
+:root[data-theme="dark"] .modal-close {
+  background: var(--theme-surface-muted);
+  border-color: var(--theme-border);
+}
+
+:root[data-theme="dark"] .nav-item:hover,
+:root[data-theme="dark"] .nav-item.active,
+:root[data-theme="dark"] .nav-subitem:hover,
+:root[data-theme="dark"] .nav-subitem.active {
+  background: var(--theme-surface-accent);
+  color: var(--theme-green-strong);
+}
+
+:root[data-theme="dark"] .dashboard-layout,
+:root[data-theme="dark"] .main-content,
+:root[data-theme="dark"] .dashboard-wrapper,
+:root[data-theme="dark"] .leads-layout,
+:root[data-theme="dark"] .leads-page,
+:root[data-theme="dark"] .leads-fixed-top,
+:root[data-theme="dark"] .leads-header-section,
+:root[data-theme="dark"] .products-page,
+:root[data-theme="dark"] .products-fixed-top,
+:root[data-theme="dark"] .inventory-page,
+:root[data-theme="dark"] .customers-page,
+:root[data-theme="dark"] .vendors-page,
+:root[data-theme="dark"] .vendors-fixed-top,
+:root[data-theme="dark"] .employees-page,
+:root[data-theme="dark"] .reports-page,
+:root[data-theme="dark"] .documents-page,
+:root[data-theme="dark"] .quotations-page,
+:root[data-theme="dark"] .notifications-page,
+:root[data-theme="dark"] .activity-page,
+:root[data-theme="dark"] .activity-module,
+:root[data-theme="dark"] .usecase-page,
+:root[data-theme="dark"] .task-page,
+:root[data-theme="dark"] .meeting-page,
+:root[data-theme="dark"] .call-page {
+  background: var(--theme-bg);
+  color: var(--theme-text);
+}
+
+:root[data-theme="dark"] .dashboard-wrapper,
+:root[data-theme="dark"] .lead-requests-page,
+:root[data-theme="dark"] .settings-layout {
+  background: #122010;
+  border-color: #31482b;
+}
+
+:root[data-theme="dark"] .stat-card,
+:root[data-theme="dark"] .stat-card-zoho,
+:root[data-theme="dark"] .chart-card,
+:root[data-theme="dark"] .assignment-dashboard-block,
+:root[data-theme="dark"] .assignment-list-card,
+:root[data-theme="dark"] .assignment-summary-card,
+:root[data-theme="dark"] .leads-view-toolbar-card,
+:root[data-theme="dark"] .kanban-card-zoho,
+:root[data-theme="dark"] .products-table-container,
+:root[data-theme="dark"] .inventory-table-container,
+:root[data-theme="dark"] .customers-card,
+:root[data-theme="dark"] .vendors-card,
+:root[data-theme="dark"] .vendors-stats .stat-card,
+:root[data-theme="dark"] .employees-card,
+:root[data-theme="dark"] .employee-card,
+:root[data-theme="dark"] .reports-hero__copy,
+:root[data-theme="dark"] .reports-hero__ring,
+:root[data-theme="dark"] .reports-kpi-card,
+:root[data-theme="dark"] .reports-panel,
+:root[data-theme="dark"] .reports-insight-card,
+:root[data-theme="dark"] .documents-card,
+:root[data-theme="dark"] .documents-history-card,
+:root[data-theme="dark"] .quotations-summary-card,
+:root[data-theme="dark"] .quotations-toolbar,
+:root[data-theme="dark"] .quotations-table-wrap,
+:root[data-theme="dark"] .invoices-summary-card,
+:root[data-theme="dark"] .invoices-table-card,
+:root[data-theme="dark"] .notifications-page-header,
+:root[data-theme="dark"] .notifications-summary-card,
+:root[data-theme="dark"] .notifications-toolbar,
+:root[data-theme="dark"] .notifications-empty-card,
+:root[data-theme="dark"] .notification-card,
+:root[data-theme="dark"] .activity-dashboard-card,
+:root[data-theme="dark"] .activity-table-card,
+:root[data-theme="dark"] .activity-calendar-card,
+:root[data-theme="dark"] .activity-reports-card,
+:root[data-theme="dark"] .activity-timeline-card,
+:root[data-theme="dark"] .activity-modal,
+:root[data-theme="dark"] .record-activity-card,
+:root[data-theme="dark"] .usecase-stat-card,
+:root[data-theme="dark"] .usecase-board__header,
+:root[data-theme="dark"] .usecase-state-card,
+:root[data-theme="dark"] .usecase-note-card,
+:root[data-theme="dark"] .task-page__header,
+:root[data-theme="dark"] .task-page__viewbar,
+:root[data-theme="dark"] .task-page__toolbar,
+:root[data-theme="dark"] .task-card,
+:root[data-theme="dark"] .meeting-card-compact,
+:root[data-theme="dark"] .vendor-modal-dialog,
+:root[data-theme="dark"] .modal-box-zoho,
+:root[data-theme="dark"] .requests-modal-card,
+:root[data-theme="dark"] .documents-modal__panel,
+:root[data-theme="dark"] .proposal-dialog,
+:root[data-theme="dark"] .duplicate-dialog-box,
+:root[data-theme="dark"] .modal-box {
+  background: var(--theme-surface-solid);
+  border-color: var(--theme-border);
+  color: var(--theme-text);
+  box-shadow: var(--theme-shadow-sm);
+}
+
+:root[data-theme="dark"] .kanban-column-zoho,
+:root[data-theme="dark"] .assignment-list-title,
+:root[data-theme="dark"] .column-header-zoho,
+:root[data-theme="dark"] .products-table thead,
+:root[data-theme="dark"] .inventory-table thead,
+:root[data-theme="dark"] .vendors-table th,
+:root[data-theme="dark"] .quotations-table th,
+:root[data-theme="dark"] .quotations-line-items-table th,
+:root[data-theme="dark"] .documents-line-items__header,
+:root[data-theme="dark"] .import-preview-table th,
+:root[data-theme="dark"] .activity-table th,
+:root[data-theme="dark"] .usecase-table thead th,
+:root[data-theme="dark"] .reports-table th,
+:root[data-theme="dark"] .meeting-column__header,
+:root[data-theme="dark"] .call-column__header,
+:root[data-theme="dark"] .task-column__header {
+  background: var(--theme-surface-muted);
+  border-color: var(--theme-border);
+  color: var(--theme-text);
+}
+
+:root[data-theme="dark"] .products-table td,
+:root[data-theme="dark"] .inventory-table td,
+:root[data-theme="dark"] .vendors-table td,
+:root[data-theme="dark"] .quotations-table td,
+:root[data-theme="dark"] .quotations-line-items-table td,
+:root[data-theme="dark"] .documents-pricing-table > div,
+:root[data-theme="dark"] .import-preview-table td,
+:root[data-theme="dark"] .activity-table td,
+:root[data-theme="dark"] .usecase-table tbody td,
+:root[data-theme="dark"] .reports-table td,
+:root[data-theme="dark"] .modal-header-zoho,
+:root[data-theme="dark"] .modal-actions,
+:root[data-theme="dark"] .vendor-modal-header,
+:root[data-theme="dark"] .vendor-modal-footer,
+:root[data-theme="dark"] .requests-modal-header,
+:root[data-theme="dark"] .requests-modal-footer,
+:root[data-theme="dark"] .documents-modal__header {
+  border-color: var(--theme-border);
+  color: var(--theme-text);
+}
+
+:root[data-theme="dark"] .products-table tbody tr:hover,
+:root[data-theme="dark"] .inventory-table tbody tr:hover,
+:root[data-theme="dark"] .vendors-row:hover,
+:root[data-theme="dark"] .quotations-table tr.is-focused,
+:root[data-theme="dark"] .quotations-table tbody tr:hover,
+:root[data-theme="dark"] .reports-table tbody tr:hover td,
+:root[data-theme="dark"] .usecase-table tbody tr:hover td,
+:root[data-theme="dark"] .kanban-card-zoho:hover,
+:root[data-theme="dark"] .task-card:hover,
+:root[data-theme="dark"] .meeting-card-compact:hover {
+  background: var(--theme-bg-hover);
+  border-color: var(--theme-border-strong);
+}
+
+:root[data-theme="dark"] h1,
+:root[data-theme="dark"] h2,
+:root[data-theme="dark"] h3,
+:root[data-theme="dark"] h4,
+:root[data-theme="dark"] .dashboard-title,
+:root[data-theme="dark"] .leads-header-left h1,
+:root[data-theme="dark"] .products-header-left h1,
+:root[data-theme="dark"] .vendors-header-left h1,
+:root[data-theme="dark"] .modal-header-zoho h2,
+:root[data-theme="dark"] .vendor-modal-header h2,
+:root[data-theme="dark"] .reports-panel__head h2,
+:root[data-theme="dark"] .reports-hero__copy h1,
+:root[data-theme="dark"] .documents-card__header h2,
+:root[data-theme="dark"] .quotations-dialog-header h2,
+:root[data-theme="dark"] .notifications-page-header-text h1,
+:root[data-theme="dark"] .task-page__header h1,
+:root[data-theme="dark"] .task-card h3,
+:root[data-theme="dark"] .meeting-card-compact h3 {
+  color: var(--theme-text);
+}
+
+:root[data-theme="dark"] p,
+:root[data-theme="dark"] small,
+:root[data-theme="dark"] .dashboard-subtitle,
+:root[data-theme="dark"] .leads-header-left p,
+:root[data-theme="dark"] .products-header-left p,
+:root[data-theme="dark"] .vendors-header-left p,
+:root[data-theme="dark"] .stat-label,
+:root[data-theme="dark"] .card-company-zoho,
+:root[data-theme="dark"] .card-detail,
+:root[data-theme="dark"] .card-source,
+:root[data-theme="dark"] .detail-label,
+:root[data-theme="dark"] .reports-panel__head p,
+:root[data-theme="dark"] .reports-kpi-card span,
+:root[data-theme="dark"] .reports-kpi-card small,
+:root[data-theme="dark"] .reports-stage-row__meta span,
+:root[data-theme="dark"] .reports-insight-card span,
+:root[data-theme="dark"] .reports-insight-card p,
+:root[data-theme="dark"] .documents-card__header p,
+:root[data-theme="dark"] .documents-modal__header p,
+:root[data-theme="dark"] .quotations-dialog-header p,
+:root[data-theme="dark"] .notifications-page-header-text p,
+:root[data-theme="dark"] .activity-card-header p,
+:root[data-theme="dark"] .record-activity-panel__header p,
+:root[data-theme="dark"] .record-activity-card p,
+:root[data-theme="dark"] .task-card p,
+:root[data-theme="dark"] .schedule-table__subtext,
+:root[data-theme="dark"] .assignment-empty,
+:root[data-theme="dark"] .filter-empty-state p {
+  color: var(--theme-text-muted);
+}
+
+:root[data-theme="dark"] strong,
+:root[data-theme="dark"] .stat-value,
+:root[data-theme="dark"] .detail-value,
+:root[data-theme="dark"] .reports-kpi-card strong,
+:root[data-theme="dark"] .reports-stage-row__meta strong,
+:root[data-theme="dark"] .reports-table td,
+:root[data-theme="dark"] .documents-pricing-table strong,
+:root[data-theme="dark"] .usecase-stat-card strong,
+:root[data-theme="dark"] .usecase-note-card h3,
+:root[data-theme="dark"] .notification-card-title {
+  color: var(--theme-text);
+}
+
+:root[data-theme="dark"] input,
+:root[data-theme="dark"] select,
+:root[data-theme="dark"] textarea,
+:root[data-theme="dark"] .lead-view-select,
+:root[data-theme="dark"] .lead-view-select-button,
+:root[data-theme="dark"] .lead-toolbar-pill-button,
+:root[data-theme="dark"] .btn-view-action,
+:root[data-theme="dark"] .filter-field-select,
+:root[data-theme="dark"] .filter-operator-select,
+:root[data-theme="dark"] .filter-value-select,
+:root[data-theme="dark"] .filter-value-input,
+:root[data-theme="dark"] .filter-date-input,
+:root[data-theme="dark"] .logic-select,
+:root[data-theme="dark"] .vendors-filter-select,
+:root[data-theme="dark"] .form-input,
+:root[data-theme="dark"] .form-select,
+:root[data-theme="dark"] .form-textarea,
+:root[data-theme="dark"] .documents-card input,
+:root[data-theme="dark"] .documents-card textarea,
+:root[data-theme="dark"] .quotations-toolbar input,
+:root[data-theme="dark"] .quotations-dialog-grid input,
+:root[data-theme="dark"] .quotations-dialog-grid textarea,
+:root[data-theme="dark"] .proposal-dialog-form-grid input,
+:root[data-theme="dark"] .proposal-dialog-form-grid textarea {
+  background: #10190f;
+  border-color: var(--theme-border);
+  color: var(--theme-text);
+}
+
+:root[data-theme="dark"] input::placeholder,
+:root[data-theme="dark"] textarea::placeholder {
+  color: #7f9378;
+}
+
+:root[data-theme="dark"] input:focus,
+:root[data-theme="dark"] select:focus,
+:root[data-theme="dark"] textarea:focus {
+  border-color: var(--theme-gold);
+  box-shadow: 0 0 0 3px rgba(244, 180, 0, 0.18);
+}
+
+:root[data-theme="dark"] .btn-filter,
+:root[data-theme="dark"] .btn-cancel,
+:root[data-theme="dark"] .btn-clear,
+:root[data-theme="dark"] .lead-toolbar-pill-button,
+:root[data-theme="dark"] .vendors-pagination button,
+:root[data-theme="dark"] .notifications-btn,
+:root[data-theme="dark"] .task-page__view-pill,
+:root[data-theme="dark"] .task-page__icon-btn,
+:root[data-theme="dark"] .task-page__toolbar-btn,
+:root[data-theme="dark"] .task-page__toolbar-icon,
+:root[data-theme="dark"] .task-card__actions button,
+:root[data-theme="dark"] .task-card__edit {
+  background: var(--theme-surface-solid);
+  border-color: var(--theme-border);
+  color: var(--theme-text);
+}
+
+:root[data-theme="dark"] .btn-filter:hover,
+:root[data-theme="dark"] .btn-filter.active-status-filter,
+:root[data-theme="dark"] .btn-view-action:hover,
+:root[data-theme="dark"] .lead-toolbar-pill-button:hover,
+:root[data-theme="dark"] .lead-toolbar-pill-button:focus,
+:root[data-theme="dark"] .task-page__view-pill.active,
+:root[data-theme="dark"] .task-page__toolbar-icon.active {
+  background: var(--theme-surface-accent);
+  border-color: #74613a;
+  color: #b9f18f;
+}
+
+:root[data-theme="dark"] .filter-chip,
+:root[data-theme="dark"] .chart-chip,
+:root[data-theme="dark"] .lead-count-zoho,
+:root[data-theme="dark"] .card-source,
+:root[data-theme="dark"] .reports-chip,
+:root[data-theme="dark"] .documents-status-pill,
+:root[data-theme="dark"] .notification-type-badge {
+  background: rgba(142, 216, 91, 0.16);
+  color: #b9f18f;
+}
+
+:root[data-theme="dark"] .status-badge-zoho.new,
+:root[data-theme="dark"] .lead-score-pill {
+  background: rgba(96, 165, 250, 0.18);
+  color: #bfdbfe;
+}
+
+:root[data-theme="dark"] .status-badge-zoho.contacted,
+:root[data-theme="dark"] .status-badge-zoho.proposal {
+  background: rgba(250, 204, 21, 0.18);
+  color: #fde68a;
+}
+
+:root[data-theme="dark"] .status-badge-zoho.qualified,
+:root[data-theme="dark"] .status-badge-zoho.proposal_sent,
+:root[data-theme="dark"] .status-badge-zoho.converted,
+:root[data-theme="dark"] .deal-status-pill.active {
+  background: rgba(74, 222, 128, 0.18);
+  color: #bbf7d0;
+}
+
+:root[data-theme="dark"] .status-badge-zoho.lost,
+:root[data-theme="dark"] .deal-status-pill.inactive,
+:root[data-theme="dark"] .delete-btn-zoho,
+:root[data-theme="dark"] .assignment-delete-btn {
+  background: rgba(248, 113, 113, 0.18);
+  border-color: rgba(248, 113, 113, 0.28);
+  color: #fecaca;
+}
+
 html {
   background: var(--theme-bg);
 }

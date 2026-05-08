@@ -33,6 +33,7 @@ function Sidebar() {
 
   useEffect(() => {
     if (typeof window === "undefined" || !("Notification" in window)) return;
+    if (localStorage.getItem("crmDesktopNotifications") !== "true") return;
     if (Notification.permission === "default") {
       Notification.requestPermission().catch(() => {});
     }
@@ -50,6 +51,13 @@ function Sidebar() {
 
     const fetchActivityReminderPopups = async () => {
       try {
+        const appNotificationsEnabled = localStorage.getItem("crmAppNotifications") !== "false";
+        const desktopNotificationsEnabled = localStorage.getItem("crmDesktopNotifications") === "true";
+        if (!appNotificationsEnabled) {
+          setReminderPopups([]);
+          return;
+        }
+
         const [notificationsRes, activitiesRes] = await Promise.all([
           axios.get("http://localhost:5000/api/activities/notifications", {
             params: { mode: "dashboard" },
@@ -102,7 +110,7 @@ function Sidebar() {
 
             setReminderPopups((prev) => [...prev, popup]);
 
-            if (typeof window !== "undefined" && "Notification" in window && Notification.permission === "granted") {
+            if (desktopNotificationsEnabled && typeof window !== "undefined" && "Notification" in window && Notification.permission === "granted") {
               const notification = new Notification("CRM Reminder", {
                 body: popup.message,
               });

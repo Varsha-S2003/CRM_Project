@@ -993,6 +993,7 @@ function ActivityModule() {
 
   useEffect(() => {
     if (typeof window === "undefined" || !("Notification" in window)) return undefined;
+    if (localStorage.getItem("crmDesktopNotifications") !== "true") return undefined;
     if (Notification.permission === "default") {
       Notification.requestPermission().catch(() => {});
     }
@@ -1001,6 +1002,7 @@ function ActivityModule() {
 
   useEffect(() => {
     if (typeof window === "undefined" || !("Notification" in window)) return;
+    if (localStorage.getItem("crmDesktopNotifications") !== "true") return;
     if (Notification.permission !== "granted") return;
 
     const now = new Date(meetingNowTick);
