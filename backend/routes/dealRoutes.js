@@ -22,6 +22,7 @@ const {
   isAlertTypeEnabled,
 } = require("../utils/notificationPreferences");
 const { generateProposalPdfBuffer } = require("../utils/proposalPdf");
+const { getDefaultBillingCycleForProduct } = require("../config/productBillingCycleMap");
 
 // DEBUG: Test notification endpoint
 router.post("/test-notification", async (req, res) => {
@@ -237,7 +238,37 @@ const computeServiceLifecycle = (billingCycle, startDate = new Date()) => {
 
 const getUserDisplayName = (user) => user?.name || user?.username || "User";
 
-const getProposalApprovalRecipients = async ({ requester, deal }) => {
+const getApprovalRecipientChain = async (startUserId) => {
+  const recipients = [];
+  const seen = new Set();
+  let currentUserId = String(startUserId || "").trim();
+
+  while (currentUserId && !seen.has(currentUserId)) {
+    seen.add(currentUserId);
+
+    const currentUser = await User.findById(currentUserId).select("_id role reportsTo").lean();
+    if (!currentUser?.reportsTo) {
+      break;
+    }
+
+    const parentUser = await User.findById(currentUser.reportsTo).select("_id role reportsTo").lean();
+    if (!parentUser?._id) {
+      break;
+    }
+
+    const parentRole = String(parentUser.role || "").toUpperCase();
+    if (["MANAGER", "ADMIN"].includes(parentRole)) {
+      recipients.push(String(parentUser._id));
+      break;
+    }
+
+    currentUserId = String(parentUser._id);
+  }
+
+  return recipients;
+};
+
+const getProposalApprovalRecipients = async ({ requester, deal, preferRequester = false }) => {
   const recipients = [];
   const seen = new Set();
 
@@ -248,19 +279,22 @@ const getProposalApprovalRecipients = async ({ requester, deal }) => {
     recipients.push(id);
   };
 
-  const assignedManagerId = deal?.assignedTo?.reportsTo;
-  if (assignedManagerId) {
-    const manager = await User.findById(assignedManagerId).select("_id role");
-    if (manager?._id && String(manager.role || "").toUpperCase() === "MANAGER") {
-      pushUser(manager._id);
+  const sourceUsers = preferRequester
+    ? [requester, deal?.assignedTo]
+    : [deal?.assignedTo, requester];
+
+  for (const sourceUser of sourceUsers) {
+    if (recipients.length) {
+      break;
     }
+
+    const chainRecipients = await getApprovalRecipientChain(sourceUser?._id || sourceUser);
+    chainRecipients.forEach(pushUser);
   }
 
-  if (!recipients.length && requester?.reportsTo) {
-    const manager = await User.findById(requester.reportsTo).select("_id role");
-    if (manager?._id && String(manager.role || "").toUpperCase() === "MANAGER") {
-      pushUser(manager._id);
-    }
+  if (!recipients.length) {
+    const admins = await User.find({ role: { $regex: /^admin$/i } }).select("_id").lean();
+    admins.forEach((admin) => pushUser(admin._id));
   }
 
   return recipients;
@@ -1839,6 +1873,65 @@ const updateDealHandler = async (req, res) => {
       }
     }
 
+    // Auto-populate billingCycle and dates when moving into Need Analysis for services
+    if (normalizeDealStage(nextStage) === "need_analysis") {
+      const itemTypeNeed = String(itemForValidation?.type || "").toLowerCase();
+      if (itemTypeNeed === "service") {
+        const hasBillingInUpdates = Object.prototype.hasOwnProperty.call(updates, "billingCycle") && String(updates.billingCycle || "").trim();
+        const existingBillingOnDeal = String(req.deal.billingCycle || "").trim();
+        if (!hasBillingInUpdates && !existingBillingOnDeal) {
+          // Priority order:
+          // 1. Product → Billing Cycle mapping file
+          // 2. Item's configured billingCycle
+          // 3. Customer's last similar deal with billingCycle
+          let defaultCycle = getDefaultBillingCycleForProduct(
+            String(itemForValidation?._id || ""),
+            String(itemForValidation?.name || "")
+          );
+
+          if (!defaultCycle) {
+            defaultCycle = itemForValidation?.billingCycle || null;
+          }
+
+          let prevDeal = null;
+          if (!defaultCycle) {
+            try {
+              prevDeal = await Deal.findOne({
+                customerId: req.deal.customerId,
+                product: itemForValidation._id,
+                billingCycle: { $exists: true, $ne: "" },
+              })
+                .sort({ createdAt: -1 })
+                .select("billingCycle startDate nextBillingDate expiryDate createdAt")
+                .lean();
+              if (prevDeal?.billingCycle) defaultCycle = prevDeal.billingCycle;
+            } catch (e) {
+              defaultCycle = null;
+            }
+          }
+
+          if (defaultCycle) {
+            const normalizedCycle = normalizeBillingCycle(defaultCycle);
+            updates.billingCycle = normalizedCycle;
+
+            // Fetch customer to use customer.createdAt as base date
+            let customer = null;
+            try {
+              customer = await Customer.findById(req.deal.customerId).select("createdAt").lean();
+            } catch (e) {
+              customer = null;
+            }
+
+            const customerCreatedAt = customer?.createdAt || new Date();
+            const lifecycle = computeServiceLifecycle(normalizedCycle, customerCreatedAt);
+            updates.startDate = lifecycle.startDate;
+            updates.nextBillingDate = lifecycle.nextBillingDate;
+            updates.expiryDate = lifecycle.expiryDate;
+          }
+        }
+      }
+    }
+
     const isNeedAnalysisQuantityUpdate =
       normalizeDealStage(nextStage) === "need_analysis" &&
       String(itemForValidation?.type || "").toLowerCase() === "product" &&
@@ -2728,10 +2821,11 @@ router.post("/:id/won-approval-request", verifyToken, permitDealAccess(), async 
       return res.status(400).json({ message: "Won approval request is allowed only from Negotiate stage." });
     }
 
-    const recipients =
-      requesterRole === "MANAGER"
-        ? [req.user._id]
-        : await getProposalApprovalRecipients({ requester: req.user, deal });
+    const recipients = await getProposalApprovalRecipients({
+      requester: req.user,
+      deal,
+      preferRequester: requesterRole === "MANAGER",
+    });
     if (!recipients.length) {
       return res.status(400).json({ message: "No assigned manager found for won approval request." });
     }

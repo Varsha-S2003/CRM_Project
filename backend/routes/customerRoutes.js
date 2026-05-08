@@ -103,19 +103,22 @@ const formatPlanLabel = (value) => {
   return normalized.charAt(0).toUpperCase() + normalized.slice(1);
 };
 
-const toPurchasePayload = (deal, customer) => ({
-  id: deal?._id || null,
-  product: deal?.product || customer?.product || null,
-  stage: String(deal?.stage || "").trim(),
-  status: normalizeStatus(deal?.status, deal?.stage),
-  reason: String(deal?.reason || "").trim(),
-  source: String(deal?.leadSource || customer?.leadId?.source || "").trim(),
-  createdAt: deal?.createdAt || null,
-  expiryDate: deal?.expiryDate || deal?.nextBillingDate || null,
-  nextBillingDate: deal?.nextBillingDate || deal?.expiryDate || null,
-  billingCycle: deal?.billingCycle || deal?.product?.billingCycle || "",
-  productType: deal?.product?.type || "",
-});
+const toPurchasePayload = (deal, customer) => {
+  console.log("Debugging toPurchasePayload:", { dealProduct: deal?.product, customerProduct: customer?.product });
+  return {
+    id: deal?._id || null,
+    product: deal?.product || customer?.product || null,
+    stage: String(deal?.stage || "").trim(),
+    status: normalizeStatus(deal?.status, deal?.stage),
+    reason: String(deal?.reason || "").trim(),
+    source: String(deal?.leadSource || customer?.leadId?.source || "").trim(),
+    createdAt: deal?.createdAt || null,
+    expiryDate: deal?.expiryDate || deal?.nextBillingDate || null,
+    nextBillingDate: deal?.nextBillingDate || deal?.expiryDate || null,
+    billingCycle: deal?.billingCycle || deal?.product?.billingCycle || "",
+    productType: deal?.product?.type || "",
+  };
+};
 
 router.get("/", verifyToken, async (req, res) => {
   try {
@@ -128,8 +131,10 @@ router.get("/", verifyToken, async (req, res) => {
         ? "Inactive"
         : "";
 
-    if (requestedStatus && !normalizedRequestedStatus) {
-      return res.status(400).json({ message: "status must be Active or Inactive" });
+    // allow products/services filters in addition to Active/Inactive
+    const allowedSpecial = ["products", "services"];
+    if (requestedStatus && !normalizedRequestedStatus && !allowedSpecial.includes(requestedStatusKey)) {
+      return res.status(400).json({ message: "status must be Active, Inactive, products or services" });
     }
 
     const role = String(req.user?.role || "").toUpperCase();
@@ -301,10 +306,19 @@ router.get("/", verifyToken, async (req, res) => {
       };
     });
 
-    const filtered = normalizedRequestedStatus
-      ? response.filter((customer) => customer.status === normalizedRequestedStatus)
-      : response;
-
+    let filtered = response;
+    if (normalizedRequestedStatus) {
+      filtered = response.filter((customer) => customer.status === normalizedRequestedStatus);
+    } else if (requestedStatusKey === "products") {
+      filtered = response.filter((customer) =>
+        (customer.purchases || []).some((p) => String(p.productType || "").trim().toLowerCase() !== "service")
+      );
+    } else if (requestedStatusKey === "services") {
+      filtered = response.filter((customer) =>
+        (customer.purchases || []).some((p) => String(p.productType || "").trim().toLowerCase() === "service") ||
+        (customer.serviceSubscriptions || []).length > 0
+      );
+    }
     res.json(filtered);
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -342,6 +356,65 @@ router.put("/:id", verifyToken, async (req, res) => {
     }
 
     res.json(customer);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// Update billingCycle for one or more purchases (deals) belonging to a customer
+router.put("/:id/purchases", verifyToken, async (req, res) => {
+  try {
+    const customerId = req.params.id;
+    const updates = Array.isArray(req.body.purchases) ? req.body.purchases : [];
+    if (updates.length === 0) return res.status(400).json({ message: "purchases array required" });
+
+    const updatedDeals = [];
+
+    const normalizeCycleToMonths = (cycle) => {
+      const value = String(cycle || "").trim().toLowerCase();
+      if (!value) return null;
+      if (/^\d+$/.test(value)) return Number(value);
+      if (/month|monthly/.test(value)) return 1;
+      if (/quarter|quarterly/.test(value)) return 3;
+      if (/6[-_ ]?month|six[-_ ]?month|half[- ]?year|semi[- ]?annual/.test(value)) return 6;
+      if (/year|annual|yearly|annually/.test(value)) return 12;
+      if (/week|weekly/.test(value)) return 0; // weeks not supported for server calc
+      return null;
+    };
+
+    for (const item of updates) {
+      const dealId = String(item.id || item.dealId || "").trim();
+      const billingCycle = String(item.billingCycle || "").trim();
+      if (!dealId) continue;
+
+      const deal = await Deal.findById(dealId).populate("product", "billingCycle");
+      if (!deal) continue;
+      // Ensure deal belongs to the customer
+      if (String(deal.customerId || "") !== String(customerId) && String(deal.customerId || "") !== String(req.params.id)) {
+        continue;
+      }
+
+      const months = normalizeCycleToMonths(billingCycle || deal.billingCycle || deal.product?.billingCycle);
+      let nextBillingDate = deal.nextBillingDate || deal.expiryDate || deal.startDate || deal.createdAt || null;
+      if (months && nextBillingDate) {
+        const base = new Date(nextBillingDate).getTime();
+        if (Number.isFinite(base)) {
+          const dt = new Date(base);
+          dt.setMonth(dt.getMonth() + months);
+          nextBillingDate = dt.toISOString();
+        }
+      }
+
+      deal.billingCycle = billingCycle || deal.billingCycle;
+      if (nextBillingDate) {
+        deal.nextBillingDate = nextBillingDate;
+        deal.expiryDate = nextBillingDate;
+      }
+      await deal.save();
+      updatedDeals.push(deal);
+    }
+
+    res.json({ updatedDeals });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

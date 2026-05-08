@@ -26,14 +26,29 @@ const addMonths = (date, months) => {
 
 const getExpiryFromBillingCycle = (billingCycle, baseDate) => {
   const cycle = String(billingCycle || "").trim().toLowerCase();
-  const durationMonths = {
-    monthly: 1,
-    quarterly: 3,
-    "6_months": 6,
-    yearly: 12,
-  }[cycle];
 
-  if (!durationMonths || !baseDate) return null;
+  if (!cycle || !baseDate) return null;
+
+  // Normalize common billing cycle formats to months
+  let durationMonths = null;
+
+  // If numeric (e.g. "6" or "12") treat as months
+  if (/^\d+$/.test(cycle)) {
+    durationMonths = Number(cycle);
+  } else if (/month|monthly/.test(cycle)) {
+    durationMonths = 1;
+  } else if (/quarter|quarterly/.test(cycle)) {
+    durationMonths = 3;
+  } else if (/6[-_ ]?month|six[-_ ]?month|half[- ]?year|semi[- ]?annual/.test(cycle)) {
+    durationMonths = 6;
+  } else if (/year|annual|yearly|annually/.test(cycle)) {
+    durationMonths = 12;
+  } else if (/weekly|week/.test(cycle)) {
+    // approximate weekly expiry as 1 month for billing purposes
+    durationMonths = 1;
+  }
+
+  if (!durationMonths) return null;
 
   const baseTimestamp = new Date(baseDate).getTime();
   if (!Number.isFinite(baseTimestamp)) return null;
@@ -85,7 +100,9 @@ const getPurchaseExpiryDate = (purchase) => {
   const billingCycle = String(purchase?.billingCycle || "").trim().toLowerCase();
   if (productType !== "service" && !billingCycle) return null;
 
-  return getExpiryFromBillingCycle(billingCycle, purchase?.createdAt || purchase?.startDate || null);
+  // fallback base date: purchase.createdAt || purchase.startDate || now
+  const baseDate = purchase?.createdAt || purchase?.startDate || new Date().toISOString();
+  return getExpiryFromBillingCycle(billingCycle, baseDate);
 };
 
 const normalizeStatusLabel = (value) => {
@@ -93,50 +110,21 @@ const normalizeStatusLabel = (value) => {
   return normalized === "inactive" ? "Inactive" : "Active";
 };
 
-const STATE_OPTIONS = [
-  "Andhra Pradesh",
-  "Arunachal Pradesh",
-  "Assam",
-  "Bihar",
-  "Chhattisgarh",
-  "Goa",
-  "Gujarat",
-  "Haryana",
-  "Himachal Pradesh",
-  "Jharkhand",
-  "Karnataka",
-  "Kerala",
-  "Madhya Pradesh",
-  "Maharashtra",
-  "Manipur",
-  "Meghalaya",
-  "Mizoram",
-  "Nagaland",
-  "Odisha",
-  "Punjab",
-  "Rajasthan",
-  "Sikkim",
-  "Tamil Nadu",
-  "Telangana",
-  "Tripura",
-  "Uttar Pradesh",
-  "Uttarakhand",
-  "West Bengal",
-  "Andaman and Nicobar Islands",
-  "Chandigarh",
-  "Dadra and Nagar Haveli and Daman and Diu",
-  "Delhi",
-  "Jammu and Kashmir",
-  "Ladakh",
-  "Lakshadweep",
-  "Puducherry",
-];
+const formatBillingCycleLabel = (value) => {
+  const v = String(value || "").trim().toLowerCase();
+  if (!v) return "-";
+  if (v === "monthly") return "Monthly";
+  if (v === "quarterly") return "Quarterly";
+  if (v === "6_months" || v === "6 months" || v === "6-months") return "6 Months";
+  if (v === "yearly" || v === "annual") return "Yearly";
+  return String(value);
+};
 
 export default function Customers() {
   const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedCustomer, setSelectedCustomer] = useState(null);
-  const [customerForm, setCustomerForm] = useState({ state: "" });
+  const [customerForm, setCustomerForm] = useState({ billingCycles: {} });
   const [savingCustomer, setSavingCustomer] = useState(false);
   const [customerMessage, setCustomerMessage] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -178,14 +166,17 @@ export default function Customers() {
 
   useEffect(() => {
     if (!selectedCustomer) {
-      setCustomerForm({ state: "" });
+      setCustomerForm({ billingCycles: {} });
       setCustomerMessage("");
       return;
     }
 
-    setCustomerForm({
-      state: String(selectedCustomer.state || "").trim(),
+    const billingCycles = {};
+    (selectedCustomer.purchases || []).forEach((p) => {
+      const key = p.id || String(Math.random());
+      billingCycles[key] = p.billingCycle || "";
     });
+    setCustomerForm({ billingCycles });
     setCustomerMessage("");
   }, [selectedCustomer]);
 
@@ -196,25 +187,48 @@ export default function Customers() {
       setSavingCustomer(true);
       setCustomerMessage("");
       const token = localStorage.getItem("token");
-      const res = await axios.put(
-        `http://localhost:5000/api/customers/${selectedCustomer._id}`,
-        {
-          state: customerForm.state,
-        },
-        {
-          headers: { Authorization: `Bearer ${token}` },
+      // Prepare purchases updates
+      const originalPurchases = selectedCustomer.purchases || [];
+      const updates = [];
+      (originalPurchases || []).forEach((p) => {
+        const key = p.id || p.id;
+        const newCycle = (customerForm.billingCycles || {})[key];
+        if (newCycle && newCycle !== (p.billingCycle || "")) {
+          updates.push({ id: p.id, billingCycle: newCycle });
         }
-      );
+      });
 
-      const updatedCustomer = res.data || {};
-      setCustomers((prev) =>
-        prev.map((customer) =>
-          customer._id === updatedCustomer._id ? { ...customer, ...updatedCustomer } : customer
-        )
-      );
-      setSelectedCustomer((prev) => (prev ? { ...prev, ...updatedCustomer } : prev));
-      setCustomerMessage("Customer state saved.");
-      window.dispatchEvent(new Event("customer-updated"));
+      if (updates.length > 0) {
+        const res2 = await axios.put(
+          `http://localhost:5000/api/customers/${selectedCustomer._id}/purchases`,
+          { purchases: updates },
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        const updatedDeals = res2.data?.updatedDeals || [];
+
+        // Merge updated expiry/billing into selectedCustomer.purchases
+        const updatedMap = new Map();
+        updatedDeals.forEach((d) => updatedMap.set(String(d._id), d));
+
+        const mergedPurchases = (originalPurchases || []).map((p) => {
+          const upd = updatedMap.get(String(p.id || p.id));
+          if (!upd) return p;
+          return {
+            ...p,
+            billingCycle: upd.billingCycle || p.billingCycle,
+            expiryDate: upd.expiryDate || upd.nextBillingDate || p.expiryDate,
+            nextBillingDate: upd.nextBillingDate || p.nextBillingDate,
+          };
+        });
+
+        const updatedCustomer = { ...selectedCustomer, purchases: mergedPurchases };
+        setCustomers((prev) => prev.map((c) => (c._id === updatedCustomer._id ? updatedCustomer : c)));
+        setSelectedCustomer(updatedCustomer);
+        setCustomerMessage("Billing cycles updated.");
+        window.dispatchEvent(new Event("customer-updated"));
+      } else {
+        setCustomerMessage("No changes to save.");
+      }
     } catch (err) {
       setCustomerMessage(err.response?.data?.message || "Failed to save customer.");
     } finally {
@@ -230,16 +244,6 @@ export default function Customers() {
       const createdAtValue = customer.createdAt || customer.created_at || null;
 
       const incomingSubscriptions = Array.isArray(customer.serviceSubscriptions) ? customer.serviceSubscriptions : [];
-      const purchase = {
-        id: customer._id,
-        product: getProductLabel(customer.product),
-        source: getLeadSource(customer.dealSource || customer.leadId),
-        stage: String(customer.dealStage || customer.stage || "-").trim() || "-",
-        status: normalizeStatusLabel(customer.dealStatus || customer.status),
-        reason: String(customer.dealReason || customer.reason || "").trim(),
-        createdAt: customer.dealCreatedAt || createdAtValue,
-      };
-
       const purchases =
         Array.isArray(customer.purchases) && customer.purchases.length > 0
           ? customer.purchases.map((purchase) => normalizePurchase(purchase, customer))
@@ -261,7 +265,7 @@ export default function Customers() {
           createdAt: createdAtValue,
 
           serviceSubscriptions: [...incomingSubscriptions],
-          purchases: [purchase],
+          purchases: [...purchases],
         });
         return;
       }
@@ -325,10 +329,23 @@ export default function Customers() {
   }, [customers]);
 
   const visibleCustomers = useMemo(() => {
-    const byStatus =
-      statusFilter === "all"
-        ? mergedCustomers
-        : mergedCustomers.filter((customer) => customer.status === statusFilter);
+    // Support additional filters: products / services
+    let byStatus = mergedCustomers;
+    if (statusFilter === "products") {
+      byStatus = mergedCustomers.filter((customer) =>
+        (customer.purchases || []).some(
+          (p) => String(p.productType || "").trim().toLowerCase() !== "service"
+        )
+      );
+    } else if (statusFilter === "services") {
+      byStatus = mergedCustomers.filter((customer) =>
+        (customer.purchases || []).some(
+          (p) => String(p.productType || "").trim().toLowerCase() === "service"
+        ) || (customer.serviceSubscriptions || []).length > 0
+      );
+    } else if (statusFilter !== "all") {
+      byStatus = mergedCustomers.filter((customer) => customer.status === statusFilter);
+    }
 
     const term = search.trim().toLowerCase();
     if (!term) return byStatus;
@@ -365,6 +382,8 @@ export default function Customers() {
                 aria-label="Filter customers by status"
               >
                 <option value="all">All Customers</option>
+                <option value="products">Products</option>
+                <option value="services">Services</option>
                 <option value="Active">Active Customers</option>
                 <option value="Inactive">Inactive Customers</option>
               </select>
@@ -445,19 +464,8 @@ export default function Customers() {
                       <span className="detail-value">{selectedCustomer.phone || "-"}</span>
                     </div>
                     <div className="detail-row">
-                      <span className="detail-label">State</span>
-                      <select
-                        className="customer-inline-input"
-                        value={customerForm.state}
-                        onChange={(event) => setCustomerForm((prev) => ({ ...prev, state: event.target.value }))}
-                      >
-                        <option value="">Select state</option>
-                        {STATE_OPTIONS.map((state) => (
-                          <option key={state} value={state}>
-                            {state}
-                          </option>
-                        ))}
-                      </select>
+                      <span className="detail-label">Billing Cycle (per purchase)</span>
+                      <span className="detail-value">Auto-populated; override in table if needed</span>
                     </div>
                   </div>
                   {customerMessage ? <div className="customer-message">{customerMessage}</div> : null}
@@ -466,7 +474,8 @@ export default function Customers() {
                     <table className="customers-table">
                       <thead>
                         <tr>
-                            <th>Service</th>
+                              <th>Service</th>
+                            <th>Billing Cycle</th>
                           <th>Source</th>
                           <th>Stage</th>
                           <th>Status</th>
@@ -483,9 +492,39 @@ export default function Customers() {
                         ) : (
                           selectedCustomer.purchases.map((purchase) => {
                             const purchaseStatus = normalizeStatusLabel(purchase.status);
+                            const selectedBillingCycle =
+                              customerForm.billingCycles[purchase.id || purchase.id] || purchase.billingCycle || "";
                             return (
                               <tr key={`${purchase.id}-${purchase.createdAt || "na"}`}>
-                                <td data-label="Product">{purchase.product || "-"}</td>
+                                <td data-label="Service">{purchase.product || "-"}</td>
+                                <td data-label="Billing Cycle">
+                                  <div className="billing-cycle-cell">
+                                    <div className="billing-cycle-header">
+                                      <span className="billing-cycle-display">{formatBillingCycleLabel(selectedBillingCycle)}</span>
+                                      {purchase.billingCycle ? <span className="billing-cycle-badge">Auto</span> : null}
+                                    </div>
+                                    <select
+                                      className="billing-cycle-edit"
+                                      value={selectedBillingCycle}
+                                      onChange={(event) =>
+                                        setCustomerForm((prev) => ({
+                                          ...prev,
+                                          billingCycles: {
+                                            ...(prev.billingCycles || {}),
+                                            [purchase.id || purchase.id]: event.target.value,
+                                          },
+                                        }))
+                                      }
+                                      title="Override auto-populated billing cycle if needed"
+                                    >
+                                      <option value="">Select</option>
+                                      <option value="monthly">Monthly</option>
+                                      <option value="quarterly">Quarterly</option>
+                                      <option value="6_months">6 Months</option>
+                                      <option value="yearly">Yearly</option>
+                                    </select>
+                                  </div>
+                                </td>
                                 <td data-label="Source">{purchase.source || "-"}</td>
                                 <td data-label="Stage">{purchase.stage || "-"}</td>
                                 <td data-label="Status">
