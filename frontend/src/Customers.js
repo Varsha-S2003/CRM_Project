@@ -244,16 +244,6 @@ export default function Customers() {
       const createdAtValue = customer.createdAt || customer.created_at || null;
 
       const incomingSubscriptions = Array.isArray(customer.serviceSubscriptions) ? customer.serviceSubscriptions : [];
-      const purchase = {
-        id: customer._id,
-        product: getProductLabel(customer.product),
-        source: getLeadSource(customer.dealSource || customer.leadId),
-        stage: String(customer.dealStage || customer.stage || "-").trim() || "-",
-        status: normalizeStatusLabel(customer.dealStatus || customer.status),
-        reason: String(customer.dealReason || customer.reason || "").trim(),
-        createdAt: customer.dealCreatedAt || createdAtValue,
-      };
-
       const purchases =
         Array.isArray(customer.purchases) && customer.purchases.length > 0
           ? customer.purchases.map((purchase) => normalizePurchase(purchase, customer))
@@ -275,7 +265,7 @@ export default function Customers() {
           createdAt: createdAtValue,
 
           serviceSubscriptions: [...incomingSubscriptions],
-          purchases: [purchase],
+          purchases: [...purchases],
         });
         return;
       }
@@ -502,15 +492,20 @@ export default function Customers() {
                         ) : (
                           selectedCustomer.purchases.map((purchase) => {
                             const purchaseStatus = normalizeStatusLabel(purchase.status);
+                            const selectedBillingCycle =
+                              customerForm.billingCycles[purchase.id || purchase.id] || purchase.billingCycle || "";
                             return (
                               <tr key={`${purchase.id}-${purchase.createdAt || "na"}`}>
-                                <td data-label="Product">{purchase.product || "-"}</td>
+                                <td data-label="Service">{purchase.product || "-"}</td>
                                 <td data-label="Billing Cycle">
                                   <div className="billing-cycle-cell">
-                                    <span className="billing-cycle-display">{formatBillingCycleLabel(purchase.billingCycle)} {purchase.billingCycle ? "(Auto)" : ""}</span>
+                                    <div className="billing-cycle-header">
+                                      <span className="billing-cycle-display">{formatBillingCycleLabel(selectedBillingCycle)}</span>
+                                      {purchase.billingCycle ? <span className="billing-cycle-badge">Auto</span> : null}
+                                    </div>
                                     <select
                                       className="billing-cycle-edit"
-                                      value={customerForm.billingCycles[purchase.id || purchase.id] || purchase.billingCycle || ""}
+                                      value={selectedBillingCycle}
                                       onChange={(event) =>
                                         setCustomerForm((prev) => ({
                                           ...prev,
@@ -522,9 +517,7 @@ export default function Customers() {
                                       }
                                       title="Override auto-populated billing cycle if needed"
                                     >
-                                      <option value={purchase.billingCycle || ""}>
-                                        {purchase.billingCycle ? `${formatBillingCycleLabel(purchase.billingCycle)} (Current)` : "Select"}
-                                      </option>
+                                      <option value="">Select</option>
                                       <option value="monthly">Monthly</option>
                                       <option value="quarterly">Quarterly</option>
                                       <option value="6_months">6 Months</option>
