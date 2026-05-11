@@ -135,30 +135,40 @@ const syncBillInventoryIfPaid = async ({ billId, vendorName }) => {
 
 // Utility function to update orders, notify roles, and send follow-up emails
 const updateOrdersForRestock = async (productId) => {
-  const Order = require("../models/order"); // Assuming an Order model exists
-  const User = require("../models/user"); // Assuming a User model exists
+  const Order = require("../models/order");
+  const User = require("../models/user");
+  const Deal = require("../models/deal");
+
   const orders = await Order.find({ product: productId, status: "Waiting for Restock" });
 
   for (const order of orders) {
     order.status = "Restocked";
     await order.save();
 
-    // Notify the role handling the client
-    const clientHandler = await User.findById(order.clientHandlerId); // Assuming clientHandlerId exists in the Order model
+    // Update the deal stage if follow-up is completed
+    const deal = await Deal.findOne({ product: productId, waitingForRestock: true });
+    if (deal && deal.followUpCompleted) {
+      deal.stage = "Restocked";
+      deal.waitingForRestock = false;
+      await deal.save();
+
+      // Send follow-up email to the client
+      const sendNotification = require("./mailer").sendNotification;
+      await sendNotification(deal.email, "Your product is now available!", {
+        subject: "Product Restocked",
+        body: `Dear ${deal.name},\n\nYour requested product (${deal.product}) is now available. The deal stage has been updated to Restocked.\n\nThank you for your patience!\n\nBest regards,\nYour CRM Team`,
+      });
+    }
+
+    // Notify the client handler
+    const clientHandler = await User.findById(order.clientHandlerId);
     if (clientHandler) {
       const sendNotification = require("./mailer").sendNotification;
       await sendNotification(clientHandler.email, "Item Restocked", {
         subject: "Item Restocked",
-        body: `The item for order ${order._id} has been restocked. Please follow up with the client.`
+        body: `The item for order ${order._id} has been restocked. Please follow up with the client.`,
       });
     }
-
-    // Send follow-up email to the client
-    const sendNotification = require("./mailer").sendNotification;
-    await sendNotification(order.clientEmail, "Your order has been restocked!", {
-      subject: "Order Restocked",
-      body: `Your order for product ${productId} is now restocked and will be processed shortly.`
-    });
   }
 };
 

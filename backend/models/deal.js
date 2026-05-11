@@ -232,6 +232,10 @@ const dealSchema = new mongoose.Schema(
       savedToQuotationAt: { type: Date, default: null },
       savedToQuotationBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
     },
+    followUpCompleted: {
+      type: Boolean,
+      default: false,
+    },
   },
   {
     timestamps: true,
