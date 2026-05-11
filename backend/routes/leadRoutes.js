@@ -2082,8 +2082,13 @@ const convertLeadToCustomerDeal = async (req, res, next) => {
       const conversionName = buildConversionName(lead);
       const conversionEmail = normalizeEmailForStorage(lead.email);
       const defaultProductId = await resolveDefaultProductId(session);
+      const resolvedProductId = lead.itemId?._id || lead.itemId || defaultProductId;
+      const proposedAmount =
+        normalizedValue !== null
+          ? normalizedValue
+          : normalizeOptionalNumber(lead.latestProposal?.amount);
 
-      if (!defaultProductId) {
+      if (!resolvedProductId) {
         throw Object.assign(new Error("No product found. Please create at least one product before converting lead."), {
           statusCode: 400,
         });
@@ -2111,7 +2116,7 @@ const convertLeadToCustomerDeal = async (req, res, next) => {
           {
             customerId: customer._id,
             sourceLeadId: lead._id,
-            product: defaultProductId,
+            product: resolvedProductId,
             name: `${conversionName} - Deal`,
             company: lead.company,
             contact: customer.name,
@@ -2120,8 +2125,21 @@ const convertLeadToCustomerDeal = async (req, res, next) => {
             stage: "Qualification",
             status: "Active",
             reason: "",
-            value: normalizedValue,
-            amount: normalizedValue || 0,
+            value: proposedAmount,
+            amount: proposedAmount,
+            leadSource: lead.source || "",
+            campaignSource: lead.source || "",
+            description: normalizeText(lead.notes || ""),
+            nextStep: normalizeText(lead.latestProposal?.subject || ""),
+            dealType: lead.itemType === "service" ? "Existing Business" : "New Business",
+            website: normalizeText(lead.website || ""),
+            industry: normalizeText(lead.industry || ""),
+            title: normalizeText(lead.title || ""),
+            salutation: normalizeText(lead.salutation || ""),
+            firstName: normalizeText(lead.firstName || ""),
+            lastName: normalizeText(lead.lastName || ""),
+            secondaryEmail: normalizeText(lead.secondaryEmail || ""),
+            mobile: normalizeText(lead.mobile || ""),
             assignedTo: lead.assignedTo || req.user._id,
           },
         ],
