@@ -350,7 +350,7 @@ function Inventory() {
                   <th>GST %</th>
                   <th>HSN/SAC</th>
                   <th>Status</th>
-                  {canEdit && <th>Actions</th>}
+                  {canEdit && <th className="inventory-actions-cell">Actions</th>}
                 </tr>
               </thead>
               <tbody>
@@ -386,7 +386,7 @@ function Inventory() {
                           <span className={`stock-badge ${status.className}`}>{status.text}</span>
                         </td>
                         {canEdit && (
-                          <td>
+                          <td className="inventory-actions-cell">
                             <div className="action-buttons">
                               <button
                                 className="action-btn edit-btn"

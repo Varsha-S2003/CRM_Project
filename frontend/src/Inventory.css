@@ -153,11 +153,13 @@
   border: 1px solid var(--theme-border);
   border-radius: 18px;
   box-shadow: var(--theme-shadow-sm);
-  overflow: hidden;
+  overflow-x: auto;
+  overflow-y: hidden;
 }
 
 .inventory-table {
   width: 100%;
+  min-width: 1480px;
   border-collapse: collapse;
 }
 
@@ -181,6 +183,25 @@
   font-size: 14px;
   color: var(--theme-ink);
   border-bottom: 1px solid var(--theme-border);
+}
+
+.inventory-table th,
+.inventory-table td {
+  white-space: nowrap;
+}
+
+.inventory-table th.inventory-actions-cell,
+.inventory-table td.inventory-actions-cell {
+  position: sticky;
+  right: 0;
+  z-index: 2;
+  background: var(--theme-surface-solid);
+  box-shadow: -8px 0 14px rgba(31, 61, 29, 0.08);
+}
+
+.inventory-table th.inventory-actions-cell {
+  background: var(--theme-surface-muted);
+  z-index: 3;
 }
 
 .inventory-table tbody tr:hover {
@@ -274,14 +295,6 @@
 @media (max-width: 1200px) {
   .inventory-stats {
     grid-template-columns: repeat(3, minmax(120px, 1fr));
-  }
-
-  .inventory-table-container {
-    overflow-x: auto;
-  }
-  
-  .inventory-table {
-    min-width: 700px;
   }
 }
 
