@@ -197,6 +197,30 @@
   color: var(--theme-text);
   box-shadow: var(--theme-shadow-sm);
 }
+:root[data-theme="dark"] .reports-toolbar,
+:root[data-theme="dark"] .reports-snapshot-card,
+:root[data-theme="dark"] .reports-toolbar__copy p,
+:root[data-theme="dark"] .reports-snapshot-card span,
+:root[data-theme="dark"] .reports-snapshot-card small,
+:root[data-theme="dark"] .reports-snapshot-card strong,
+:root[data-theme="dark"] .reports-filter-group {
+  background: var(--theme-surface-muted);
+  border-color: var(--theme-border);
+}
+:root[data-theme="dark"] .reports-filter-chip {
+  color: var(--theme-text-muted);
+}
+:root[data-theme="dark"] .reports-filter-chip.is-active {
+  background: var(--theme-surface-solid);
+  color: var(--theme-text);
+}
+:root[data-theme="dark"] .reports-export-button {
+  color: #f7fbf3;
+}
+:root[data-theme="dark"] .reports-ring-meta span {
+  background: var(--theme-surface-muted);
+  color: var(--theme-text-muted);
+}
 
 :root[data-theme="dark"] .kanban-column-zoho,
 :root[data-theme="dark"] .assignment-list-title,

@@ -278,6 +278,8 @@ const getTodayDateInputValue = () => {
 
 function Deals() {
   const minDate = useMemo(() => getTodayDateInputValue(), []);
+  const role = localStorage.getItem("role")?.toUpperCase();
+  const isAdmin = role === "ADMIN";
   const [deals, setDeals] = useState([]);
   const [products, setProducts] = useState([]);
   const [customers, setCustomers] = useState([]);
@@ -1785,8 +1787,9 @@ ET`;
               <p>Manage the complete deal pipeline from qualification to closure</p>
             </div>
             <div className="leads-header-right">
-              <div className="create-lead-menu" ref={createMenuRef}>
-                <button className="btn-primary" onClick={() => setShowCreateMenu((prev) => !prev)}>
+              {isAdmin && (
+                <div className="create-lead-menu" ref={createMenuRef}>
+                  <button className="btn-primary" onClick={() => setShowCreateMenu((prev) => !prev)}>
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <line x1="12" y1="5" x2="12" y2="19"></line>
                     <line x1="5" y1="12" x2="19" y2="12"></line>
@@ -1806,7 +1809,8 @@ ET`;
                     </button>
                   </div>
                 )}
-              </div>
+                </div>
+              )}
             </div>
           </div>
 

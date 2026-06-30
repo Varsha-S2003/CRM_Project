@@ -2,7 +2,17 @@
 .leads-layout {
   display: flex;
   min-height: 100vh;
-  background: #f5f7fa;
+  background: var(--theme-bg);
+  --leads-primary: var(--theme-green);
+  --leads-primary-strong: var(--theme-green-strong);
+  --leads-accent: var(--theme-gold);
+  --leads-accent-soft: var(--theme-gold-soft);
+  --leads-accent-strong: var(--theme-gold-strong);
+  --leads-surface: #ffffff;
+  --leads-surface-muted: var(--theme-surface-muted);
+  --leads-border: var(--theme-border);
+  --leads-text: var(--theme-text);
+  --leads-text-muted: var(--theme-text-muted);
 }
 
 .leads-main {
@@ -20,8 +30,8 @@
 
 .leads-fixed-top {
   flex-shrink: 0;
-  background: #f5f7fa;
-  border-bottom: 1px solid #e5e7eb;
+  background: var(--theme-bg);
+  border-bottom: 1px solid var(--leads-border);
 }
 
 /* Header Section */
@@ -33,7 +43,7 @@
   gap: 24px;
   margin-bottom: 24px;
   padding: 12px 0;
-  background: #f5f7fa;
+  background: var(--theme-bg);
 }
 
 .leads-header-right {
@@ -51,12 +61,12 @@
 .leads-header-left h1 {
   font-size: 26px;
   font-weight: 700;
-  color: #1a1a2e;
+  color: var(--leads-text);
   margin-bottom: 4px;
 }
 
 .leads-header-left p {
-  color: #6b7280;
+  color: var(--leads-text-muted);
   font-size: 14px;
 }
 
@@ -65,19 +75,33 @@
   align-items: center;
   gap: 8px;
   padding: 10px 20px;
-  background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+  background: linear-gradient(135deg, var(--leads-accent) 0%, var(--leads-primary) 100%);
   border: none;
   border-radius: 8px;
   color: white;
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, filter 0.2s ease;
+  box-shadow: 0 10px 22px rgba(76, 175, 54, 0.18);
+}
+
+.create-lead-menu .btn-primary {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.96) 0%, var(--theme-surface-muted) 100%);
+  color: var(--leads-primary-strong);
+  border: 1px solid rgba(76, 175, 54, 0.22);
+  box-shadow: 0 8px 18px rgba(31, 61, 29, 0.08);
+}
+
+.create-lead-menu .btn-primary:hover {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, #edf6e4 100%);
+  box-shadow: 0 12px 24px rgba(31, 61, 29, 0.12);
 }
 
 .btn-primary:hover {
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(79, 70, 229, 0.35);
+  filter: saturate(1.05) brightness(1.03);
+  box-shadow: 0 12px 26px rgba(31, 61, 29, 0.16);
 }
 
 .create-lead-menu {
@@ -90,7 +114,7 @@
   right: 0;
   min-width: 180px;
   background: #ffffff;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--leads-border);
   border-radius: 12px;
   box-shadow: 0 12px 32px rgba(15, 23, 42, 0.14);
   padding: 8px;
@@ -105,15 +129,15 @@
   border: none;
   border-radius: 8px;
   padding: 10px 12px;
-  color: #1f2937;
+  color: var(--leads-text);
   font-size: 14px;
   font-weight: 500;
   cursor: pointer;
 }
 
 .create-lead-dropdown-item:hover {
-  background: #f5f3ff;
-  color: #4f46e5;
+  background: var(--leads-accent-soft);
+  color: var(--leads-primary-strong);
 }
 
 /* Stats Row - Zoho Style */
@@ -150,23 +174,23 @@
 }
 
 .stat-icon-blue {
-  background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%);
-  color: #2563eb;
+  background: linear-gradient(135deg, #fff6d6 0%, #fde68a 100%);
+  color: var(--leads-accent-strong);
 }
 
 .stat-icon-orange {
-  background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
-  color: #d97706;
+  background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%);
+  color: var(--leads-primary-strong);
 }
 
 .stat-icon-purple {
-  background: linear-gradient(135deg, #ede9fe 0%, #ddd6fe 100%);
-  color: #7c3aed;
+  background: linear-gradient(135deg, #eef8e8 0%, #d6f0ca 100%);
+  color: var(--leads-primary);
 }
 
 .stat-icon-green {
   background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%);
-  color: #059669;
+  color: var(--leads-primary-strong);
 }
 
 .stat-content {
@@ -177,12 +201,12 @@
 .stat-value {
   font-size: 24px;
   font-weight: 700;
-  color: #1a1a2e;
+  color: var(--leads-text);
 }
 
 .stat-label {
   font-size: 13px;
-  color: #6b7280;
+  color: var(--leads-text-muted);
 }
 
 /* Toolbar - Zoho Style */
@@ -199,7 +223,7 @@
   width: 100%;
   max-width: 920px;
   padding: 14px 16px;
-  border: 1px solid #d7e4f7;
+  border: 1px solid var(--leads-border);
   border-radius: 18px;
   background: linear-gradient(180deg, #ffffff 0%, #fdfefe 100%);
   box-shadow: 0 10px 24px rgba(129, 152, 181, 0.08);
@@ -229,10 +253,10 @@
   width: 100%;
   min-height: 42px;
   padding: 0 40px 0 16px;
-  border: 1px solid #cfdcf0;
+  border: 1px solid var(--leads-border);
   border-radius: 12px;
   background: #ffffff;
-  color: #0f172a;
+  color: var(--leads-text);
   font-size: 14px;
   font-weight: 500;
   appearance: none;
@@ -246,10 +270,10 @@
   width: 100%;
   min-height: 42px;
   padding: 0 16px;
-  border: 1px solid #cfdcf0;
+  border: 1px solid var(--leads-border);
   border-radius: 12px;
   background: #ffffff;
-  color: #0f172a;
+  color: var(--leads-text);
   font-size: 14px;
   font-weight: 500;
   cursor: pointer;
@@ -275,7 +299,7 @@
   right: 0;
   z-index: 40;
   background: #ffffff;
-  border: 1px solid #cfdcf0;
+  border: 1px solid var(--leads-border);
   border-radius: 12px;
   box-shadow: 0 12px 24px rgba(133, 159, 192, 0.16);
   padding: 6px;
@@ -295,14 +319,14 @@
 }
 
 .lead-view-dropdown-item.active {
-  background: #eef4ff;
+  background: var(--leads-accent-soft);
 }
 
 .lead-view-dropdown-name {
   flex: 1;
   border: none;
   background: transparent;
-  color: #0f172a;
+  color: var(--leads-text);
   font-size: 13px;
   text-align: left;
   cursor: pointer;
@@ -321,7 +345,7 @@
 .lead-view-dropdown-item:hover,
 .lead-view-dropdown-name:hover,
 .lead-view-dropdown-delete:hover {
-  background: #f5f8ff;
+  background: var(--leads-accent-soft);
   border-radius: 8px;
 }
 
@@ -334,17 +358,17 @@
 .lead-view-select-button:focus,
 .lead-toolbar-pill-button:focus {
   outline: none;
-  border-color: #8db3e2;
-  box-shadow: 0 0 0 3px rgba(180, 208, 240, 0.38);
+  border-color: var(--leads-accent);
+  box-shadow: 0 0 0 3px rgba(244, 180, 0, 0.2);
 }
 
 .lead-toolbar-pill-button {
   min-height: 36px;
   padding: 0 10px;
-  border: 1px solid #cfdcf0;
+  border: 1px solid var(--leads-border);
   border-radius: 10px;
   background: #ffffff;
-  color: #607798;
+  color: var(--leads-text-muted);
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
@@ -352,8 +376,8 @@
 }
 
 .lead-toolbar-pill-button:hover {
-  border-color: #9fbbe0;
-  box-shadow: 0 8px 20px rgba(133, 159, 192, 0.12);
+  border-color: var(--leads-accent);
+  box-shadow: 0 8px 20px rgba(244, 180, 0, 0.12);
   transform: translateY(-1px);
 }
 
@@ -463,14 +487,14 @@
   left: 14px;
   top: 50%;
   transform: translateY(-50%);
-  color: #9ca3af;
+  color: var(--leads-text-muted);
   pointer-events: none;
 }
 
 .search-box-zoho input {
   width: 100%;
   padding: 10px 14px 10px 40px;
-  border: 2px solid #e5e7eb;
+  border: 2px solid var(--leads-border);
   border-radius: 12px;
   font-size: 12px;
   transition: all 0.2s;
@@ -478,8 +502,8 @@
 
 .search-box-zoho input:focus {
   outline: none;
-  border-color: #4f46e5;
-  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+  border-color: var(--leads-accent);
+  box-shadow: 0 0 0 3px rgba(244, 180, 0, 0.1);
 }
 
 .toolbar-actions {
@@ -499,9 +523,9 @@
   gap: 6px;
   padding: 10px 16px;
   background: white;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--leads-border);
   border-radius: 8px;
-  color: #4b5563;
+  color: var(--leads-text-muted);
   font-size: 14px;
   font-weight: 500;
   cursor: pointer;
@@ -509,15 +533,15 @@
 }
 
 .btn-filter:hover {
-  border-color: #4f46e5;
-  color: #4f46e5;
-  background: #f5f3ff;
+  border-color: var(--leads-accent);
+  color: var(--leads-primary-strong);
+  background: var(--leads-accent-soft);
 }
 
 .btn-filter.active-status-filter {
-  border-color: #1d4ed8;
-  color: #1d4ed8;
-  background: #dbeafe;
+  border-color: var(--leads-primary);
+  color: var(--leads-primary-strong);
+  background: #e7f2df;
 }
 
 /* Kanban Board - Zoho Style */
@@ -530,7 +554,7 @@
 .kanban-column-zoho {
   width: 280px;
   min-width: 280px;
-  background: #f8fafc;
+  background: var(--theme-bg);
   border-radius: 12px;
   max-height: calc(100vh - 280px);
   display: flex;
@@ -539,7 +563,7 @@
 
 .column-header-zoho {
   padding: 16px;
-  border-top: 3px solid #3b82f6;
+  border-top: 3px solid var(--leads-accent);
   border-radius: 12px 12px 0 0;
   display: flex;
   justify-content: space-between;
@@ -562,16 +586,16 @@
 .column-header-zoho h3 {
   font-size: 14px;
   font-weight: 600;
-  color: #1a1a2e;
+  color: var(--leads-text);
 }
 
 .lead-count-zoho {
-  background: #f1f5f9;
+  background: var(--leads-surface-muted);
   padding: 4px 10px;
   border-radius: 12px;
   font-size: 12px;
   font-weight: 600;
-  color: #64748b;
+  color: var(--leads-text-muted);
 }
 
 .column-content-zoho {
@@ -594,7 +618,7 @@
 }
 
 .column-content-zoho::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
+  background: var(--leads-border);
   border-radius: 3px;
 }
 
@@ -607,7 +631,7 @@
   cursor: pointer;
   transition: all 0.2s;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--leads-border);
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -620,11 +644,11 @@
   margin-bottom: 8px;
   font-size: 11px;
   font-weight: 600;
-  color: #64748b;
+  color: var(--leads-text-muted);
 }
 
 .merge-select-check input {
-  accent-color: #4f46e5;
+  accent-color: var(--leads-accent);
 }
 
 .kanban-card-inactive {
@@ -635,7 +659,7 @@
 .kanban-card-zoho:hover {
   transform: translateY(-2px);
   box-shadow: 0 6px 16px rgba(0, 0, 0, 0.1);
-  border-color: #4f46e5;
+  border-color: var(--leads-accent);
 }
 
 .card-top-row {
@@ -648,7 +672,7 @@
 .card-top-row h4 {
   font-size: 14px;
   font-weight: 600;
-  color: #1a1a2e;
+  color: var(--leads-text);
   margin: 0;
 }
 
@@ -675,8 +699,8 @@
 }
 
 .deal-status-pill.active {
-  color: #166534;
-  background: #dcfce7;
+  color: var(--leads-primary-strong);
+  background: #e7f2df;
 }
 
 .deal-status-pill.active::before {
@@ -685,8 +709,8 @@
 }
 
 .deal-status-pill.inactive {
-  color: #991b1b;
-  background: #fee2e2;
+  color: var(--leads-text-muted);
+  background: #f3f4f6;
 }
 
 .deal-status-pill.inactive::before {
@@ -696,43 +720,43 @@
 
 .deal-reason-text {
   font-size: 12px;
-  color: #b91c1c;
+  color: var(--leads-text-muted);
   margin-bottom: 8px;
 }
 
 .status-badge-zoho.new {
-  background: #dbeafe;
-  color: #2563eb;
+  background: #e7f2df;
+  color: var(--leads-primary-strong);
 }
 
 .status-badge-zoho.contacted {
-  background: #fef3c7;
-  color: #d97706;
+  background: var(--leads-accent-soft);
+  color: var(--leads-accent-strong);
 }
 
 .status-badge-zoho.qualified {
-  background: #ede9fe;
-  color: #7c3aed;
+  background: #eef8e8;
+  color: var(--leads-primary);
 }
 
 .status-badge-zoho.proposal {
-  background: #fce7f3;
-  color: #db2777;
+  background: #fff1c4;
+  color: var(--leads-accent-strong);
 }
 
 .status-badge-zoho.proposal_sent {
-  background: #ccfbf1;
-  color: #0f766e;
+  background: #edf8e8;
+  color: var(--leads-primary-strong);
 }
 
 .status-badge-zoho.converted {
   background: #d1fae5;
-  color: #059669;
+  color: var(--leads-primary-strong);
 }
 
 .status-badge-zoho.lost {
-  background: #fee2e2;
-  color: #dc2626;
+  background: #f3f4f6;
+  color: #64748b;
 }
 
 .card-company-zoho {
@@ -740,7 +764,7 @@
   align-items: center;
   gap: 6px;
   font-size: 13px;
-  color: #64748b;
+  color: var(--leads-text-muted);
   margin-bottom: 8px;
 }
 
@@ -763,8 +787,8 @@
   border-radius: 999px;
   font-size: 11px;
   font-weight: 700;
-  background: #eef2ff;
-  color: #4338ca;
+  background: var(--leads-accent-soft);
+  color: var(--leads-primary-strong);
 }
 
 .lead-rating-pill {
@@ -775,18 +799,18 @@
 }
 
 .lead-rating-pill.hot {
-  background: #fee2e2;
-  color: #b91c1c;
+  background: #f3f4f6;
+  color: var(--leads-text-muted);
 }
 
 .lead-rating-pill.warm {
-  background: #fef3c7;
-  color: #b45309;
+  background: var(--leads-accent-soft);
+  color: var(--leads-accent-strong);
 }
 
 .lead-rating-pill.cold {
-  background: #dbeafe;
-  color: #1d4ed8;
+  background: #e7f2df;
+  color: var(--leads-primary-strong);
 }
 
 .card-detail {
@@ -794,7 +818,7 @@
   align-items: center;
   gap: 6px;
   font-size: 12px;
-  color: #6b7280;
+  color: var(--leads-text-muted);
 }
 
 .card-source {
@@ -802,16 +826,16 @@
   align-items: center;
   gap: 4px;
   padding: 4px 8px;
-  background: #f1f5f9;
+  background: var(--leads-surface-muted);
   border-radius: 6px;
   font-size: 11px;
-  color: #64748b;
+  color: var(--leads-text-muted);
 }
 
 .card-assign-inline {
   margin-top: 6px;
   padding-top: 10px;
-  border-top: 1px dashed #dbe5f1;
+  border-top: 1px dashed var(--leads-border);
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 8px;
@@ -828,12 +852,12 @@
 }
 
 .card-assigned-label {
-  color: #64748b;
+  color: var(--leads-text-muted);
   font-weight: 600;
 }
 
 .card-assigned-value {
-  color: #1f2937;
+  color: var(--leads-text);
   font-weight: 700;
   text-align: right;
   overflow-wrap: anywhere;
@@ -842,7 +866,7 @@
 .card-assigned-link {
   border: none;
   background: transparent;
-  color: #4f46e5;
+  color: var(--leads-primary-strong);
   font-weight: 700;
   font-size: 12px;
   padding: 0;
@@ -852,31 +876,31 @@
 }
 
 .card-assigned-link:hover {
-  color: #4338ca;
+  color: var(--leads-accent-strong);
 }
 
 .card-assign-select {
   min-width: 0;
   width: 100%;
   min-height: 36px;
-  border: 1px solid #cfdcf0;
+  border: 1px solid var(--leads-border);
   border-radius: 8px;
   background: #fff;
-  color: #0f172a;
+  color: var(--leads-text);
   font-size: 12px;
   padding: 7px 10px;
 }
 
 .card-assign-select:focus {
   outline: none;
-  border-color: #4f46e5;
-  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.12);
+  border-color: var(--leads-accent);
+  box-shadow: 0 0 0 3px rgba(244, 180, 0, 0.12);
 }
 
 .card-assign-btn {
-  border: 1px solid #4f46e5;
+  border: 1px solid var(--leads-primary);
   border-radius: 8px;
-  background: #4f46e5;
+  background: linear-gradient(135deg, var(--leads-accent) 0%, var(--leads-primary) 100%);
   color: #fff;
   font-size: 12px;
   font-weight: 700;
@@ -898,9 +922,9 @@
   width: 100%;
   padding: 12px;
   background: transparent;
-  border: 2px dashed #d1d5db;
+  border: 2px dashed var(--leads-border);
   border-radius: 10px;
-  color: #6b7280;
+  color: var(--leads-text-muted);
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
@@ -912,9 +936,9 @@
 }
 
 .add-card-btn:hover {
-  border-color: #4f46e5;
-  color: #4f46e5;
-  background: #f5f3ff;
+  border-color: var(--leads-accent);
+  color: var(--leads-primary-strong);
+  background: var(--leads-accent-soft);
 }
 
 /* Modal - Zoho Style */
@@ -961,19 +985,19 @@
   width: 36px;
   height: 36px;
   border: none;
-  background: #f3f4f6;
+  background: var(--leads-surface-muted);
   border-radius: 8px;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #6b7280;
+  color: var(--leads-text-muted);
   transition: all 0.2s;
 }
 
 .modal-close:hover {
-  background: #e5e7eb;
-  color: #1a1a2e;
+  background: var(--leads-accent-soft);
+  color: var(--leads-text);
 }
 
 .modal-form-zoho {
@@ -1033,8 +1057,8 @@
 .form-group select:focus,
 .form-group textarea:focus {
   outline: none;
-  border-color: #4f46e5;
-  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+  border-color: var(--leads-accent);
+  box-shadow: 0 0 0 3px rgba(244, 180, 0, 0.1);
 }
 
 .form-group select {
@@ -1074,12 +1098,12 @@
 }
 
 .btn-cancel:hover {
-  background: #f3f4f6;
+  background: var(--leads-surface-muted);
 }
 
 .btn-submit {
   padding: 10px 24px;
-  background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+  background: linear-gradient(135deg, var(--leads-accent) 0%, var(--leads-primary) 100%);
   border: none;
   border-radius: 8px;
   color: white;
@@ -1091,7 +1115,7 @@
 
 .btn-submit:hover {
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(79, 70, 229, 0.35);
+  box-shadow: 0 4px 12px rgba(76, 175, 54, 0.24);
 }
 
 .import-modal-box {
@@ -1112,15 +1136,15 @@
 
 .merge-helper-text {
   font-size: 13px;
-  color: #475569;
+  color: var(--leads-text-muted);
   margin-bottom: 12px;
 }
 
 .merge-empty-text {
   font-size: 13px;
-  color: #64748b;
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
+  color: var(--leads-text-muted);
+  background: var(--theme-bg);
+  border: 1px solid var(--leads-border);
   border-radius: 10px;
   padding: 12px;
 }
@@ -1139,14 +1163,14 @@
   align-items: flex-start;
   gap: 10px;
   padding: 10px;
-  border: 1px solid #dbe4f1;
+  border: 1px solid var(--leads-border);
   border-radius: 10px;
-  background: #fbfdff;
+  background: var(--leads-surface);
 }
 
 .merge-lead-row input {
   margin-top: 3px;
-  accent-color: #4f46e5;
+  accent-color: var(--leads-accent);
 }
 
 .merge-lead-content {
@@ -1158,12 +1182,12 @@
 
 .merge-lead-content strong {
   font-size: 13px;
-  color: #0f172a;
+  color: var(--leads-text);
 }
 
 .merge-lead-content span {
   font-size: 12px;
-  color: #64748b;
+  color: var(--leads-text-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1175,11 +1199,11 @@
   gap: 8px;
   margin-bottom: 10px;
   font-size: 12px;
-  color: #475569;
+  color: var(--leads-text-muted);
 }
 
 .merge-delete-toggle input {
-  accent-color: #4f46e5;
+  accent-color: var(--leads-accent);
 }
 
 .duplicate-dialog-box {
@@ -1195,13 +1219,13 @@
 .duplicate-dialog-message {
   font-size: 15px;
   font-weight: 600;
-  color: #0f172a;
+  color: var(--leads-text);
   margin: 0;
 }
 
 .duplicate-dialog-subtext {
   font-size: 13px;
-  color: #64748b;
+  color: var(--leads-text-muted);
   margin: 0;
 }
 
@@ -1269,15 +1293,15 @@
 .btn-add-condition {
   min-height: 40px;
   padding: 0 16px;
-  background: #eef4ff;
-  color: var(--theme-gold-strong);
+  background: var(--leads-accent-soft);
+  color: var(--leads-accent-strong);
   font-size: 14px;
   font-weight: 600;
 }
 
 .btn-add-condition:hover {
-  background: #e4efff;
-  border-color: #b8cbe9;
+  background: var(--leads-accent-soft);
+  border-color: var(--leads-accent);
 }
 
 .conditions-list {
@@ -1351,7 +1375,7 @@
 }
 
 .btn-apply {
-  background: var(--theme-gradient-brand);
+  background: linear-gradient(135deg, var(--theme-gold) 0%, var(--theme-green) 100%);
   border-color: transparent;
   color: #ffffff;
   box-shadow: var(--theme-shadow-sm);
@@ -1392,21 +1416,21 @@
 .export-form-row label {
   font-size: 14px;
   font-weight: 500;
-  color: #64748b;
+  color: var(--leads-text-muted);
 }
 
 .export-form-row select {
   width: 100%;
   padding: 11px 14px;
-  border: 1px solid #cbd5e1;
+  border: 1px solid var(--leads-border);
   border-radius: 10px;
   background: #ffffff;
   font-size: 14px;
-  color: #334155;
+  color: var(--leads-text);
 }
 
 .export-form-row select:disabled {
-  background: #f8fafc;
+  background: var(--theme-bg);
   color: #94a3b8;
   cursor: not-allowed;
 }
@@ -1427,12 +1451,12 @@
   align-items: center;
   gap: 8px;
   font-size: 14px;
-  color: #334155;
+  color: var(--leads-text);
   cursor: pointer;
 }
 
 .export-radio-option input {
-  accent-color: #4f46e5;
+  accent-color: var(--leads-accent);
 }
 
 .export-note-box {
@@ -1446,7 +1470,7 @@
 
 .import-helper-text {
   margin: 0 0 12px;
-  color: #6b7280;
+  color: var(--leads-text-muted);
   font-size: 13px;
   line-height: 1.5;
 }
@@ -1454,9 +1478,9 @@
 .csv-file-input {
   width: 100%;
   padding: 12px;
-  border: 2px dashed #cbd5e1;
+  border: 2px dashed var(--leads-border);
   border-radius: 10px;
-  background: #f8fafc;
+  background: var(--theme-bg);
   font-size: 14px;
   cursor: pointer;
 }
@@ -1522,13 +1546,13 @@
 
 .detail-label {
   font-size: 14px;
-  color: #6b7280;
+  color: var(--leads-text-muted);
 }
 
 .detail-value {
   font-size: 14px;
   font-weight: 500;
-  color: #1a1a2e;
+  color: var(--leads-text);
 }
 
 .status-section {
@@ -1542,7 +1566,7 @@
 .proposal-response-section h3 {
   font-size: 14px;
   font-weight: 600;
-  color: #4b5563;
+  color: var(--leads-text-muted);
   margin-bottom: 12px;
 }
 
@@ -1554,7 +1578,7 @@
 .status-section h3 {
   font-size: 14px;
   font-weight: 600;
-  color: #4b5563;
+  color: var(--leads-text-muted);
   margin-bottom: 12px;
 }
 
@@ -1592,13 +1616,13 @@
 }
 
 .proposal-email-row input[type="checkbox"] {
-  accent-color: #4f46e5;
+  accent-color: var(--leads-accent);
 }
 
 .status-btn-zoho {
   padding: 8px 12px;
   background: white;
-  border: 2px solid #e5e7eb;
+  border: 2px solid var(--leads-border);
   border-radius: 8px;
   font-size: 12px;
   font-weight: 500;
@@ -1607,11 +1631,11 @@
 }
 
 .status-btn-zoho:hover {
-  background: #f5f3ff;
+  background: var(--leads-accent-soft);
 }
 
 .status-btn-zoho.active {
-  background: #f5f3ff;
+  background: var(--leads-accent-soft);
 }
 
 .delete-btn-zoho {
@@ -1713,18 +1737,18 @@
   .card-assign-select {
     flex: 1;
     min-width: 0;
-    border: 1px solid #cfdcf0;
+    border: 1px solid var(--leads-border);
     border-radius: 8px;
     background: #fff;
-    color: #0f172a;
+    color: var(--leads-text);
     font-size: 12px;
     padding: 6px 8px;
   }
 
   .card-assign-btn {
-    border: 1px solid #4f46e5;
+    border: 1px solid var(--leads-primary);
     border-radius: 8px;
-    background: #4f46e5;
+    background: linear-gradient(135deg, var(--leads-accent) 0%, var(--leads-primary) 100%);
     color: #fff;
     font-size: 12px;
     font-weight: 600;
@@ -1804,7 +1828,8 @@
 
 .btn-primary,
 .btn-submit {
-  background: var(--theme-gradient-brand);
+  background: linear-gradient(135deg, var(--theme-gold) 0%, var(--theme-green) 100%);
+  color: #ffffff;
 }
 
 .btn-primary:hover,

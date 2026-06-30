@@ -1,9 +1,6 @@
 .employees-page {
   padding: 32px;
-  background:
-    radial-gradient(circle at top right, rgba(111, 66, 193, 0.1), transparent 24%),
-    radial-gradient(circle at bottom left, rgba(13, 202, 240, 0.1), transparent 28%),
-    linear-gradient(180deg, #f8fbff 0%, #f1f6fd 100%);
+  background: #f5f7fa;
   min-height: 100vh;
 }
 
@@ -20,9 +17,9 @@
   margin-bottom: 24px;
   padding: 28px;
   border-radius: 24px;
-  background: linear-gradient(135deg, #2a1b4d 0%, #6f42c1 52%, #007bff 100%);
+  background: var(--theme-green);
   color: white;
-  box-shadow: 0 24px 60px rgba(42, 27, 77, 0.2);
+  box-shadow: 0 24px 60px rgba(31, 61, 29, 0.12);
 }
 
 .employees-hero h1 {
@@ -71,7 +68,7 @@
 }
 
 .employees-stat-card-accent {
-  background: linear-gradient(135deg, rgba(111, 66, 193, 0.96), rgba(0, 123, 255, 0.94));
+  background: var(--theme-green);
   border-color: transparent;
 }
 
@@ -83,10 +80,9 @@
 .employees-panel {
   padding: 24px;
   border-radius: 24px;
-  background: rgba(255, 255, 255, 0.9);
+  background: #ffffff;
   border: 1px solid var(--theme-border);
   box-shadow: var(--theme-shadow-md);
-  backdrop-filter: blur(12px);
 }
 
 .employees-panel-head {
@@ -114,8 +110,8 @@
 }
 
 .employees-add-btn {
-  border: 1px solid #0f5fa6;
-  background: linear-gradient(135deg, #0f5fa6 0%, #2f9ad8 100%);
+  border: 1px solid var(--theme-green);
+  background: var(--theme-green);
   color: #ffffff;
   border-radius: 12px;
   padding: 10px 16px;
@@ -126,7 +122,10 @@
 
 .employees-add-btn:hover {
   transform: translateY(-2px);
-  box-shadow: 0 10px 20px rgba(15, 95, 166, 0.25);
+  background: var(--theme-gold);
+  border-color: var(--theme-gold);
+  color: #1f3d1d;
+  box-shadow: 0 10px 20px rgba(76,175,54,0.18);
 }
 
 .employees-message {
@@ -148,7 +147,7 @@
   border: 1px dashed var(--theme-border-strong);
   border-radius: 20px;
   color: var(--theme-text-muted);
-  background: linear-gradient(180deg, #ffffff 0%, #f7fbff 100%);
+  background: #ffffff;
 }
 
 .employees-grid {
@@ -160,7 +159,7 @@
 .employee-card {
   padding: 20px;
   border-radius: 20px;
-  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+  background: #ffffff;
   border: 1px solid var(--theme-border);
   box-shadow: 0 14px 34px rgba(42, 27, 77, 0.08);
   transition: transform 0.28s ease, box-shadow 0.28s ease, border-color 0.28s ease;
@@ -174,12 +173,12 @@
 }
 
 .employee-card.is-selected {
-  border-color: #2563eb;
-  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.2), var(--theme-shadow-md);
+  border-color: var(--theme-green);
+  box-shadow: 0 0 0 2px rgba(76,175,54,0.16), var(--theme-shadow-md);
 }
 
 .employee-card:focus-visible {
-  outline: 2px solid #2563eb;
+  outline: 2px solid var(--theme-green);
   outline-offset: 2px;
 }
 
@@ -195,14 +194,14 @@
   width: 48px;
   height: 48px;
   border-radius: 16px;
-  background: linear-gradient(135deg, #6f42c1 0%, #007bff 100%);
+  background: var(--theme-green);
   color: #ffffff;
   display: flex;
   align-items: center;
   justify-content: center;
   font-weight: 800;
   font-size: 18px;
-  box-shadow: 0 14px 28px rgba(111, 66, 193, 0.22);
+  box-shadow: 0 14px 28px rgba(31,61,29,0.12);
 }
 
 .employee-role-badge {
@@ -210,13 +209,13 @@
   border-radius: 999px;
   font-size: 12px;
   font-weight: 700;
-  background: rgba(0, 123, 255, 0.12);
-  color: #005fcc;
+  background: rgba(76,175,54,0.12);
+  color: var(--theme-green);
 }
 
 .employee-role-badge.manager {
-  background: rgba(111, 66, 193, 0.12);
-  color: #6f42c1;
+  background: rgba(244,180,0,0.12);
+  color: var(--theme-gold);
 }
 
 .employee-name {
@@ -280,9 +279,9 @@
 }
 
 .employee-action-btn.edit {
-  border-color: #bfdbfe;
-  background: #eff6ff;
-  color: #1d4ed8;
+  border-color: #f4b400;
+  background: #fff8df;
+  color: #1f3d1d;
 }
 
 .employee-action-btn.delete {
@@ -435,9 +434,9 @@
 
 .employees-add-btn {
   padding: 10px 16px;
-  border: none;
+  border: 1px solid #f4b400;
   border-radius: 8px;
-  background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+  background: #4caf36;
   color: #ffffff;
   font-size: 14px;
   font-weight: 600;
@@ -446,7 +445,10 @@
 
 .employees-add-btn:hover {
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(79, 70, 229, 0.35);
+  background: #f4b400;
+  border-color: #4caf36;
+  color: #1f3d1d;
+  box-shadow: 0 4px 12px rgba(76, 175, 54, 0.25);
 }
 
 .employees-grid {
@@ -476,13 +478,13 @@
 }
 
 .employee-role-badge {
-  background: #e0edff;
-  color: #0b5fcc;
+  background: #e8f6e8;
+  color: #2f8f2f;
 }
 
 .employee-role-badge.manager {
-  background: #efe8ff;
-  color: #5b34b3;
+  background: #fff4d7;
+  color: #8a6400;
 }
 
 @media (max-width: 900px) {

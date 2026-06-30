@@ -419,7 +419,6 @@ export default function Customers() {
                     <th>Company</th>
                     <th>Email</th>
                     <th>Phone</th>
-                    <th>State</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -433,7 +432,6 @@ export default function Customers() {
                       <td data-label="Company">{customer.company || "-"}</td>
                       <td data-label="Email">{customer.email || "-"}</td>
                       <td data-label="Phone">{customer.phone || "-"}</td>
-                      <td data-label="State">{customer.state || "-"}</td>
                     </tr>
                   ))}
                 </tbody>

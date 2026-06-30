@@ -74,10 +74,15 @@ const formatRelativeTime = (value) => {
 const getNotificationCategory = (item) => {
   if (isProposalNotification(item)) return "approvals";
   if (isRefillNotification(item) || item?.source === "activity") return "alerts";
+  if (item?.leadId) return "leads";
   return "deals";
 };
 
 const getPriorityMeta = (item) => {
+  if (item?.leadId) {
+    return { tone: "lead", icon: "🟢", label: "Lead Update" };
+  }
+
   if (isProposalNotification(item)) {
     return { tone: "approval", icon: "🟡", label: "Proposal Approval" };
   }
@@ -222,6 +227,7 @@ export default function NotificationsPage() {
       unread: 0,
       approvals: 0,
       deals: 0,
+      leads: 0,
       alerts: 0,
     };
 
@@ -242,7 +248,7 @@ export default function NotificationsPage() {
     return notifications.filter((item) => {
       if (activeFeedTab === "unread" && item?.isRead) return false;
 
-      if (["approvals", "deals", "alerts"].includes(activeFeedTab)) {
+      if (["approvals", "deals", "leads", "alerts"].includes(activeFeedTab)) {
         const category = getNotificationCategory(item);
         if (category !== activeFeedTab) return false;
       }
@@ -274,6 +280,7 @@ export default function NotificationsPage() {
     visibleNotifications.forEach((item) => {
       const canGroup =
         item?.source === "deal" &&
+        !item?.leadId &&
         !isProposalNotification(item) &&
         !isRefillNotification(item);
 
@@ -282,7 +289,7 @@ export default function NotificationsPage() {
         return;
       }
 
-      const dealKey = String(item?.dealId?._id || item?.dealId || "");
+      const dealKey = String(item?.dealId?._id || item?.dealId || item?.leadId?._id || item?.leadId || "");
       if (!dealKey || groupedKeys.has(dealKey)) {
         return;
       }
@@ -292,6 +299,7 @@ export default function NotificationsPage() {
         const candidateDealKey = String(candidate?.dealId?._id || candidate?.dealId || "");
         return (
           candidate?.source === "deal" &&
+          !candidate?.leadId &&
           !isProposalNotification(candidate) &&
           !isRefillNotification(candidate) &&
           candidateDealKey === dealKey
@@ -349,7 +357,7 @@ export default function NotificationsPage() {
     if (!id) return;
     try {
       const target = notifications.find((item) => String(item._id) === String(id));
-      if (!target || target.source !== "deal") {
+      if (!target || (target.source !== "deal" && !target?.leadId)) {
         setNotifications((prev) =>
           prev.map((item) => (String(item._id) === String(id) ? { ...item, isRead: true } : item))
         );
@@ -367,7 +375,7 @@ export default function NotificationsPage() {
 
   const markAllAsRead = async () => {
     const unreadDealIds = notifications
-      .filter((item) => item?.source === "deal" && !item?.isRead)
+      .filter((item) => (item?.source === "deal" || item?.leadId) && !item?.isRead)
       .map((item) => item._id);
     const hasUnreadActivity = notifications.some((item) => item?.source === "activity" && !item?.isRead);
     if (!unreadDealIds.length && !hasUnreadActivity) return;
@@ -854,6 +862,13 @@ export default function NotificationsPage() {
                 onClick={() => setActiveFeedTab("deals")}
               >
                 Deals <span className="count">{categoryCounts.deals}</span>
+              </button>
+              <button
+                type="button"
+                className={`notifications-filter-btn ${activeFeedTab === "leads" ? "active" : ""}`}
+                onClick={() => setActiveFeedTab("leads")}
+              >
+                Leads <span className="count">{categoryCounts.leads}</span>
               </button>
               <button
                 type="button"

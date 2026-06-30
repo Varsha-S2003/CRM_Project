@@ -232,6 +232,10 @@ const dealSchema = new mongoose.Schema(
       savedToQuotationAt: { type: Date, default: null },
       savedToQuotationBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
     },
+    followUpCompleted: {
+      type: Boolean,
+      default: false,
+    },
   },
   {
     timestamps: true,
@@ -247,6 +251,13 @@ dealSchema.pre("validate", function enforceStatusReason() {
   const normalizedStage = normalizeStageKey(this.stage);
   this.status = deriveStatusFromStage(normalizedStage);
 
+  const parsedAmount = parseOptionalNumber(this.amount);
+  if (Number.isNaN(parsedAmount)) {
+    this.invalidate("amount", "Amount must be a valid number");
+  } else {
+    this.amount = parsedAmount;
+  }
+
   const parsedProbability = parseOptionalNumber(this.probability);
   if (Number.isNaN(parsedProbability)) {
     this.invalidate("probability", "Probability must be a valid number");
@@ -261,11 +272,10 @@ dealSchema.pre("validate", function enforceStatusReason() {
     this.invalidate("expectedRevenue", "Expected Revenue must be a valid number");
   }
 
-  if (this.probability !== null) {
-    const amount = Number(this.amount) || 0;
-    this.expectedRevenue = Number(((amount * this.probability) / 100).toFixed(2));
+  if (this.probability !== null && this.amount !== null) {
+    this.expectedRevenue = Number(((this.amount * this.probability) / 100).toFixed(2));
   } else {
-    this.expectedRevenue = parsedExpectedRevenue;
+    this.expectedRevenue = parsedExpectedRevenue === null ? null : parsedExpectedRevenue;
   }
 
   if (this.status === "Inactive") {

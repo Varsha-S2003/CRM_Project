@@ -925,24 +925,26 @@ function LeadRequests() {
 
       {normalizeDealStage(item.stage) === "negotiate" ? (
         <div className="deal-request-actions">
-          <button
-            type="button"
-            className="assignment-submit-btn deal-request-action-btn move"
-            onClick={() => {
-              if (!item?._id) return;
-              const params = new URLSearchParams({
-                type: "meeting",
-                create: "1",
-                relatedType: "Deal",
-                relatedId: String(item._id || ""),
-                relatedName: String(item.name || "Deal"),
-                source: "requests",
-              });
-              navigate(`/activities?${params.toString()}`);
-            }}
-          >
-            Schedule Meeting
-          </button>
+          {isAdmin || isManager ? (
+            <button
+              type="button"
+              className="assignment-submit-btn deal-request-action-btn move"
+              onClick={() => {
+                if (!item?._id) return;
+                const params = new URLSearchParams({
+                  type: "meeting",
+                  create: "1",
+                  relatedType: "Deal",
+                  relatedId: String(item._id || ""),
+                  relatedName: String(item.name || "Deal"),
+                  source: "requests",
+                });
+                navigate(`/activities?${params.toString()}`);
+              }}
+            >
+              Schedule Meeting
+            </button>
+          ) : null}
         </div>
       ) : null}
     </div>

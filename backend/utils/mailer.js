@@ -386,6 +386,124 @@ async function sendActivityReminderEmail({
   return { result, preview };
 }
 
+function getServiceContinuationDecisionLabel(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (normalized === "continue") return "Yes, continue service";
+  if (normalized === "need_follow_up") return "Need follow-up before deciding";
+  if (normalized === "stop") return "No, stop service";
+  return "Not specified";
+}
+
+function formatServiceBillingCycle({ billingCycle, customCycleValue, customCycleUnit }) {
+  const normalizedCycle = String(billingCycle || "").trim().toLowerCase();
+  if (normalizedCycle === "custom") {
+    const value = String(customCycleValue || "").trim();
+    const unit = String(customCycleUnit || "").trim();
+    if (value && unit) {
+      return `${value} ${unit}`;
+    }
+    return "Custom cadence";
+  }
+  if (normalizedCycle === "6_months") return "6 months";
+  if (normalizedCycle === "quarterly") return "Quarterly";
+  if (normalizedCycle === "yearly") return "Yearly";
+  if (normalizedCycle === "monthly") return "Monthly";
+  return String(billingCycle || "").trim() || "Not specified";
+}
+
+async function sendServiceContinuationEmail({
+  to,
+  recipientName,
+  activity = {},
+  serviceDetails = {},
+}) {
+  const mailer = await getTransporter();
+  const appName = "Elogixa CRM";
+  const emailConfig = await getEmailConfig();
+  const sender = emailConfig.auth?.user || "";
+
+  const serviceName = String(
+    serviceDetails.servicePlan ||
+    activity?.relatedTo?.recordName ||
+    activity?.title ||
+    "Service"
+  ).trim() || "Service";
+  const decisionLabel = getServiceContinuationDecisionLabel(serviceDetails.serviceContinuationDecision);
+  const cycleLabel = formatServiceBillingCycle(serviceDetails);
+  const usersOrSeats = String(serviceDetails.usersOrSeats || "").trim();
+  const estimatedValue = String(serviceDetails.estimatedValue || "").trim();
+  const billingOwner = String(serviceDetails.billingOwner || "").trim();
+  const reminderDays = String(serviceDetails.reminderDays || "").trim();
+  const renewalPolicy = String(serviceDetails.renewalPolicy || "").trim().toLowerCase() === "manual" ? "Manual review" : "Auto renewal";
+  const billingNotes = String(serviceDetails.billingNotes || "").trim();
+  const cycleEndedLabel = cycleLabel === "Not specified"
+    ? "Your service cycle has ended."
+    : `Your ${cycleLabel} service cycle has ended.`;
+
+  const relatedRecord = activity?.relatedTo?.recordId;
+  const fallbackEmail = String(relatedRecord?.email || relatedRecord?.secondaryEmail || "").trim();
+  const recipientEmail = String(to || fallbackEmail || "").trim();
+  if (!recipientEmail) {
+    return { skipped: true, reason: "Recipient email not found" };
+  }
+
+  const safeRecipientName = String(recipientName || relatedRecord?.name || relatedRecord?.company || "Customer").trim() || "Customer";
+  const subject = `${appName} Service Cycle Ended: ${serviceName}`;
+  const result = await mailer.sendMail({
+    from: `"${appName}" <${sender}>`,
+    to: recipientEmail,
+    subject,
+    text: [
+      `Hello ${safeRecipientName},`,
+      "",
+      cycleEndedLabel,
+      `Service: ${serviceName}`,
+      `Billing Cycle: ${cycleLabel}`,
+      usersOrSeats ? `Users/Seats: ${usersOrSeats}` : null,
+      estimatedValue ? `Estimated Value: ${estimatedValue}` : null,
+      billingOwner ? `Billing Owner: ${billingOwner}` : null,
+      reminderDays ? `Reminder Window: ${reminderDays} days` : null,
+      `Renewal Policy: ${renewalPolicy}`,
+      `Continuation Choice: ${decisionLabel}`,
+      billingNotes ? `Notes: ${billingNotes}` : null,
+      "",
+      "Please reply if you need any changes or want to continue with the service.",
+      "",
+      `Regards,`,
+      appName,
+    ].filter(Boolean).join("\n"),
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 620px; margin: 0 auto; border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden;">
+        <div style="background: #0f766e; padding: 16px 20px; color: #ffffff;">
+          <h2 style="margin: 0; font-size: 20px;">${appName} Service Cycle Update</h2>
+        </div>
+        <div style="padding: 20px; background: #ffffff; color: #111827;">
+          <p style="margin: 0 0 12px;">Hello ${safeRecipientName},</p>
+          <p style="margin: 0 0 16px;">${cycleEndedLabel.replace(".", "") } <strong>${serviceName}</strong>.</p>
+          <table style="width: 100%; border-collapse: collapse; margin-bottom: 16px;">
+            <tr><td style="padding: 8px; border: 1px solid #e5e7eb; font-weight: 600; width: 180px;">Billing Cycle</td><td style="padding: 8px; border: 1px solid #e5e7eb;">${cycleLabel}</td></tr>
+            ${usersOrSeats ? `<tr><td style="padding: 8px; border: 1px solid #e5e7eb; font-weight: 600;">Users / Seats</td><td style="padding: 8px; border: 1px solid #e5e7eb;">${usersOrSeats}</td></tr>` : ""}
+            ${estimatedValue ? `<tr><td style="padding: 8px; border: 1px solid #e5e7eb; font-weight: 600;">Estimated Value</td><td style="padding: 8px; border: 1px solid #e5e7eb;">${estimatedValue}</td></tr>` : ""}
+            ${billingOwner ? `<tr><td style="padding: 8px; border: 1px solid #e5e7eb; font-weight: 600;">Billing Owner</td><td style="padding: 8px; border: 1px solid #e5e7eb;">${billingOwner}</td></tr>` : ""}
+            ${reminderDays ? `<tr><td style="padding: 8px; border: 1px solid #e5e7eb; font-weight: 600;">Reminder Window</td><td style="padding: 8px; border: 1px solid #e5e7eb;">${reminderDays} days</td></tr>` : ""}
+            <tr><td style="padding: 8px; border: 1px solid #e5e7eb; font-weight: 600;">Renewal Policy</td><td style="padding: 8px; border: 1px solid #e5e7eb;">${renewalPolicy}</td></tr>
+            <tr><td style="padding: 8px; border: 1px solid #e5e7eb; font-weight: 600;">Continue Service?</td><td style="padding: 8px; border: 1px solid #e5e7eb;">${decisionLabel}</td></tr>
+          </table>
+          ${billingNotes ? `<p style="margin: 0; white-space: pre-line;"><strong>Notes:</strong><br/>${billingNotes}</p>` : ""}
+          <p style="margin: 16px 0 0;">Please reply if you want to continue, stop, or change the service arrangement.</p>
+        </div>
+      </div>
+    `,
+  });
+
+  const preview = isEtherealConfig(emailConfig) ? nodemailer.getTestMessageUrl(result) : null;
+  if (preview) {
+    console.log("Ethereal service continuation email preview URL:", preview);
+  }
+
+  return { result, preview };
+}
+
 async function sendLowStockCustomerEmail({
   to,
   customerName,
@@ -688,6 +806,7 @@ module.exports = {
   sendPasswordResetEmail,
   sendLeadProposalEmail,
   sendActivityReminderEmail,
+  sendServiceContinuationEmail,
   sendLowStockCustomerEmail,
   sendInvoiceEmailToClient,
   sendTeamsCallInviteEmail,

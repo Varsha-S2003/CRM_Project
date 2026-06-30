@@ -407,12 +407,17 @@ const applyTaxSummaryToPayload = (payload, taxSummary) => {
 const normalizeDealBusinessFields = (payload) => {
   const normalized = { ...payload };
 
-  if (!Object.prototype.hasOwnProperty.call(normalized, "amount") && Object.prototype.hasOwnProperty.call(normalized, "value")) {
-    normalized.amount = normalized.value;
+  if (Object.prototype.hasOwnProperty.call(normalized, "amount")) {
+    const amount = parseOptionalNumber(normalized.amount);
+    normalized.amount = Number.isNaN(amount) ? null : amount;
+  } else if (Object.prototype.hasOwnProperty.call(normalized, "value")) {
+    const amount = parseOptionalNumber(normalized.value);
+    normalized.amount = Number.isNaN(amount) ? null : amount;
   }
 
-  if (Object.prototype.hasOwnProperty.call(normalized, "amount")) {
-    normalized.amount = Number(normalized.amount) || 0;
+  if (Object.prototype.hasOwnProperty.call(normalized, "value")) {
+    const value = parseOptionalNumber(normalized.value);
+    normalized.value = Number.isNaN(value) ? null : value;
   }
 
   if (Object.prototype.hasOwnProperty.call(normalized, "probability")) {
@@ -510,11 +515,18 @@ const normalizeDealBusinessFields = (payload) => {
 const applyForecastFields = (dealPayload) => {
   const normalized = { ...dealPayload };
   if (normalized.probability === null || normalized.probability === undefined) {
+    normalized.expectedRevenue = null;
     return normalized;
   }
 
-  const amount = Number(normalized.amount) || 0;
-  normalized.expectedRevenue = Number(((amount * normalized.probability) / 100).toFixed(2));
+  const amount = parseOptionalNumber(normalized.amount);
+  const probability = parseOptionalNumber(normalized.probability);
+  if (amount === null || Number.isNaN(amount) || probability === null || Number.isNaN(probability)) {
+    normalized.expectedRevenue = null;
+    return normalized;
+  }
+
+  normalized.expectedRevenue = Number(((amount * probability) / 100).toFixed(2));
   return normalized;
 };
 

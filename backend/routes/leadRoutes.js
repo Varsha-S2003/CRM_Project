@@ -102,6 +102,37 @@ const normalizeEmailForStorage = (value) => {
   return normalized || undefined;
 };
 
+const buildLeadNotificationRecipients = (lead, actorId) => {
+  const recipients = new Set();
+  if (lead?.assignedTo) recipients.add(String(lead.assignedTo));
+  if (lead?.assignedBy) recipients.add(String(lead.assignedBy));
+  if (actorId) recipients.add(String(actorId));
+  return Array.from(recipients).filter(Boolean);
+};
+
+const createLeadStageNotification = async ({ lead, actor, fromStatus, toStatus, recipients, actionLabel }) => {
+  const resolvedRecipients = Array.from(new Set((recipients || []).map((value) => String(value || "").trim()).filter(Boolean)));
+  if (!lead?._id || !actor?._id || resolvedRecipients.length === 0) return null;
+
+  const leadName = normalizeText(lead.name) || buildLeadName(lead) || "Lead";
+  const actorName = normalizeText(actor.name) || normalizeText(actor.username) || "User";
+
+  return createNotificationIfAllowed({
+    type: "leadStageUpdate",
+    notification: {
+      dealId: null,
+      leadId: lead._id,
+      message: `${actionLabel || "Lead updated"}: ${leadName} moved from ${fromStatus} to ${toStatus} by ${actorName}.`,
+      fromStage: fromStatus,
+      toStage: toStatus,
+      changedBy: actor._id,
+      changedByName: actorName,
+      recipients: resolvedRecipients,
+      isRead: false,
+    },
+  });
+};
+
 const normalizePhoneForMatch = (value) => String(value || "").replace(/\D+/g, "").trim();
 const buildPhoneFlexibleRegex = (digits) => {
   if (!digits) return null;
@@ -1518,6 +1549,18 @@ router.put("/:id", verifyToken, permit("ADMIN", "MANAGER", "EMPLOYEE"), async (r
         approvalState: rule.requireApproval ? "approved" : "none",
       });
 
+      if (["new", "contacted", "qualified", "lost"].includes(normalizedNewStatus)) {
+        const recipients = buildLeadNotificationRecipients(lead, req.user._id);
+        await createLeadStageNotification({
+          lead,
+          actor: req.user,
+          fromStatus: currentStatus,
+          toStatus: normalizedNewStatus,
+          recipients,
+          actionLabel: "Lead stage changed",
+        });
+      }
+
       shouldSave = true;
     }
 
@@ -2082,8 +2125,13 @@ const convertLeadToCustomerDeal = async (req, res, next) => {
       const conversionName = buildConversionName(lead);
       const conversionEmail = normalizeEmailForStorage(lead.email);
       const defaultProductId = await resolveDefaultProductId(session);
+      const resolvedProductId = lead.itemId?._id || lead.itemId || defaultProductId;
+      const proposedAmount =
+        normalizedValue !== null
+          ? normalizedValue
+          : normalizeOptionalNumber(lead.latestProposal?.amount);
 
-      if (!defaultProductId) {
+      if (!resolvedProductId) {
         throw Object.assign(new Error("No product found. Please create at least one product before converting lead."), {
           statusCode: 400,
         });
@@ -2111,7 +2159,7 @@ const convertLeadToCustomerDeal = async (req, res, next) => {
           {
             customerId: customer._id,
             sourceLeadId: lead._id,
-            product: defaultProductId,
+            product: resolvedProductId,
             name: `${conversionName} - Deal`,
             company: lead.company,
             contact: customer.name,
@@ -2120,8 +2168,21 @@ const convertLeadToCustomerDeal = async (req, res, next) => {
             stage: "Qualification",
             status: "Active",
             reason: "",
-            value: normalizedValue,
-            amount: normalizedValue || 0,
+            value: proposedAmount,
+            amount: proposedAmount,
+            leadSource: lead.source || "",
+            campaignSource: lead.source || "",
+            description: normalizeText(lead.notes || ""),
+            nextStep: normalizeText(lead.latestProposal?.subject || ""),
+            dealType: lead.itemType === "service" ? "Existing Business" : "New Business",
+            website: normalizeText(lead.website || ""),
+            industry: normalizeText(lead.industry || ""),
+            title: normalizeText(lead.title || ""),
+            salutation: normalizeText(lead.salutation || ""),
+            firstName: normalizeText(lead.firstName || ""),
+            lastName: normalizeText(lead.lastName || ""),
+            secondaryEmail: normalizeText(lead.secondaryEmail || ""),
+            mobile: normalizeText(lead.mobile || ""),
             assignedTo: lead.assignedTo || req.user._id,
           },
         ],
