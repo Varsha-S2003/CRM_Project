@@ -346,6 +346,7 @@ function App() {
         <Route path="/customers" element={<Customers />} />
         <Route path="/employees" element={<Employees />} />
         <Route path="/reports" element={<Reports />} />
+        <Route path="/analytics" element={<Reports />} />
         <Route path="/settings" element={<Settings />} />
         <Route path="/requests" element={<LeadRequests />} />
         <Route path="/activities" element={<ActivityModule />} />

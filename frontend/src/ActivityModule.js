@@ -189,7 +189,15 @@ const createDefaultCompletionForm = () => ({
   requiredModules: "",
   servicePlan: "",
   billingCycle: "",
+  customCycleValue: "10",
+  customCycleUnit: "minutes",
   usersOrSeats: "",
+  estimatedValue: "",
+  billingOwner: "",
+  reminderDays: "7",
+  renewalPolicy: "auto",
+  serviceContinuationDecision: "",
+  billingNotes: "",
 });
 
 const formatUsecaseNotes = (form) => {
@@ -1732,6 +1740,7 @@ function ActivityModule() {
       const requiredModules = String(completionForm.requiredModules || "").trim();
       const servicePlan = String(completionForm.servicePlan || "").trim();
       const billingCycle = String(completionForm.billingCycle || "").trim().toLowerCase();
+      const serviceContinuationDecision = String(completionForm.serviceContinuationDecision || "").trim().toLowerCase();
       const usersOrSeatsValue = Number(completionForm.usersOrSeats);
       const quantityValue = Number(completionForm.quantity);
       const quantityIsValid = Number.isFinite(quantityValue) && quantityValue > 0;
@@ -1757,6 +1766,10 @@ function ActivityModule() {
         setToast("Service Plan and Billing Cycle are required for Service type.");
         return;
       }
+      if (needType === "service" && !serviceContinuationDecision) {
+        setToast("Please select whether the customer should continue the service.");
+        return;
+      }
       if (!quantityIsValid && !planAndCycleValid) {
         setToast("Provide Quantity OR Service Plan + Billing Cycle.");
         return;
@@ -1770,6 +1783,9 @@ function ActivityModule() {
         needType === "product"
           ? `Product: ${completionForm.productName || "-"}, Quantity: ${quantityIsValid ? quantityValue : "-"}, Modules: ${requiredModules || "-"}`
           : `Service Plan: ${servicePlan || "-"}, Billing Cycle: ${billingCycle || "-"}, Users/Seats: ${Number.isFinite(usersOrSeatsValue) && usersOrSeatsValue > 0 ? usersOrSeatsValue : "-"}`,
+        needType === "service"
+          ? `Customer Continuation Choice: ${serviceContinuationDecision === "continue" ? "Continue service" : serviceContinuationDecision === "stop" ? "Stop service" : serviceContinuationDecision === "need_follow_up" ? "Need follow-up before deciding" : "-"}`
+          : null,
       ];
 
       const dealPayload = {
@@ -1801,6 +1817,17 @@ function ActivityModule() {
             stage: getDefaultStageByActivityType(completionTarget.activityType),
             outcomeReason: activitySummaryLines.join("\n"),
             rescheduleDateTime: null,
+            servicePlan,
+            billingCycle,
+            customCycleValue: completionForm.customCycleValue,
+            customCycleUnit: completionForm.customCycleUnit,
+            usersOrSeats: completionForm.usersOrSeats,
+            estimatedValue: completionForm.estimatedValue,
+            billingOwner: completionForm.billingOwner,
+            reminderDays: completionForm.reminderDays,
+            renewalPolicy: completionForm.renewalPolicy,
+            serviceContinuationDecision,
+            billingNotes: completionForm.billingNotes,
           },
           { headers: apiHeaders }
         );
@@ -3673,19 +3700,128 @@ function ActivityModule() {
                               <option value="quarterly">Quarterly</option>
                               <option value="6_months">6 Months</option>
                               <option value="yearly">Yearly</option>
+                              <option value="custom">Custom cadence</option>
                             </select>
                           </label>
+
+                          {completionForm.billingCycle === "custom" ? (
+                            <>
+                              <label>
+                                Custom Interval (e.g., 5 or 10)
+                                <input
+                                  type="number"
+                                  min="1"
+                                  value={completionForm.customCycleValue}
+                                  onChange={(event) =>
+                                    setCompletionForm((prev) => ({ ...prev, customCycleValue: event.target.value }))
+                                  }
+                                  placeholder="5 or 10"
+                                />
+                              </label>
+                              <label>
+                                Custom Unit
+                                <select
+                                  value={completionForm.customCycleUnit}
+                                  onChange={(event) =>
+                                    setCompletionForm((prev) => ({ ...prev, customCycleUnit: event.target.value }))
+                                  }
+                                >
+                                  <option value="minutes">Minutes</option>
+                                  <option value="hours">Hours</option>
+                                  <option value="days">Days</option>
+                                  <option value="weeks">Weeks</option>
+                                  <option value="months">Months</option>
+                                </select>
+                              </label>
+                            </>
+                          ) : null}
+
                           <label>
                             Number of Users / Seats
                             <input
                               type="number"
-                              min="1"
-                              step="1"
+                              min="0"
                               value={completionForm.usersOrSeats}
                               onChange={(event) =>
                                 setCompletionForm((prev) => ({ ...prev, usersOrSeats: event.target.value }))
                               }
                               placeholder="Enter users/seats"
+                            />
+                          </label>
+
+                          <label>
+                            Estimated Value (e.g., Rs. 25,000 / month)
+                            <input
+                              type="text"
+                              value={completionForm.estimatedValue}
+                              onChange={(event) =>
+                                setCompletionForm((prev) => ({ ...prev, estimatedValue: event.target.value }))
+                              }
+                              placeholder="e.g. Rs. 25,000 / month"
+                            />
+                          </label>
+
+                          <label>
+                            Billing Owner
+                            <input
+                              type="text"
+                              value={completionForm.billingOwner}
+                              onChange={(event) =>
+                                setCompletionForm((prev) => ({ ...prev, billingOwner: event.target.value }))
+                              }
+                              placeholder="Owner responsible for billing"
+                            />
+                          </label>
+
+                          <label>
+                            Reminder Window (days)
+                            <input
+                              type="number"
+                              min="0"
+                              value={completionForm.reminderDays}
+                              onChange={(event) =>
+                                setCompletionForm((prev) => ({ ...prev, reminderDays: event.target.value }))
+                              }
+                            />
+                          </label>
+
+                          <label>
+                            Renewal Policy
+                            <select
+                              value={completionForm.renewalPolicy}
+                              onChange={(event) =>
+                                setCompletionForm((prev) => ({ ...prev, renewalPolicy: event.target.value }))
+                              }
+                            >
+                              <option value="auto">Auto renewal</option>
+                              <option value="manual">Manual review</option>
+                            </select>
+                          </label>
+
+                          <label>
+                            Continue Service After This Cycle? *
+                            <select
+                              value={completionForm.serviceContinuationDecision}
+                              onChange={(event) =>
+                                setCompletionForm((prev) => ({ ...prev, serviceContinuationDecision: event.target.value }))
+                              }
+                            >
+                              <option value="">Select one</option>
+                              <option value="continue">Yes, continue service</option>
+                              <option value="need_follow_up">Need follow-up before deciding</option>
+                              <option value="stop">No, stop service</option>
+                            </select>
+                          </label>
+
+                          <label className="full-width">
+                            Billing Lifecycle Notes
+                            <textarea
+                              rows="3"
+                              value={completionForm.billingNotes}
+                              onChange={(event) =>
+                                setCompletionForm((prev) => ({ ...prev, billingNotes: event.target.value }))
+                              }
+                              placeholder="Capture the service scope, approvals, escalation rules, or billing exceptions."
                             />
                           </label>
                         </>

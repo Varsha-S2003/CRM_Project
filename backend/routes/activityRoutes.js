@@ -7,6 +7,7 @@ const Contact = require("../models/contact");
 const Deal = require("../models/deal");
 const { verifyToken } = require("../middleware/authMiddleware");
 const { sendActivityReminderEmail } = require("../utils/mailer");
+const { addServiceInterval } = require("../utils/serviceLifecycle");
 const { getUserNotificationPreferences } = require("../utils/notificationPreferences");
 
 const router = express.Router();
@@ -1357,6 +1358,38 @@ router.post("/:id/complete", verifyToken, async (req, res) => {
     if (activity.activityType === "call") {
       activity.call = { ...activity.call?.toObject?.(), ...activity.call, callStatus: "Completed" };
     }
+
+    const serviceContinuationDecision = String(req.body?.serviceContinuationDecision || "").trim().toLowerCase();
+    const serviceDetails = {
+      servicePlan: String(req.body?.servicePlan || "").trim(),
+      billingCycle: String(req.body?.billingCycle || "").trim(),
+      customCycleValue: String(req.body?.customCycleValue || "").trim(),
+      customCycleUnit: String(req.body?.customCycleUnit || "").trim(),
+      usersOrSeats: String(req.body?.usersOrSeats || "").trim(),
+      estimatedValue: String(req.body?.estimatedValue || "").trim(),
+      billingOwner: String(req.body?.billingOwner || "").trim(),
+      reminderDays: String(req.body?.reminderDays || "").trim(),
+      renewalPolicy: String(req.body?.renewalPolicy || "").trim(),
+      serviceContinuationDecision,
+      billingNotes: String(req.body?.billingNotes || "").trim(),
+    };
+
+    const nextCustomerEmailAt = addServiceInterval(
+      activity.completedAt || new Date(),
+      serviceDetails.billingCycle,
+      serviceDetails.customCycleValue,
+      serviceDetails.customCycleUnit
+    );
+
+    if (serviceContinuationDecision) {
+      activity.serviceBilling = {
+        ...(activity.serviceBilling?.toObject?.() || activity.serviceBilling || {}),
+        ...serviceDetails,
+        nextCustomerEmailAt,
+        customerEmailSentAt: null,
+      };
+    }
+
     await activity.save();
 
     if (requiresReschedule) {
@@ -1441,6 +1474,7 @@ router.post("/:id/complete", verifyToken, async (req, res) => {
     }
 
     const saved = await populateActivity(Activity.findById(activity._id));
+
     res.json(saved);
   } catch (err) {
     res.status(500).json({ message: err.message });

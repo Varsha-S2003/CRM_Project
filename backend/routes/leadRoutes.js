@@ -102,6 +102,37 @@ const normalizeEmailForStorage = (value) => {
   return normalized || undefined;
 };
 
+const buildLeadNotificationRecipients = (lead, actorId) => {
+  const recipients = new Set();
+  if (lead?.assignedTo) recipients.add(String(lead.assignedTo));
+  if (lead?.assignedBy) recipients.add(String(lead.assignedBy));
+  if (actorId) recipients.add(String(actorId));
+  return Array.from(recipients).filter(Boolean);
+};
+
+const createLeadStageNotification = async ({ lead, actor, fromStatus, toStatus, recipients, actionLabel }) => {
+  const resolvedRecipients = Array.from(new Set((recipients || []).map((value) => String(value || "").trim()).filter(Boolean)));
+  if (!lead?._id || !actor?._id || resolvedRecipients.length === 0) return null;
+
+  const leadName = normalizeText(lead.name) || buildLeadName(lead) || "Lead";
+  const actorName = normalizeText(actor.name) || normalizeText(actor.username) || "User";
+
+  return createNotificationIfAllowed({
+    type: "leadStageUpdate",
+    notification: {
+      dealId: null,
+      leadId: lead._id,
+      message: `${actionLabel || "Lead updated"}: ${leadName} moved from ${fromStatus} to ${toStatus} by ${actorName}.`,
+      fromStage: fromStatus,
+      toStage: toStatus,
+      changedBy: actor._id,
+      changedByName: actorName,
+      recipients: resolvedRecipients,
+      isRead: false,
+    },
+  });
+};
+
 const normalizePhoneForMatch = (value) => String(value || "").replace(/\D+/g, "").trim();
 const buildPhoneFlexibleRegex = (digits) => {
   if (!digits) return null;
@@ -1517,6 +1548,18 @@ router.put("/:id", verifyToken, permit("ADMIN", "MANAGER", "EMPLOYEE"), async (r
         approvalRequired: Boolean(rule.requireApproval),
         approvalState: rule.requireApproval ? "approved" : "none",
       });
+
+      if (["new", "contacted", "qualified", "lost"].includes(normalizedNewStatus)) {
+        const recipients = buildLeadNotificationRecipients(lead, req.user._id);
+        await createLeadStageNotification({
+          lead,
+          actor: req.user,
+          fromStatus: currentStatus,
+          toStatus: normalizedNewStatus,
+          recipients,
+          actionLabel: "Lead stage changed",
+        });
+      }
 
       shouldSave = true;
     }

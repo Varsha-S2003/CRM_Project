@@ -45,6 +45,10 @@ app.use("/api/calls", callRoutes);
 const statsRoutes = require("./routes/statsRoutes");
 app.use("/api/stats", statsRoutes);
 
+// export routes (reuses stats logic via internal call)
+const exportRoutes = require("./routes/exportRoutes");
+app.use("/api/stats", exportRoutes);
+
 // products endpoint for managing products
 const productRoutes = require("./routes/productRoutes");
 app.use("/api/products", productRoutes);
@@ -134,6 +138,14 @@ async function initializeDatabase() {
     console.log("Daily digest notification job initialized");
   } catch (e) {
     console.error("Failed to initialize daily digest job:", e.message);
+  }
+
+  try {
+    const { startServiceLifecycleJob } = require("./utils/serviceLifecycle");
+    startServiceLifecycleJob();
+    console.log("Service lifecycle notification job initialized");
+  } catch (e) {
+    console.error("Failed to initialize service lifecycle job:", e.message);
   }
 }
 
